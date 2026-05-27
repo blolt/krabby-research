@@ -1,6 +1,7 @@
 """Smoke test: firmware update → show → VER comparison against S3 manifest."""
 from __future__ import annotations
 
+import logging
 import re
 import subprocess
 import sys
@@ -14,6 +15,8 @@ BOARD_COUNT = 3
 
 if "" not in sys.path:
     sys.path.insert(0, "")
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -29,12 +32,16 @@ class SmokeResult:
 
 def run_smoke(firmware_channel: str, image_ref: str) -> SmokeResult:
     """Run the full smoke sequence against the currently installed image."""
+    log.debug("Smoke test starting (channel=%s, image=%s)", firmware_channel, image_ref)
+
     # Step 1: discover board ports
+    log.debug("Step 1: discovering board ports")
     rc, out, err = _run_firmware(image_ref, ["show"])
     if rc != 0:
         return SmokeResult(ok=False, step="firmware_show_ports", detail=f"exit {rc}", stdout=out, stderr=err)
 
     ports = _parse_ports(out)
+    log.debug("Found %d port(s): %s", len(ports), ports)
     if len(ports) < BOARD_COUNT:
         return SmokeResult(
             ok=False, step="firmware_show_ports",
@@ -44,16 +51,20 @@ def run_smoke(firmware_channel: str, image_ref: str) -> SmokeResult:
 
     # Step 2: update each port
     for port in ports:
+        log.debug("Step 2: flashing %s (channel=%s)", port, firmware_channel)
         rc, out_u, err_u = _run_firmware(image_ref, ["update", firmware_channel, port])
         if rc != 0:
             return SmokeResult(ok=False, step="firmware_update", detail=f"exit {rc} ({port})", stdout=out_u, stderr=err_u)
+        log.debug("Flashed %s successfully", port)
 
     # Step 3: re-show to get post-update versions
+    log.debug("Step 3: reading post-update versions")
     rc, out, err = _run_firmware(image_ref, ["show"])
     if rc != 0:
         return SmokeResult(ok=False, step="firmware_show", detail=f"exit {rc}", stdout=out, stderr=err)
 
     ver_observed = _parse_versions(out)
+    log.debug("Versions observed: %s", ver_observed)
     if len(ver_observed) < BOARD_COUNT:
         return SmokeResult(
             ok=False, step="firmware_show",
@@ -69,6 +80,7 @@ def run_smoke(firmware_channel: str, image_ref: str) -> SmokeResult:
         )
 
     # Step 4: compare against S3 manifest
+    log.debug("Step 4: fetching expected version from S3 (channel=%s)", firmware_channel)
     try:
         ver_expected = _fetch_expected_ver(firmware_channel)
     except Exception as exc:
@@ -78,6 +90,7 @@ def run_smoke(firmware_channel: str, image_ref: str) -> SmokeResult:
             stdout=out, stderr=err, ver_observed=ver_observed,
         )
 
+    log.debug("Version expected (S3): %s", ver_expected)
     if ver_observed[0] != ver_expected:
         return SmokeResult(
             ok=False, step="ver_mismatch_s3",

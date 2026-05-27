@@ -28,6 +28,11 @@ def main() -> None:
         default=str(CONFIG_PATH),
         help=f"Path to config.toml (default: {CONFIG_PATH})",
     )
+    parser.add_argument(
+        "--log-level", default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Logging level (default: INFO)",
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     subparsers.add_parser("help", help="Show this help message and exit.")
@@ -66,7 +71,7 @@ def main() -> None:
         return
 
     config = load_config(Path(args.config))
-    run(config)
+    run(config, log_level=args.log_level)
 
 
 if __name__ == "__main__":

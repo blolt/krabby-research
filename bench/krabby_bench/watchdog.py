@@ -45,11 +45,18 @@ def poll_once(config: Config, state: dict) -> dict:
             [_krabby_bin(), "update", "--image", f"{config.ecr.repo}:{config.ecr.tag}"],
             check=True,
         )
+        log.info("krabby update succeeded")
     except Exception:
         log.exception("krabby update failed")
         return state
 
-    image_ref = _get_image_ref()
+    try:
+        image_ref = _get_image_ref()
+        log.debug("Resolved image ref: %s", image_ref)
+    except Exception:
+        log.exception("Failed to resolve installed image ref")
+        return state
+
     result = run_smoke(config.smoke.firmware_channel, image_ref)
 
     new_state = {**state, "last_tested_digest": digest}
@@ -91,8 +98,8 @@ def _load_credentials(config: Config) -> tuple | None:
     return result
 
 
-def run(config: Config) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+def run(config: Config, log_level: str = "INFO") -> None:
+    logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s %(levelname)s %(message)s")
     log.info("krabby-bench watchdog starting (interval=%ds)", config.ecr.poll_interval)
     state = load_state(config.state_path)
     cred_warning_logged = False

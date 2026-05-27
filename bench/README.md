@@ -4,11 +4,14 @@ Watches ECR for new locomotion images, updates the stack when one appears, runs 
 
 ## Install
 
+**Prerequisite:** `krabby-launcher` must be installed and `krabby install` run before krabby-bench — the watchdog calls the `krabby` CLI to pull images and flash firmware. See the [top-level README](../README.md) for the full setup sequence.
+
 ```bash
-sudo pip3 install krabby-bench
+sudo pip3 install krabby-launcher krabby-bench
+sudo krabby install
 ```
 
-Then run the install command as root to configure and start the systemd service:
+Then run the install command as root to configure and start the watchdog service:
 
 ```bash
 sudo krabby-bench install [options]
@@ -149,11 +152,29 @@ For each new digest the watchdog:
 
 ## Monitor
 
-Monitoring `krabby-bench` can be done with:
-
 ```bash
 journalctl -fu krabby-bench
 ```
+
+For verbose output on a one-off manual run:
+
+```bash
+krabby-bench --log-level DEBUG
+```
+
+When running as a systemd service, the log level must be set in the unit file — systemd launches the process with a fixed command line, so flags can't be passed after the fact. Edit `/etc/systemd/system/krabby-bench.service`:
+
+```
+ExecStart=/usr/local/bin/krabby-bench --log-level DEBUG --config /etc/krabby-bench/config.toml
+```
+
+Then apply and restart:
+
+```bash
+sudo systemctl daemon-reload && sudo systemctl restart krabby-bench
+```
+
+Valid levels: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`.
 
 ## Force a failure (test alert path)
 
