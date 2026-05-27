@@ -17,6 +17,7 @@ def fetch_secrets(prefix: str, key_id: str, key_secret: str) -> tuple | None:
     from krabby_bench._config import GithubConfig, SmtpConfig
 
     try:
+        log.info("Creating SSM client (region=us-east-1, key_id=%s)", key_id[:8] + "...")
         client = boto3.client(
             "ssm",
             aws_access_key_id=key_id,
@@ -25,6 +26,7 @@ def fetch_secrets(prefix: str, key_id: str, key_secret: str) -> tuple | None:
         )
         params: dict[str, str] = {}
         paginator = client.get_paginator("get_parameters_by_path")
+        log.info("Paginating SSM path %r", prefix)
         for page in paginator.paginate(Path=prefix, WithDecryption=True):
             for p in page["Parameters"]:
                 name = p["Name"].removeprefix(prefix).lstrip("/")
@@ -47,5 +49,5 @@ def fetch_secrets(prefix: str, key_id: str, key_secret: str) -> tuple | None:
             ),
         )
     except Exception:
-        log.warning("SSM fetch failed — credentials unavailable")
+        log.warning("SSM fetch failed — credentials unavailable", exc_info=True)
         return None

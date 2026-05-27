@@ -80,9 +80,15 @@ def _load_credentials(config: Config) -> tuple | None:
         return None
     from krabby_bench._secrets import read_device_key
     from krabby_bench._ssm import fetch_secrets
+    log.info("Reading device key from disk")
     if not (key := read_device_key()):
+        log.warning("Device key unavailable (secrets.enc missing or unreadable)")
         return None
-    return fetch_secrets(config.ssm.prefix, *key)
+    log.info("Device key loaded — fetching credentials from SSM (%s)", config.ssm.prefix)
+    result = fetch_secrets(config.ssm.prefix, *key)
+    if result:
+        log.info("SSM credentials loaded successfully")
+    return result
 
 
 def run(config: Config) -> None:
