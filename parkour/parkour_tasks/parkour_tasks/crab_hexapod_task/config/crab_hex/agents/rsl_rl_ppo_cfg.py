@@ -79,8 +79,8 @@ class CrabHexTeacherPPORunnerCfg(CrabHexParkourRslRlOnPolicyRunnerCfg, UnitreeGo
             self.clip_actions = 1.0
             self.algorithm.learning_rate = 1.0e-4
             self.save_interval = 100
-            # 2b2 / 2b2-v2: resume bundled 2b1 model_6198 → ~450 iters; stop early at 6300–6400 in play.
-            self.max_iterations = 450
+            # Teacher-ready 2b2: resume 2b1 6198; stop early at sweet-spot (play + gates), not last ckpt.
+            self.max_iterations = 10000
 
 
 @configclass

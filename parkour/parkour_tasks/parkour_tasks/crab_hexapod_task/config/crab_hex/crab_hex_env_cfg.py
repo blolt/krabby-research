@@ -57,8 +57,9 @@ CRAB_HEX_VIEWER = ViewerCfg(
 #   Stage 1  Flat walk     →  task ``Isaac-Crab-Hex-Flat-Walk-v0`` (NOT this flag)
 #   Stage 2a bridge        →  ``bridge``   resume flat ``model_6000``
 #   Stage 2b phase 1       →  ``2b1``      resume bridge ``model_6099``
-#   Stage 2b phase 2       →  ``2b2``      resume ``2b1`` checkpoint
-#   Stage 3  Full parkour  →  ``full``     resume ``2b2`` when stable
+#   Stage 2b phase 2       →  ``2b2``      teacher-ready obstacle walk (distillation source)
+#   Stage 3  Student       →  ``Isaac-Crab-Hex-Student-v0``  distill from 2b2 teacher
+#   Stage 4  Full parkour  →  ``full``     TODO — only after 2b2 student pipeline is stable
 #
 # --- bridge (Appendix D) — “easy mixed walk” ---
 #   Intent: Keep the flat-walk gait on mostly flat ground with a little shallow
@@ -77,16 +78,15 @@ CRAB_HEX_VIEWER = ViewerCfg(
 #   Rewards: ``CrabHexStage2BPhase1RewardsCfg`` — bridge core + goal_vel 0.75, yaw 0.2.
 #   Resume: always from bridge ``model_6099`` (do not use ``full`` from 6099).
 #
-# --- 2b2 — “moderate mix + curriculum” ---
-#   Intent: Resume 2b1 ``6198``; learn obstacle handling while keeping gait.
-#   Terrain: ~50% flat / ~50% parkour; curriculum on; difficulty 0.20–0.70;
-#            moderate gap/step/hurdle geometry (not full parkour defaults).
-#   Actions: scale 0.24, clip ±1 (unchanged).
-#   Rewards (2b2 v2 refine): goal_vel 1.25, yaw 0.35, yaw_on_parkour +0.2;
-#            stumble/edge −0.8, collision −2, clearance +1.2 (lift+cross+land),
-#            low-speed −1.5; resume bundled 2b1 6198 (~450 iters); stop ~6300–6400 in play.
+# --- 2b2 — “teacher-ready obstacle walk” ---
+#   Intent: Polished 2b2-phase-2 policy for **student distillation** (robustness over raw speed).
+#   Terrain: 50/50 flat/parkour; curriculum 0.20–0.70; moderate geometry; actions 0.24, ±1.
+#   Rewards: ``CrabHexStage2BPhase2RewardsCfg`` — clearance **+1.8**, foot **+2.0**, swing-vz **+0.4**;
+#            recover **+0.4**, micro-swing **−0.2**, forward **+0.25**, low-speed **−0.8**.
+#   Stop at sweet-spot checkpoint (play + metric gates); bundle as 2b2-teacher before student train.
+#   Bundled teacher: Appendix F ``2026-05-26_19-18-15/model_6300.pt`` (supersedes ``2026-05-26_11-30-18``).
 #
-# --- full (default) — “Go2-style parkour teacher” ---
+# --- full (TODO stage 4) — “Go2-style parkour teacher” ---
 #   Intent: Full extreme-parkour teacher MDP (goal velocity primary).
 #   Terrain: full sub-terrain mix, difficulty 0.0–1.0, curriculum on.
 #   Actions: scale 0.25, clip ±4.8; push/mass/COM domain randomization on.

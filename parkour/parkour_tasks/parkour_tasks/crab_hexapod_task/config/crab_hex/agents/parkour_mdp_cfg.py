@@ -399,11 +399,35 @@ class CrabHexStage2BPhase1RewardsCfg(CrabHexTeacherBridgeRewardsCfg):
 
 @configclass
 class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
-    """``KRABBY_HEX_TEACHER_MODE=2b2`` (v2 refine): same MDP; stronger clearance, softer stumble/edge."""
+    """``KRABBY_HEX_TEACHER_MODE=2b2`` teacher-ready (phase 2): obstacle-walk for distillation.
 
+    Global clearance +1.8, foot swing +2.0, swing-vz +0.4, recover +0.4; forward +0.25.
+    Micro-swing penalty −0.2; anti-stall −0.8. Bridge velocity-primary aux zeroed.
+    """
+
+    # --- Zero bridge-primary aux (not in teacher-ready stack) ---
+    track_lin_vel_xy_exp = RewTerm(
+        func=track_lin_vel_xy_exp,
+        weight=0.0,
+        params={"command_name": "base_velocity", "std": math.sqrt(0.02)},
+    )
+    penalty_lin_vel_y = RewTerm(
+        func=mdp_rewards.penalty_lin_vel_y_l2,
+        weight=0.0,
+        params={"command_name": "base_velocity", "asset_cfg": SceneEntityCfg("robot")},
+    )
+    penalty_base_pitch_forward_linear = RewTerm(
+        func=mdp_rewards.penalty_base_pitch_forward_linear,
+        weight=0.0,
+        params={
+            "command_name": "base_velocity",
+            "asset_cfg": SceneEntityCfg("robot"),
+            "min_forward_speed_cmd": 0.12,
+        },
+    )
     penalty_low_forward_speed_when_commanded = RewTerm(
         func=mdp_rewards.penalty_low_forward_speed_when_commanded,
-        weight=-1.5,
+        weight=-0.8,
         params={
             "command_name": "base_velocity",
             "asset_cfg": SceneEntityCfg("robot"),
@@ -411,19 +435,49 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
             "min_actual_speed": 0.35,
         },
     )
-    reward_tracking_goal_vel = RewTerm(
-        func=mdp_rewards.reward_tracking_goal_vel,
-        weight=1.25,
-        params={"asset_cfg": SceneEntityCfg("robot"), "parkour_name": "base_parkour"},
+    reward_feet_air_time_on_flat = RewTerm(
+        func=mdp_rewards.reward_feet_air_time_on_flat,
+        weight=0.0,
+        params={
+            "command_name": "base_velocity",
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "parkour_name": "base_parkour",
+            "threshold": 0.05,
+        },
     )
-    reward_tracking_yaw = RewTerm(
-        func=mdp_rewards.reward_tracking_yaw,
-        weight=0.35,
-        params={"asset_cfg": SceneEntityCfg("robot"), "parkour_name": "base_parkour"},
+    reward_forward_speed_on_flat = RewTerm(
+        func=mdp_rewards.reward_forward_speed_on_flat,
+        weight=0.0,
+        params={
+            "command_name": "base_velocity",
+            "asset_cfg": SceneEntityCfg("robot"),
+            "parkour_name": "base_parkour",
+            "min_forward_speed_cmd": 0.12,
+            "target_speed": 0.55,
+            "max_bonus_speed": 0.85,
+        },
+    )
+    penalty_backward_along_command = RewTerm(
+        func=mdp_rewards.penalty_backward_along_command,
+        weight=0.0,
+        params={
+            "command_name": "base_velocity",
+            "asset_cfg": SceneEntityCfg("robot"),
+            "min_forward_speed_cmd": 0.12,
+        },
+    )
+    penalty_body_heading_error_l2 = RewTerm(
+        func=mdp_rewards.penalty_body_heading_error_l2,
+        weight=0.0,
+        params={
+            "command_name": "base_velocity",
+            "asset_cfg": SceneEntityCfg("robot"),
+            "min_forward_speed_cmd": 0.12,
+        },
     )
     reward_tracking_yaw_on_parkour = RewTerm(
         func=mdp_rewards.reward_tracking_yaw_on_parkour,
-        weight=0.2,
+        weight=0.0,
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "parkour_name": "base_parkour",
@@ -431,9 +485,103 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
             "min_forward_speed_cmd": 0.12,
         },
     )
+
+    # --- Teacher-ready stack ---
+    reward_forward_progress_along_command = RewTerm(
+        func=mdp_rewards.reward_forward_progress_along_command,
+        weight=0.25,
+        params={
+            "command_name": "base_velocity",
+            "asset_cfg": SceneEntityCfg("robot"),
+            "min_cmd_norm": 0.12,
+            "max_speed_scale": 1.75,
+        },
+    )
+    reward_obstacle_clearance = RewTerm(
+        func=mdp_rewards.reward_obstacle_clearance,
+        weight=1.8,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "parkour_name": "base_parkour",
+            "command_name": "base_velocity",
+            "min_goal_progress": 0.15,
+            "min_forward_speed": 0.25,
+            "min_forward_speed_cmd": 0.12,
+            "max_tilt_gravity_xy_sq": 0.02,
+        },
+    )
+    reward_foot_clearance = RewTerm(
+        func=mdp_rewards.reward_foot_clearance,
+        weight=2.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_Footpad"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "command_name": "base_velocity",
+            "contact_force_threshold": 0.1,
+            "min_clearance_m": 0.05,
+            "max_clearance_m": 0.20,
+            "min_forward_speed_cmd": 0.12,
+            "ground_offset_from_root_m": -1.0,
+            "parkour_name": "base_parkour",
+        },
+    )
+    reward_recover_from_stall = RewTerm(
+        func=mdp_rewards.RewardRecoverFromStall,
+        weight=0.4,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "parkour_name": "base_parkour",
+            "command_name": "base_velocity",
+            "min_forward_speed_cmd": 0.12,
+            "min_actual_speed": 0.15,
+            "stuck_contact_force": 15.0,
+            "min_other_feet_loaded": 2,
+            "max_tilt_gravity_xy_sq": 0.04,
+        },
+    )
+    penalty_swing_min_clearance = RewTerm(
+        func=mdp_rewards.penalty_swing_min_clearance,
+        weight=-0.2,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_Footpad"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "command_name": "base_velocity",
+            "contact_force_threshold": 0.1,
+            "min_clearance_m": 0.03,
+            "min_forward_speed_cmd": 0.12,
+            "ground_offset_from_root_m": -1.0,
+            "parkour_name": "base_parkour",
+        },
+    )
+    reward_swing_vertical_vel = RewTerm(
+        func=mdp_rewards.RewardSwingVerticalVel,
+        weight=0.4,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_Footpad"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "parkour_name": "base_parkour",
+            "command_name": "base_velocity",
+            "contact_force_threshold": 0.1,
+            "min_forward_speed_cmd": 0.12,
+            "max_vertical_vel": 0.5,
+            "ground_offset_from_root_m": -1.0,
+        },
+    )
+    reward_tracking_goal_vel = RewTerm(
+        func=mdp_rewards.reward_tracking_goal_vel,
+        weight=1.0,
+        params={"asset_cfg": SceneEntityCfg("robot"), "parkour_name": "base_parkour"},
+    )
+    reward_tracking_yaw = RewTerm(
+        func=mdp_rewards.reward_tracking_yaw,
+        weight=0.3,
+        params={"asset_cfg": SceneEntityCfg("robot"), "parkour_name": "base_parkour"},
+    )
     reward_collision = RewTerm(
         func=mdp_rewards.reward_collision,
-        weight=-2.0,
+        weight=-3.0,
         params={
             "sensor_cfg": SceneEntityCfg(
                 "contact_forces",
@@ -455,18 +603,12 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
         weight=-0.8,
         params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad")},
     )
-    reward_obstacle_clearance = RewTerm(
-        func=mdp_rewards.reward_obstacle_clearance,
-        weight=1.2,
+    reward_orientation = RewTerm(
+        func=mdp_rewards.reward_orientation,
+        weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot"),
-            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
             "parkour_name": "base_parkour",
-            "command_name": "base_velocity",
-            "min_goal_progress": 0.15,
-            "min_forward_speed": 0.25,
-            "min_forward_speed_cmd": 0.12,
-            "max_tilt_gravity_xy_sq": 0.02,
         },
     )
 

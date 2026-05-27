@@ -406,6 +406,230 @@ def reward_obstacle_clearance(
     return on_parkour * no_stumble * progressing * moving * landed
 
 
+def reward_foot_clearance(
+    env: ParkourManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    sensor_cfg: SceneEntityCfg,
+    command_name: str = "base_velocity",
+    contact_force_threshold: float = 0.1,
+    min_clearance_m: float = 0.05,
+    max_clearance_m: float = 0.20,
+    min_forward_speed_cmd: float = 0.12,
+    ground_offset_from_root_m: float = -1.0,
+    parkour_name: str | None = "base_parkour",
+) -> torch.Tensor:
+    """Per-foot swing lift: reward vertical clearance above nominal ground while foot is in swing.
+
+    Complements ``reward_obstacle_clearance`` (global lift-and-cross gate) with dense per-step
+    encouragement to lift feet early during swing, before they catch on small steps or hole lips.
+    """
+    asset: Articulation = env.scene[asset_cfg.name]
+    contact_sensor = env.scene.sensors.get(sensor_cfg.name)
+    if contact_sensor is None:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    foot_ids = sensor_cfg.body_ids
+    net_contact_forces = contact_sensor.data.net_forces_w_history[:, 0, foot_ids]
+    in_contact = torch.norm(net_contact_forces, dim=-1) > contact_force_threshold
+    in_swing = ~in_contact
+
+    foot_z = asset.data.body_pos_w[:, foot_ids, 2]
+    ground_z = asset.data.root_pos_w[:, 2].unsqueeze(1) + ground_offset_from_root_m
+    height_above_ground = foot_z - ground_z
+    clearance = torch.relu(height_above_ground - min_clearance_m)
+    clearance = torch.clamp(clearance, max=max_clearance_m)
+
+    per_foot = in_swing.float() * clearance
+    rew = torch.mean(per_foot, dim=1)
+
+    cmd = env.command_manager.get_command(command_name)
+    forward_cmd = cmd[:, 0] > min_forward_speed_cmd
+    rew = rew * forward_cmd.float()
+
+    if parkour_name is not None:
+        rew = rew * (1.0 - _parkour_flat_mask(env, parkour_name))
+    return rew
+
+
+def _foot_swing_height_above_ground(
+    env: ParkourManagerBasedRLEnv,
+    asset: Articulation,
+    contact_sensor,
+    foot_body_ids,
+    contact_force_threshold: float,
+    ground_offset_from_root_m: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return per-foot in_contact, in_swing, height above nominal ground (N_env, N_feet)."""
+    net_contact_forces = contact_sensor.data.net_forces_w_history[:, 0, foot_body_ids]
+    in_contact = torch.norm(net_contact_forces, dim=-1) > contact_force_threshold
+    in_swing = ~in_contact
+    foot_z = asset.data.body_pos_w[:, foot_body_ids, 2]
+    ground_z = asset.data.root_pos_w[:, 2].unsqueeze(1) + ground_offset_from_root_m
+    height_above_ground = foot_z - ground_z
+    return in_contact, in_swing, height_above_ground
+
+
+def penalty_swing_min_clearance(
+    env: ParkourManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    sensor_cfg: SceneEntityCfg,
+    command_name: str = "base_velocity",
+    contact_force_threshold: float = 0.1,
+    min_clearance_m: float = 0.03,
+    min_forward_speed_cmd: float = 0.12,
+    ground_offset_from_root_m: float = -1.0,
+    parkour_name: str | None = "base_parkour",
+) -> torch.Tensor:
+    """Penalty for micro-swings: foot in swing but vertical clearance below ``min_clearance_m``."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    contact_sensor = env.scene.sensors.get(sensor_cfg.name)
+    if contact_sensor is None:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    foot_ids = sensor_cfg.body_ids
+    _, in_swing, height_above_ground = _foot_swing_height_above_ground(
+        env, asset, contact_sensor, foot_ids, contact_force_threshold, ground_offset_from_root_m
+    )
+    micro_swing = in_swing.float() * (height_above_ground < min_clearance_m).float()
+    penalty = torch.mean(micro_swing, dim=1)
+
+    cmd = env.command_manager.get_command(command_name)
+    forward_cmd = cmd[:, 0] > min_forward_speed_cmd
+    penalty = penalty * forward_cmd.float()
+    if parkour_name is not None:
+        penalty = penalty * (1.0 - _parkour_flat_mask(env, parkour_name))
+    return penalty
+
+
+class RewardSwingVerticalVel(ManagerTermBase):
+    """Bonus when a foot enters swing with upward vertical velocity (lift early, not when stuck)."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        sensor_cfg: SceneEntityCfg = cfg.params["sensor_cfg"]
+        self.contact_sensor = env.scene.sensors.get(sensor_cfg.name)
+        self.sensor_cfg = sensor_cfg
+        self.asset: Articulation = env.scene[cfg.params["asset_cfg"].name]
+        self.command_name = cfg.params["command_name"]
+        self.parkour_name = cfg.params["parkour_name"]
+        self.contact_force_threshold = float(cfg.params.get("contact_force_threshold", 0.1))
+        self.min_forward_speed_cmd = float(cfg.params.get("min_forward_speed_cmd", 0.12))
+        self.max_vertical_vel = float(cfg.params.get("max_vertical_vel", 0.5))
+        self.ground_offset_from_root_m = float(cfg.params.get("ground_offset_from_root_m", -1.0))
+        n_feet = len(sensor_cfg.body_ids)
+        self._prev_in_contact = torch.zeros(env.num_envs, n_feet, device=self.device, dtype=torch.bool)
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        self._prev_in_contact[env_ids] = False
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        sensor_cfg: SceneEntityCfg,
+        parkour_name: str,
+        command_name: str = "base_velocity",
+        contact_force_threshold: float = 0.1,
+        min_forward_speed_cmd: float = 0.12,
+        max_vertical_vel: float = 0.5,
+        ground_offset_from_root_m: float = -1.0,
+    ) -> torch.Tensor:
+        if self.contact_sensor is None:
+            return torch.zeros(env.num_envs, device=env.device)
+
+        foot_ids = self.sensor_cfg.body_ids
+        in_contact, in_swing, _ = _foot_swing_height_above_ground(
+            env,
+            self.asset,
+            self.contact_sensor,
+            foot_ids,
+            contact_force_threshold,
+            ground_offset_from_root_m,
+        )
+        swing_start = in_swing & self._prev_in_contact
+        foot_vz = self.asset.data.body_lin_vel_w[:, foot_ids, 2]
+        vz_norm = torch.clamp(foot_vz / self.max_vertical_vel, min=0.0, max=1.0)
+        per_foot = swing_start.float() * vz_norm
+        n_start = torch.sum(swing_start.float(), dim=1).clamp(min=1.0)
+        rew = torch.sum(per_foot, dim=1) / n_start
+
+        cmd = env.command_manager.get_command(command_name)
+        forward_cmd = cmd[:, 0] > min_forward_speed_cmd
+        on_parkour = 1.0 - _parkour_flat_mask(env, parkour_name)
+        rew = rew * forward_cmd.float() * on_parkour
+
+        self._prev_in_contact = in_contact.clone()
+        return rew
+
+
+class RewardRecoverFromStall(ManagerTermBase):
+    """Dense bonus for lifting a loaded foot while near-stall on parkour (re-step from hole/lip)."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        sensor_cfg: SceneEntityCfg = cfg.params["sensor_cfg"]
+        self.contact_sensor = env.scene.sensors.get(sensor_cfg.name)
+        self.sensor_cfg = sensor_cfg
+        self.asset: Articulation = env.scene[cfg.params["asset_cfg"].name]
+        self.command_name = cfg.params["command_name"]
+        self.parkour_name = cfg.params["parkour_name"]
+        self.min_forward_speed_cmd = float(cfg.params.get("min_forward_speed_cmd", 0.12))
+        self.min_actual_speed = float(cfg.params.get("min_actual_speed", 0.15))
+        self.stuck_contact_force = float(cfg.params.get("stuck_contact_force", 15.0))
+        self.min_other_feet_loaded = int(cfg.params.get("min_other_feet_loaded", 2))
+        self.max_tilt_gravity_xy_sq = float(cfg.params.get("max_tilt_gravity_xy_sq", 0.04))
+        n_feet = len(sensor_cfg.body_ids)
+        self._prev_in_contact = torch.zeros(env.num_envs, n_feet, device=self.device, dtype=torch.bool)
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        self._prev_in_contact[env_ids] = False
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        sensor_cfg: SceneEntityCfg,
+        parkour_name: str,
+        command_name: str = "base_velocity",
+        min_forward_speed_cmd: float = 0.12,
+        min_actual_speed: float = 0.15,
+        stuck_contact_force: float = 15.0,
+        min_other_feet_loaded: int = 2,
+        max_tilt_gravity_xy_sq: float = 0.04,
+    ) -> torch.Tensor:
+        if self.contact_sensor is None:
+            return torch.zeros(env.num_envs, device=env.device)
+
+        foot_ids = self.sensor_cfg.body_ids
+        net_contact_forces = self.contact_sensor.data.net_forces_w_history[:, 0, foot_ids]
+        force_mag = torch.norm(net_contact_forces, dim=-1)
+        in_contact = force_mag > 0.1
+
+        cmd = env.command_manager.get_command(command_name)
+        forward_cmd = cmd[:, 0] > min_forward_speed_cmd
+        vx = self.asset.data.root_lin_vel_b[:, 0]
+        near_stall = (vx < min_actual_speed) & forward_cmd
+
+        stuck_foot = torch.any(force_mag > stuck_contact_force, dim=1)
+        tilt_sq = torch.sum(torch.square(self.asset.data.projected_gravity_b[:, :2]), dim=1)
+        upright = tilt_sq <= max_tilt_gravity_xy_sq
+
+        lifted_foot = (~in_contact) & self._prev_in_contact
+        other_loaded = torch.sum(in_contact.float(), dim=1) >= float(min_other_feet_loaded)
+        re_step = torch.any(lifted_foot, dim=1) & other_loaded
+
+        on_parkour = 1.0 - _parkour_flat_mask(env, parkour_name)
+        stall_context = on_parkour * near_stall.float() * stuck_foot.float() * upright.float()
+        rew = re_step.float() * stall_context
+
+        self._prev_in_contact = in_contact.clone()
+        return rew
+
+
 def reward_tracking_goal_vel(
     env: ParkourManagerBasedRLEnv, 
     parkour_name : str, 
