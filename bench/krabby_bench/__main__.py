@@ -7,7 +7,7 @@ import sys
 from typing import NoReturn
 from pathlib import Path
 
-from krabby_bench._config import CONFIG_PATH, EcrConfig, SmokeConfig, load_config
+from krabby_bench._config import CONFIG_PATH, EcrConfig, PID_PATH, SmokeConfig, load_config
 from krabby_bench.watchdog import run
 
 
@@ -37,6 +37,12 @@ def main() -> None:
 
     subparsers.add_parser("help", help="Show this help message and exit.")
 
+    subparsers.add_parser(
+        "force-recheck",
+        help="Signal the running watchdog to re-run the update + smoke test immediately, "
+             "regardless of whether the ECR digest has changed.",
+    )
+
     install_p = subparsers.add_parser(
         "install",
         help="Bootstrap the systemd service (must run as root). "
@@ -57,6 +63,24 @@ def main() -> None:
 
     if args.command == "help":
         parser.print_help()
+        return
+
+    if args.command == "force-recheck":
+        import signal as _signal
+        if not PID_PATH.exists():
+            print("error: krabby-bench is not running (no PID file at %s)" % PID_PATH, file=sys.stderr)
+            sys.exit(1)
+        try:
+            pid = int(PID_PATH.read_text().strip())
+        except ValueError:
+            print("error: PID file is corrupt", file=sys.stderr)
+            sys.exit(1)
+        try:
+            os.kill(pid, _signal.SIGUSR1)
+            print(f"Force recheck signal sent to krabby-bench (pid {pid})")
+        except ProcessLookupError:
+            print(f"error: no process with pid {pid} — service may have stopped", file=sys.stderr)
+            sys.exit(1)
         return
 
     if args.command == "install":

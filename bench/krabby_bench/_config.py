@@ -15,6 +15,7 @@ except ImportError:
 
 CONFIG_PATH = Path("/etc/krabby-bench/config.toml")
 STATE_PATH = Path("/var/lib/krabby-bench/state.json")
+PID_PATH = Path("/var/lib/krabby-bench/watchdog.pid")
 
 
 @dataclass

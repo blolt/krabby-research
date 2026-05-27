@@ -176,6 +176,16 @@ sudo systemctl daemon-reload && sudo systemctl restart krabby-bench
 
 Valid levels: `DEBUG`, `INFO` (default), `WARNING`, `ERROR`.
 
+## Force a recheck
+
+To make the watchdog re-run the update + smoke test immediately — regardless of whether the ECR digest has changed — run:
+
+```bash
+sudo krabby-bench force-recheck
+```
+
+This signals the running service to clear its last-tested digest. The recheck runs on the next poll cycle (within one `poll_interval`).
+
 ## Force a failure (test alert path)
 
 Unplug one Mega. Clear the state file to trigger a re-test on the next poll:

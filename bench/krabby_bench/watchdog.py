@@ -3,16 +3,25 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import shutil
 import subprocess
+import threading
 import time
 from datetime import datetime, timezone
 
 from krabby_bench._alert import send_alert, should_alert
-from krabby_bench._config import Config
+from krabby_bench._config import Config, PID_PATH
 from krabby_bench._ecr import get_digest
 from krabby_bench._smoke import run_smoke
 from krabby_bench._state import load_state, save_state
+
+_force_recheck = threading.Event()
+
+
+def _handle_sigusr1(_signum, _frame):
+    log.info("Force recheck requested (SIGUSR1) — will clear digest on next poll")
+    _force_recheck.set()
 
 log = logging.getLogger(__name__)
 
@@ -101,6 +110,11 @@ def _load_credentials(config: Config) -> tuple | None:
 def run(config: Config, log_level: str = "INFO") -> None:
     logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s %(levelname)s %(message)s")
     log.info("krabby-bench watchdog starting (interval=%ds)", config.ecr.poll_interval)
+
+    PID_PATH.write_text(str(os.getpid()))
+    signal.signal(signal.SIGUSR1, _handle_sigusr1)
+    log.debug("PID %d written to %s; SIGUSR1 handler installed", os.getpid(), PID_PATH)
+
     state = load_state(config.state_path)
     cred_warning_logged = False
     last_cred_refresh = 0.0  # forces a credential fetch on the first iteration
@@ -115,6 +129,12 @@ def run(config: Config, log_level: str = "INFO") -> None:
                 log.warning("SSM credentials unavailable — alert delivery disabled")
                 cred_warning_logged = True
             last_cred_refresh = now
+
+        if _force_recheck.is_set():
+            log.info("Force recheck: clearing last tested digest — next poll will re-run update + smoke")
+            state.pop("last_tested_digest", None)
+            save_state(config.state_path, state)
+            _force_recheck.clear()
 
         state = poll_once(config, state)
         time.sleep(config.ecr.poll_interval)
