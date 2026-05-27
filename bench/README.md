@@ -1,6 +1,6 @@
 # krabby-bench
 
-Bench watchdog for the Krabby locomotion stack. Polls ECR for new `mainline-latest` digests, runs a firmware smoke test when one appears, and alerts on failure.
+Watches ECR for new locomotion images, updates the stack when one appears, runs a firmware smoke test, and alerts on failure.
 
 ## Install
 
@@ -8,26 +8,40 @@ Bench watchdog for the Krabby locomotion stack. Polls ECR for new `mainline-late
 sudo pip3 install krabby-bench
 ```
 
-Then bootstrap the systemd service as root.
+Then run the install command as root to configure and start the systemd service:
 
-### SSM mode (recommended for fleet use)
+```bash
+sudo krabby-bench install [options]
+```
 
-Credentials live in AWS SSM Parameter Store and are fetched at runtime. Nothing sensitive is stored in plaintext on the device.
+### Options
+
+| Flag | Default | Description |
+|---|---|---|
+| `--ssm-prefix` | `/krabby/bench` | SSM parameter path prefix. When set, credentials are loaded from AWS SSM. |
+| `--ecr-tag` | `mainline-latest` | ECR image tag to watch. |
+| `--firmware-channel` | `release/0.2.9` | Firmware channel for smoke tests. |
+| `--error-alert-type` | `both` | Alert delivery type: `email`, `github`, or `both`. |
+| `--github-repo` | _(none)_ | `owner/repo` to open issues against (legacy mode only). |
+
+#### SSM mode (recommended for fleet use)
+
+Pass IAM access keys at install time; the service fetches credentials from SSM at runtime and re-reads them automatically on each refresh interval.
 
 ```bash
 sudo \
   BENCH_AWS_KEY_ID=AKIA... \
   BENCH_AWS_SECRET_KEY=... \
   krabby-bench install \
-    --ssm-prefix /krabby/bench \
+    [--ssm-prefix /krabby/bench] \
     [--ecr-tag mainline-latest] \
     [--firmware-channel release/0.2.9] \
-    [--mode both]
+    [--error-alert-type both]
 ```
 
 `install` writes `/etc/krabby-bench/config.toml`, then enables and starts the service.
 
-#### SSM parameter layout
+##### SSM parameter layout
 
 Create these in AWS SSM Parameter Store before or after installing. The service starts without them and logs a single warning; it picks them up automatically within one `credentials_refresh_interval` (default: 3600 s) once they exist.
 
@@ -42,7 +56,7 @@ Create these in AWS SSM Parameter Store before or after installing. The service 
 | `/krabby/bench/github-repo` | String | `owner/repo` to open issues against |
 | `/krabby/bench/github-token` | SecureString | Fine-grained PAT with Issues write scope |
 
-#### IAM policy
+##### IAM policy
 
 The IAM user whose access key is passed to `install` needs only:
 
@@ -54,7 +68,7 @@ The IAM user whose access key is passed to `install` needs only:
 }
 ```
 
-#### Credential rotation
+##### Credential rotation
 
 Update values in SSM. Devices pick up the new credentials within one poll interval — no SSH required.
 
@@ -65,7 +79,7 @@ sudo BENCH_AWS_KEY_ID=AKIANEW... BENCH_AWS_SECRET_KEY=... \
   krabby-bench install --ssm-prefix /krabby/bench
 ```
 
-### Legacy mode
+#### Legacy mode
 
 Pass credentials via environment variables. Written to `/etc/krabby-bench/smtp.env` (mode 600) and loaded by the systemd unit.
 
@@ -79,10 +93,10 @@ sudo \
   BENCH_SMTP_TO=krabby-errors@example.com \
   BENCH_GITHUB_REPO=owner/krabby-research \
   BENCH_GITHUB_TOKEN=ghp_... \
-  krabby-bench install [--ecr-tag mainline-latest] [--firmware-channel release/0.2.9] [--mode both]
+  krabby-bench install [--ecr-tag mainline-latest] [--firmware-channel release/0.2.9] [--error-alert-type both]
 ```
 
-#### Legacy environment variables
+##### Legacy environment variables
 
 | Variable | Required for | Description |
 |---|---|---|
@@ -134,6 +148,8 @@ For each new digest the watchdog:
 5. Fetches `https://krabby-firmware-public.s3.amazonaws.com/<channel>/latest.json` and checks the version matches the S3 manifest.
 
 ## Monitor
+
+Monitoring `krabby-bench` can be done with:
 
 ```bash
 journalctl -fu krabby-bench

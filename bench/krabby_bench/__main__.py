@@ -40,12 +40,13 @@ def main() -> None:
     )
     install_p.add_argument("--ecr-tag", default=EcrConfig.tag, metavar="TAG")
     install_p.add_argument("--firmware-channel", default=SmokeConfig.firmware_channel, metavar="CHANNEL")
-    install_p.add_argument("--mode", default="both", choices=["email", "github", "both"],
-                           help="Alert mode (default: both)")
+    install_p.add_argument("--error-alert-type", default="both", choices=["email", "github", "both"],
+                           dest="error_alert_type",
+                           help="Alert delivery type (default: both)")
     install_p.add_argument("--github-repo", default=os.environ.get("BENCH_GITHUB_REPO", ""),
                            metavar="OWNER/REPO")
-    install_p.add_argument("--ssm-prefix", default="", metavar="PREFIX",
-                           help="SSM parameter path prefix, e.g. /krabby/bench")
+    install_p.add_argument("--ssm-prefix", default="/krabby/bench", metavar="PREFIX",
+                           help="SSM parameter path prefix (default: /krabby/bench)")
 
     args = parser.parse_args()
 
@@ -58,7 +59,7 @@ def main() -> None:
         install(
             ecr_tag=args.ecr_tag,
             firmware_channel=args.firmware_channel,
-            mode=args.mode,
+            mode=args.error_alert_type,
             github_repo=args.github_repo,
             ssm_prefix=args.ssm_prefix,
         )

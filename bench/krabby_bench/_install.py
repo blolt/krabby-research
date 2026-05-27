@@ -69,11 +69,18 @@ def install(
     firmware_channel: str = SmokeConfig.firmware_channel,
     mode: str = "both",
     github_repo: str = "",
-    ssm_prefix: str = "",
+    ssm_prefix: str = "/krabby/bench",
 ) -> None:
     if os.geteuid() != 0:
         print("error: krabby-bench install must be run as root (sudo)", file=sys.stderr)
         sys.exit(1)
+
+    if not shutil.which("krabby"):
+        print(
+            "warning: 'krabby' not found on PATH — the watchdog will fail at runtime.\n"
+            "  Run: pip install krabby-launcher && krabby --install",
+            file=sys.stderr,
+        )
 
     bin_path = shutil.which("krabby-bench") or "/home/krabby/.local/bin/krabby-bench"
 
