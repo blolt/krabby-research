@@ -151,7 +151,7 @@ Each stage resumes the previous bundled checkpoint. Same policy network througho
 **What changes**
 
 - **MDP / terrain:** 50% flat / 50% parkour; difficulty **0.20–0.70** with curriculum **on**; moderate steps/gaps/hurdles; moderate push/mass/COM DR.
-- **Rewards:** `CrabHexStage2BPhase2RewardsCfg` — lift-first stack; bridge velocity aux **zeroed**. Full weights + sweet-spot gates: [§4.2b](#42b-2b2-teacher-sweet-spot).
+- **Rewards:** `CrabHexStage2BPhase2RewardsCfg` — lift-first stack; bridge velocity aux **zeroed**. Additional lift delta: `reward_swing_vertical_vel` **0.8**, `penalty_swing_min_clearance` **−0.4**, `reward_recover_from_stall` **0.2**. Full weights + sweet-spot gates: [§4.2b](#42b-2b2-teacher-sweet-spot).
 - **Actions / PPO:** 0.24 / ±1; up to **10k** iters, LR **1e-4**, save every 100; **stop at sweet-spot** (bundled @ **6300**); resume 2b1 `6198` only.
 
 **What stays the same:** action scale; same teacher task; same policy network.
@@ -160,7 +160,7 @@ Each stage resumes the previous bundled checkpoint. Same policy network througho
 
 **What good play looks like:** steady forward walk; **lifts legs from holes**; some stumble OK; do not use `6400+` from the same log.
 
-**Bundled checkpoint:** [Appendix F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) `runs/2026-05-26_19-18-15/model_6300.pt`
+**Bundled checkpoint:** [Appendix F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) `runs/2026-05-26_21-46-37/model_6300.pt`
 
 → **2b2 → 3:** same teacher MDP for rollouts; student learns from depth + proprio ([§3.1](#31-teacher-vs-student)).
 
@@ -476,9 +476,9 @@ Here `max_iterations` means “run this many **more** PPO iterations starting fr
 |------|--------|
 | `reward_foot_clearance` | **+2.0** |
 | `reward_obstacle_clearance` | **+1.8** |
-| `reward_swing_vertical_vel` | **+0.4** |
-| `reward_recover_from_stall` | **+0.4** |
-| `penalty_swing_min_clearance` | **−0.2** |
+| `reward_swing_vertical_vel` | **+0.8** |
+| `reward_recover_from_stall` | **+0.2** |
+| `penalty_swing_min_clearance` | **−0.4** |
 | `reward_forward_progress_along_command` | **+0.25** |
 | `reward_tracking_goal_vel` | **+1.0** |
 | `reward_tracking_yaw` | **+0.3** |
@@ -507,7 +507,7 @@ Bridge velocity-primary aux (`track_lin_vel_xy_exp`, flat speed, `reward_trackin
 | `Metrics/base_parkour/current_goal_idx` | **> 0.7–0.9** |
 | Play confirms lift at holes/steps | **Required** |
 
-**Bundled teacher:** `runs/2026-05-26_19-18-15/model_6300.pt` — provenance [Appendix F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26).
+**Bundled teacher:** `runs/2026-05-26_21-46-37/model_6300.pt` — provenance [Appendix F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26).
 
 ### 4.3 Play a bundled checkpoint
 
@@ -527,7 +527,7 @@ USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 | 1 flat | `play_crab_hex_flat_walk_baseline.sh` | `2026-05-23_10-15-21/model_6000.pt` |
 | 2a bridge | `play_crab_hex_bridge_baseline.sh` | `2026-05-25_22-26-06/model_6099.pt` |
 | 2b1 | `play_crab_hex_2b1_baseline.sh` | `2026-05-25_23-57-58/model_6198.pt` |
-| 2b2 | `play_crab_hex_2b2_baseline.sh` | `2026-05-26_19-18-15/model_6300.pt` |
+| 2b2 | `play_crab_hex_2b2_baseline.sh` | `2026-05-26_21-46-37/model_6300.pt` |
 
 Flat walk uses `Isaac-Crab-Hex-Flat-Walk-Play-v0`; teacher stages use `Isaac-Crab-Hex-Teacher-Play-v0`. For log-folder checkpoints, set `KRABBY_HEX_TEACHER_MODE` to match training and use `play.py`:
 
@@ -551,7 +551,7 @@ Uses [§3.1](#31-teacher-vs-student) student MDP. **Prerequisite:** [Appendix F]
 ```yaml
 distill:
   enabled: true
-  teacher_checkpoint: runs/2026-05-26_19-18-15/model_6300.pt
+  teacher_checkpoint: runs/2026-05-26_21-46-37/model_6300.pt
   loss_action_kl_weight: 0.5      # match teacher action distribution
   loss_value_mse_weight: 0.2      # optional value match
   loss_policy_mse_weight: 1.0     # keep RL losses
@@ -562,7 +562,7 @@ distill:
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 export KRABBY_HEX_TEACHER_MODE=2b2
-TEACHER_CKPT="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs/2026-05-26_19-18-15/model_6300.pt"
+TEACHER_CKPT="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs/2026-05-26_21-46-37/model_6300.pt"
 
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p "$KRABBY_ROOT/krabby-research/parkour/scripts/rsl_rl/train.py" \
@@ -650,7 +650,7 @@ Baseline **provenance and metrics** only — stage differences: [§2](#2-how-sta
 | [C](#appendix-c--stage-1-flat-walk--2026-05-23-baseline) | 1 flat (current) | `2026-05-23_10-15-21` | `6000` |
 | [D](#appendix-d--stage-2a-teacher-bridge--2026-05-25-baseline) | 2a bridge | `2026-05-25_22-26-06` | `6099` |
 | [E](#appendix-e--stage-2b1-hybrid-walk--2026-05-25-baseline) | 2b1 | `2026-05-25_23-57-58` | `6198` |
-| [F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) | 2b2 teacher | `2026-05-26_19-18-15` | `6300` |
+| [F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) | 2b2 teacher | `2026-05-26_21-46-37` | `6300` |
 | — | [4 `full` (TODO)](#footnote--curriculum-staging-and-future-full-teacher) | — | — |
 
 ### Appendix A — General lessons — first successful run
@@ -753,11 +753,11 @@ USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 
 ### Appendix F — Stage 2b2 teacher-ready baseline — 2026-05-26
 
-**Log:** `logs/rsl_rl/crab_hex_teacher/2026-05-26_19-18-15/`. **Artifacts:** `runs/2026-05-26_19-18-15/model_6300.pt`. Resume 2b1 `6198` → **~102** iters; **stopped at `6300`** (do not use `6400+` from this log).
+**Log:** `logs/rsl_rl/crab_hex_teacher/2026-05-26_21-46-37/`. **Artifacts:** `runs/2026-05-26_21-46-37/model_6300.pt`. Resume 2b1 `6198` → **~106** iters; selected **`6300`** after play (`6400/6500` kept for reference).
 
-**Why `6300`:** best play lift + highest clearance in log; passes sweet-spot gates except `fwd_progress` (~0.113). Full reward stack, gates, and training protocol: [§4.2b](#42b-2b2-teacher-sweet-spot).
+**Why `6300`:** best play after the additional lift-focused 2b2 delta (`reward_swing_vertical_vel` **0.8**, `penalty_swing_min_clearance` **−0.4**, `reward_recover_from_stall` **0.2**); visibly lifts out of holes better while preserving usable forward motion. Full reward stack, gates, and training protocol: [§4.2b](#42b-2b2-teacher-sweet-spot).
 
-**Metrics @ `6300`:** `crab_failure` ~**15.6%**; `ep_len` ~**816**; `obstacle_clearance` ~**0.266**; `foot_clearance` ~**0.174**; `goal_idx` ~**0.95**.
+**Metrics @ `6300`:** `crab_failure` ~**23.6%**; `ep_len` ~**731**; `obstacle_clearance` ~**0.189**; `foot_clearance` ~**0.086**; `goal_idx` ~**0.94**; `fwd_progress` ~**0.059**.
 
 **Play @6300:** steady forward walk; lifts legs from holes; some stumble. **Use for student distillation** ([§4.4](#44-student-distillation)).
 
@@ -768,10 +768,10 @@ export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
 RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
-"$RUNS_DIR/play_crab_hex_2b2_baseline.sh" "$USD" "$RUNS_DIR/2026-05-26_19-18-15/model_6300.pt"
+"$RUNS_DIR/play_crab_hex_2b2_baseline.sh" "$USD" "$RUNS_DIR/2026-05-26_21-46-37/model_6300.pt"
 ```
 
-*Superseded: `runs/2026-05-26_11-30-18/` (2b2-v2 rewards, no foot/swing-vz terms) — reference only, can be deleted.*
+*Superseded: `runs/2026-05-26_11-30-18/` (2b2-v2 rewards, no foot/swing-vz terms) — reference only.*
 
 ---
 

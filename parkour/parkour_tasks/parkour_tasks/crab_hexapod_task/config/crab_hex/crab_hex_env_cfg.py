@@ -84,7 +84,7 @@ CRAB_HEX_VIEWER = ViewerCfg(
 #   Rewards: ``CrabHexStage2BPhase2RewardsCfg`` — clearance **+1.8**, foot **+2.0**, swing-vz **+0.4**;
 #            recover **+0.4**, micro-swing **−0.2**, forward **+0.25**, low-speed **−0.8**.
 #   Stop at sweet-spot checkpoint (play + metric gates); bundle as 2b2-teacher before student train.
-#   Bundled teacher: Appendix F ``2026-05-26_19-18-15/model_6300.pt`` (supersedes ``2026-05-26_11-30-18``).
+#   Bundled teacher: Appendix F ``2026-05-26_21-46-37/model_6300.pt`` (supersedes ``2026-05-26_11-30-18``).
 #
 # --- full (TODO stage 4) — “Go2-style parkour teacher” ---
 #   Intent: Full extreme-parkour teacher MDP (goal velocity primary).

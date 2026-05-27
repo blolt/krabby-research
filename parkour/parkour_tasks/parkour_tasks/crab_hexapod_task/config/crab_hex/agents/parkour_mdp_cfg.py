@@ -528,7 +528,7 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
     )
     reward_recover_from_stall = RewTerm(
         func=mdp_rewards.RewardRecoverFromStall,
-        weight=0.4,
+        weight=0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
@@ -543,7 +543,7 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
     )
     penalty_swing_min_clearance = RewTerm(
         func=mdp_rewards.penalty_swing_min_clearance,
-        weight=-0.2,
+        weight=-0.4,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_Footpad"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
@@ -557,7 +557,7 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
     )
     reward_swing_vertical_vel = RewTerm(
         func=mdp_rewards.RewardSwingVerticalVel,
-        weight=0.4,
+        weight=0.8,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=".*_Footpad"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),

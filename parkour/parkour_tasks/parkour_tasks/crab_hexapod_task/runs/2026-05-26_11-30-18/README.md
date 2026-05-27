@@ -1,6 +1,6 @@
 # Crab Hex Teacher 2b2 Baseline: 2026-05-26_11-30-18 (superseded)
 
-**Superseded by** [2026-05-26_19-18-15](../2026-05-26_19-18-15/) — use that bundled `model_6300.pt` for play, distillation, and new work. This folder is kept for reference only.
+**Superseded by** [2026-05-26_21-46-37](../2026-05-26_21-46-37/) — use that bundled `model_6300.pt` for play, distillation, and new work. This folder is kept for reference only.
 
 Stage 2b phase 2 (2b2-v2 rewards): Appendix E `model_6198.pt` → **~102** PPO iters (`KRABBY_HEX_TEACHER_MODE=2b2`) → **`model_6300.pt`**.
 
