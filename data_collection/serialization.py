@@ -172,29 +172,15 @@ def observation_to_writes(
         entry = rgbd[cid]
         frame = f"camera_{cid}"
         rgb_topic = catalog_camera_topic(cid, "rgb")
+        depth_topic = catalog_camera_topic(cid, "depth")
         if entry.rgb.ndim == 2:
-            out.append(
-                (
-                    rgb_topic,
-                    IMAGE_MSGTYPE,
-                    serialize_image_mono8(ts, t, frame, entry.rgb),
-                )
-            )
+            rgb_bytes = serialize_image_mono8(ts, t, frame, entry.rgb)
         else:
-            out.append(
-                (
-                    rgb_topic,
-                    IMAGE_MSGTYPE,
-                    serialize_image_rgb8(ts, t, frame, entry.rgb),
-                )
-            )
-        out.append(
-            (
-                catalog_camera_topic(cid, "depth"),
-                IMAGE_MSGTYPE,
-                serialize_image_depth_32fc1(ts, t, frame, entry.depth),
-            )
-        )
+            rgb_bytes = serialize_image_rgb8(ts, t, frame, entry.rgb)
+        out.append((rgb_topic, IMAGE_MSGTYPE, rgb_bytes))
+
+        depth_bytes = serialize_image_depth_32fc1(ts, t, frame, entry.depth)
+        out.append((depth_topic, IMAGE_MSGTYPE, depth_bytes))
 
     if topics.joints_state:
         out.append(

@@ -58,6 +58,21 @@ def test_rgbd_catalog_writes_rgb_and_depth_topics() -> None:
     }
 
 
+def test_catalog_topic_names_used_for_all_catalog_ids() -> None:
+    ts = _ts()
+    topics = TopicEnable(joints_state=False, joints_command=False, imu=False)
+    rgb = np.zeros((2, 3, 3), dtype=np.uint8)
+    dep = np.ones((2, 3), dtype=np.float32)
+    obs = create_dummy_hw_obs(camera_height=2, camera_width=3)
+    obs.rgbd_by_catalog_id = {"extra_rgbd": RgbdCatalogObservation(rgb=rgb, depth=dep)}
+    rows = observation_to_writes(ts, obs, topics, ())
+    topics_found = {r[0] for r in rows}
+    assert topics_found == {
+        catalog_camera_topic("extra_rgbd", "rgb"),
+        catalog_camera_topic("extra_rgbd", "depth"),
+    }
+
+
 def test_catalog_mono_rgb_uses_mono8() -> None:
     ts = _ts()
     topics = TopicEnable(joints_state=False, joints_command=False, imu=False)
