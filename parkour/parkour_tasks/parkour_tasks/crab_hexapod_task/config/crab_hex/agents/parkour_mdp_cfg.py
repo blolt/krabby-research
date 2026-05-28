@@ -14,14 +14,17 @@ from parkour_isaaclab.envs.mdp import terminations as parkour_terminations
 from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_mdp_terminations import (
     terminate_crab_hex_failure,
 )
-from parkour_tasks.crab_hexapod_task.mdp.observations import CrabHexParkourObservations
+from parkour_isaaclab.envs.mdp import observations as mdp_observations
+from parkour_tasks.crab_hexapod_task.mdp.observations import (
+    CrabHexObservationDeltaYawOk,
+    CrabHexParkourObservations,
+)
 from parkour_tasks.crab_hexapod_task.mdp.parkour_actions import CrabHexDelayedJointPositionActionCfg
 from parkour_tasks.extreme_parkour_task.config.go2.parkour_mdp_cfg import (
     ActionsCfg,
     CommandsCfg,
     EventCfg,
     ParkourEventsCfg,
-    StudentObservationsCfg,
 )
 
 # Leg order must match between tibia joints and footpads for stance-gated knee shaping.
@@ -78,7 +81,18 @@ class CrabHexTeacherObservationsCfg:
 
 
 @configclass
-class CrabHexStudentObservationsCfg(StudentObservationsCfg):
+class CrabHexStudentActionsCfg(CrabHexFlatWalkActionsCfg):
+    """Student distillation: same 0.24 / ±1 scale as 2b2 teacher."""
+
+    def __post_init__(self):
+        self.joint_pos.use_delay = True
+        self.joint_pos.history_length = 8
+
+
+@configclass
+class CrabHexStudentObservationsCfg:
+    """Crab hex student obs (depth + proprio); not inherited from Go2 ``StudentObservationsCfg``."""
+
     @configclass
     class PolicyCfg(ObsGroup):
         extreme_parkour_observations = ObsTerm(
@@ -92,7 +106,31 @@ class CrabHexStudentObservationsCfg(StudentObservationsCfg):
             clip=(-100, 100),
         )
 
+    @configclass
+    class DepthCameraPolicyCfg(ObsGroup):
+        depth_cam = ObsTerm(
+            func=mdp_observations.image_features,
+            params={
+                "sensor_cfg": SceneEntityCfg("depth_camera"),
+                "resize": (58, 87),
+                "buffer_len": 2,
+                "debug_vis": False,
+            },
+        )
+
+    @configclass
+    class DeltaYawOkPolicyCfg(ObsGroup):
+        delta_yaw_ok = ObsTerm(
+            func=CrabHexObservationDeltaYawOk,
+            params={
+                "parkour_name": "base_parkour",
+                "threshold": 0.6,
+            },
+        )
+
     policy: PolicyCfg = PolicyCfg()
+    depth_camera: DepthCameraPolicyCfg = DepthCameraPolicyCfg()
+    delta_yaw_ok: DeltaYawOkPolicyCfg = DeltaYawOkPolicyCfg()
 
 
 @configclass

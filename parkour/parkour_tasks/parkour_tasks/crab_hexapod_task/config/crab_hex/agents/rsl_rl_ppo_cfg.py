@@ -15,8 +15,8 @@ from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.crab_hex_rl_cfg impo
 from parkour_tasks.extreme_parkour_task.config.go2.agents.parkour_rl_cfg import (
     ParkourRslRlPpoAlgorithmCfg,
 )
-from parkour_tasks.extreme_parkour_task.config.go2.agents.rsl_student_ppo_cfg import (
-    UnitreeGo2ParkourStudentPPORunnerCfg,
+from parkour_tasks.extreme_parkour_task.config.go2.agents.parkour_rl_cfg import (
+    ParkourRslRlDistillationAlgorithmCfg,
 )
 from parkour_tasks.extreme_parkour_task.config.go2.agents.rsl_teacher_ppo_cfg import (
     UnitreeGo2ParkourTeacherPPORunnerCfg,
@@ -110,7 +110,10 @@ class CrabHexFlatWalkPPORunnerCfg(CrabHexTeacherPPORunnerCfg):
 
 
 @configclass
-class CrabHexStudentPPORunnerCfg(CrabHexParkourRslRlOnPolicyRunnerCfg, UnitreeGo2ParkourStudentPPORunnerCfg):
+class CrabHexStudentPPORunnerCfg(CrabHexParkourRslRlOnPolicyRunnerCfg):
+    """Depth distillation runner for ``Isaac-Crab-Hex-Student-v0`` (not Go2 student cfg)."""
+
+    max_iterations = 50000
     experiment_name = "crab_hex_student"
     policy = CrabHexParkourRslRlPpoActorCriticCfg(
         init_noise_std=0.65,
@@ -131,4 +134,18 @@ class CrabHexStudentPPORunnerCfg(CrabHexParkourRslRlOnPolicyRunnerCfg, UnitreeGo
         hidden_dims=512,
         learning_rate=1e-3,
         num_steps_per_env=24 * 5,
+    )
+    algorithm = ParkourRslRlDistillationAlgorithmCfg(
+        value_loss_coef=1.0,
+        use_clipped_value_loss=True,
+        clip_param=0.2,
+        entropy_coef=0.01,
+        num_learning_epochs=5,
+        num_mini_batches=4,
+        learning_rate=2.0e-4,
+        schedule="adaptive",
+        gamma=0.99,
+        lam=0.95,
+        desired_kl=0.01,
+        max_grad_norm=1.0,
     )

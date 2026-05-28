@@ -11,8 +11,6 @@ from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg impo
     CrabHexFlatWalkRewardsCfg,
     CrabHexFlatWalkTerminationsCfg,
     CrabHexRewardsCfg,
-    CrabHexStudentObservationsCfg,
-    CrabHexStudentRewardsCfg,
     CrabHexTeacherObservationsCfg,
     CrabHexStage2BPhase1RewardsCfg,
     CrabHexStage2BPhase2RewardsCfg,
@@ -21,12 +19,9 @@ from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg impo
     EventCfg,
     ParkourEventsCfg,
 )
-from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_scene_cfg import (
-    CrabHexStudentSceneCfg,
-    CrabHexTeacherSceneCfg,
-)
-from parkour_tasks.extreme_parkour_task.config.go2.parkour_student_cfg import (
-    UnitreeGo2StudentParkourEnvCfg,
+from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_scene_cfg import CrabHexTeacherSceneCfg
+from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_student_cfg import (
+    CrabHexStudentParkourEnvCfg,
 )
 from parkour_tasks.extreme_parkour_task.config.go2.parkour_teacher_cfg import (
     UnitreeGo2TeacherParkourEnvCfg,
@@ -170,6 +165,28 @@ def _apply_crab_hex_stage_2b_phase2_terrain(cfg) -> None:
                 sub_terrain.proportion = share
             sub_terrain.noise_range = (0.02, 0.02)
         _apply_crab_hex_stage_2b_phase2_parkour_geometry(tg)
+
+
+def _apply_crab_hex_student_2b2_teacher_mdp(cfg) -> None:
+    """Student distillation MDP aligned with ``KRABBY_HEX_TEACHER_MODE=2b2`` teacher train.
+
+    Same terrain mix, difficulty, geometry, commands, and bridge-lite DR as 2b2 teacher.
+    Keeps student action delay (``use_delay=True``) — not overwritten by bridge-lite actions.
+    """
+    _apply_crab_hex_stage_2b_phase2_terrain(cfg)
+    cfg.commands.base_velocity.ranges.heading = (0.0, 0.0)
+    cfg.commands.base_velocity.heading_control_stiffness = 1.5
+    cfg.commands.base_velocity.ranges.lin_vel_x = (0.45, 0.85)
+    cfg.events.push_by_setting_velocity = None
+    cfg.events.randomize_rigid_body_mass = None
+    cfg.events.randomize_rigid_body_com = None
+    cfg.terminations.crab_failure.params["contact_force_threshold"] = 800.0
+    tg = getattr(cfg.scene.terrain, "terrain_generator", None) if cfg.scene.terrain else None
+    if tg is not None:
+        tg.horizontal_scale = 0.08
+        for sub_terrain in tg.sub_terrains.values():
+            sub_terrain.horizontal_scale = 0.08
+            sub_terrain.use_simplified = False
 
 
 def _apply_crab_hex_bridge_actions_and_events(cfg, *, action_scale: float = 0.24) -> None:
@@ -359,22 +376,42 @@ class CrabHexTeacherEnvCfgPLAY(CrabHexTeacherEnvCfg):
 
 
 @configclass
-class CrabHexStudentEnvCfg(UnitreeGo2StudentParkourEnvCfg):
-    scene: CrabHexStudentSceneCfg = CrabHexStudentSceneCfg(num_envs=192, env_spacing=1.0)
-    observations: CrabHexStudentObservationsCfg = CrabHexStudentObservationsCfg()
-    actions: ActionsCfg = ActionsCfg()
-    commands: CommandsCfg = CommandsCfg()
-    rewards: CrabHexStudentRewardsCfg = CrabHexStudentRewardsCfg()
-    terminations: CrabHexTerminationsCfg = CrabHexTerminationsCfg()
-    parkours: ParkourEventsCfg = ParkourEventsCfg()
-    events: EventCfg = EventCfg()
+class CrabHexStudentEnvCfg(CrabHexStudentParkourEnvCfg):
+    """Gym entry ``Isaac-Crab-Hex-Student-v0``: depth student MDP matched to 2b2 teacher terrain."""
 
     def __post_init__(self):
         super().__post_init__()
+        _apply_crab_hex_student_2b2_teacher_mdp(self)
         base_body_cfg = SceneEntityCfg("robot", body_names="body")
         if self.events.base_external_force_torque is not None:
             self.events.base_external_force_torque.params["asset_cfg"] = base_body_cfg
-        if self.events.randomize_rigid_body_mass is not None:
-            self.events.randomize_rigid_body_mass.params["asset_cfg"] = base_body_cfg
-        if self.events.randomize_rigid_body_com is not None:
-            self.events.randomize_rigid_body_com.params["asset_cfg"] = base_body_cfg
+
+
+@configclass
+class CrabHexStudentEnvCfgPLAY(CrabHexStudentEnvCfg):
+    """Visualization: ``CRAB_HEX_VIEWER`` follow-cam (same as ``CrabHexTeacherEnvCfgPLAY``).
+
+    Set ``KRABBY_HEX_PLAY_FLAT=1`` for 100% flat tiles (student MDP / obs unchanged).
+    """
+
+    viewer = CRAB_HEX_VIEWER
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.episode_length_s = 60.0
+        self.parkours.base_parkour.debug_vis = True
+        self.commands.base_velocity.debug_vis = True
+        if self.scene.terrain is not None:
+            self.scene.terrain.max_init_terrain_level = None
+        self.events.push_by_setting_velocity = None
+        if os.environ.get("KRABBY_HEX_PLAY_FLAT", "").strip().lower() in ("1", "true", "yes"):
+            self.parkours.base_parkour.freeze_terrain_levels = True
+            tg = getattr(self.scene.terrain, "terrain_generator", None) if self.scene.terrain else None
+            if tg is not None:
+                tg.curriculum = False
+                tg.difficulty_range = (0.1, 0.25)
+                for key, sub_terrain in tg.sub_terrains.items():
+                    if key == "parkour_flat":
+                        sub_terrain.proportion = 1.0
+                    else:
+                        sub_terrain.proportion = 0.0
