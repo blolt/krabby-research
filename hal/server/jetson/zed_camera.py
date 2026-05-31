@@ -136,19 +136,10 @@ class ZedCamera(RgbDepthCamera):
 
             if self.serial_number is not None:
                 sn = int(self.serial_number)
-                set_serial = getattr(init_params, "set_from_serial_number", None)
-                if callable(set_serial):
-                    rc = set_serial(sn)
-                    if rc is not None and rc != self._zed_module.ERROR_CODE.SUCCESS:
-                        raise RuntimeError(f"ZED set_from_serial_number({sn}) failed: {rc}")
-                elif hasattr(init_params, "serial_number"):
-                    init_params.serial_number = sn
-                elif hasattr(init_params, "camera_serial_number"):
-                    init_params.camera_serial_number = sn
-                else:
+                rc = init_params.set_from_serial_number(sn)
+                if rc is not None and rc != self._zed_module.ERROR_CODE.SUCCESS:
                     raise RuntimeError(
-                        "pyzed InitParameters has no set_from_serial_number / serial_number; "
-                        "cannot select ZED by serial."
+                        f"ZED set_from_serial_number({sn}) failed: {rc}"
                     )
 
             # Open camera

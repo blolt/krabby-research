@@ -157,8 +157,6 @@ if side is None:
 side_host = (side.maixsense_host or "").strip() or "(unset)"
 if side.maixsense_port is not None:
     side_port = side.maixsense_port
-elif side.maixsense_port_env:
-    side_port = (__import__("os").environ.get(side.maixsense_port_env, "")).strip() or "(unset)"
 else:
     side_port = "(unset)"
 

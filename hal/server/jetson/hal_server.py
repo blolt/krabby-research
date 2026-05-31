@@ -3,7 +3,6 @@
 """
 
 import logging
-import os
 import time
 from typing import Optional
 
@@ -62,17 +61,6 @@ def _policy_scan_from_depth(
     return feats
 
 
-def _read_optional_int_env(var_name: str) -> Optional[int]:
-    raw = os.environ.get(var_name, "").strip()
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        logger.warning("%s must be an integer; ignoring", var_name)
-        return None
-
-
 def _expected_rgb_depth_shapes_for_entry(
     entry: JetsonSensorCatalogEntry,
 ) -> tuple[tuple[int, int, int], tuple[int, int]]:
@@ -87,8 +75,8 @@ class JetsonHalServer(HalServerBase):
 
     RGB-D devices are driven by ``JETSON_SENSOR_CATALOG``: the ``is_primary`` row always opens;
     additional ``rgbd`` rows open when ``hal_open_rgbd`` is True (ZED serial from
-    ``zed_usb_serial_env``; MaixSense HTTP from ``maixsense_host_env`` / optional
-    ``maixsense_port_env``). Legacy ``camera_*`` / ``side_*`` encode the **policy** scan slices; **metric depth
+    ``zed_usb_serial``; MaixSense HTTP from ``maixsense_host`` / ``maixsense_port``).
+    Legacy ``camera_*`` / ``side_*`` encode the **policy** scan slices; **metric depth
     for every opened stream** (including side / collision cameras) is in
     ``HardwareObservations.rgbd_by_catalog_id``.
     """
@@ -213,9 +201,7 @@ class JetsonHalServer(HalServerBase):
 
             zed_serial: Optional[int] = None
             if entry.camera_driver == "zed":
-                zed_env_name = (entry.zed_usb_serial_env or "").strip()
-                if zed_env_name:
-                    zed_serial = _read_optional_int_env(zed_env_name)
+                zed_serial = entry.zed_usb_serial
 
             res = entry.resolution
             fps = entry.fps
@@ -228,8 +214,6 @@ class JetsonHalServer(HalServerBase):
                 zed_serial_number=zed_serial,
                 maixsense_host=entry.maixsense_host,
                 maixsense_port=entry.maixsense_port,
-                maixsense_host_env=entry.maixsense_host_env,
-                maixsense_port_env=entry.maixsense_port_env,
             )
             if cam is None or not cam.is_ready():
                 if cam is not None:
@@ -271,7 +255,7 @@ class JetsonHalServer(HalServerBase):
         if self.observation_dimensions.num_side_scan > 0 and self.side_camera is None:
             logger.warning(
                 "num_side_scan=%d but side HAL RGB-D not available "
-                "(catalog hal_open_rgbd, driver init, or ZED USB serial env for side row)",
+                "(catalog hal_open_rgbd, driver init, or missing/incorrect camera configuration)",
                 self.observation_dimensions.num_side_scan,
             )
 
