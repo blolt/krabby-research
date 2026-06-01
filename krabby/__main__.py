@@ -38,7 +38,7 @@ def main() -> None:
         "--launch-on-startup",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Install a systemd unit so `krabby run` starts on boot (default: on; pass --no-launch-on-startup to skip)",
+        help="Start `krabby run` on boot via a systemd unit; pass --no-launch-on-startup to skip",
     )
 
     # update
