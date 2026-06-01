@@ -7,6 +7,7 @@ import logging
 import math
 import threading
 import time
+from collections.abc import Callable
 from typing import Any, Optional
 
 import numpy as np
@@ -15,6 +16,7 @@ from zmq.error import ContextTerminated
 
 from hal.client.client import HalClient
 from hal.client.config import HalClientConfig
+from hal.client.data_structures.hardware import HardwareObservations
 from hal.server.robot_definition import RobotDefinition
 from hal.server.sensor_interface import SensorInterface
 from teleop.edge.config import TeleopEdgeSettings
@@ -26,6 +28,33 @@ from teleop.edge.telemetry import build_telemetry_payload
 from teleop.edge.webrtc_input_controller import WebRTCInputController
 
 logger = logging.getLogger(__name__)
+
+RecordTelemetryFn = Callable[[HardwareObservations], None]
+TelemetryGetterFn = Callable[[], dict[str, Any] | None]
+
+
+def bind_telemetry_slot() -> tuple[RecordTelemetryFn, TelemetryGetterFn]:
+    """Shared slot between the HAL poll thread and the WebRTC telemetry sender."""
+    latest_telemetry: dict[str, Any] | None = None
+    lock = threading.Lock()
+
+    def record_observation(obs: HardwareObservations) -> None:
+        nonlocal latest_telemetry
+        with lock:
+            latest_telemetry = build_telemetry_payload(
+                timestamp_ns=int(obs.timestamp_ns),
+                base_quat_w=obs.base_quat_w,
+                base_ang_vel_b=obs.base_ang_vel_b,
+                base_lin_vel_b=obs.base_lin_vel_b,
+            )
+
+    def get_telemetry_copy() -> dict[str, Any] | None:
+        with lock:
+            if latest_telemetry is None:
+                return None
+            return dict(latest_telemetry)
+
+    return record_observation, get_telemetry_copy
 
 
 class _ControlLatencyReporter:
@@ -248,7 +277,7 @@ def start_hal_teleop_signaling_thread(
 
         latest_rgb: dict[str, np.ndarray] = {}
         latest_capture_ns: dict[str, int] = {}
-        latest_telemetry: dict[str, Any] | None = None
+        record_telemetry, get_telemetry_copy = bind_telemetry_slot()
         rgb_lock = threading.Lock()
         poll_stop = threading.Event()
         hal_teleop = HalClient(hal_client_config, context=transport_context)
@@ -295,13 +324,7 @@ def start_hal_teleop_signaling_thread(
                         continue
                     if obs is None:
                         continue
-                    with rgb_lock:
-                        latest_telemetry = build_telemetry_payload(
-                            timestamp_ns=int(obs.timestamp_ns),
-                            base_quat_w=obs.base_quat_w,
-                            base_ang_vel_b=obs.base_ang_vel_b,
-                            base_lin_vel_b=obs.base_lin_vel_b,
-                        )
+                    record_telemetry(obs)
                     if obs.rgbd_by_catalog_id is None:
                         continue
                     poll_ids = catalog_state.snapshot_poll_ids()
@@ -378,10 +401,7 @@ def start_hal_teleop_signaling_thread(
             return {"capture_timestamps_ns": cap}
 
         def _telemetry_getter() -> dict[str, Any] | None:
-            with rgb_lock:
-                if latest_telemetry is None:
-                    return None
-                return dict(latest_telemetry)
+            return get_telemetry_copy()
 
         def _on_control_message(payload: dict[str, Any]) -> None:
             def _warn_rate_limited(msg: str) -> None:

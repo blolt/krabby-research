@@ -173,14 +173,25 @@
       }
     }
 
-    .stage {
+    .main-column {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      min-width: 0;
+    }
+
+    .stage,
+    .telemetry-section {
       background: var(--bg-panel);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      min-height: min(70vh, 720px);
+    }
+
+    .stage {
+      min-height: min(55vh, 640px);
     }
 
     .stage-header {
@@ -194,22 +205,18 @@
       background: rgba(0, 0, 0, 0.2);
     }
 
-    .stage-body {
+    .stage-body,
+    .telemetry-body {
       flex: 1;
       padding: 1rem;
       min-height: 0;
-      position: relative;
     }
 
     .cockpit-hud {
-      position: absolute;
-      inset: 0.75rem;
-      pointer-events: none;
-      z-index: 4;
       display: grid;
-      grid-template-columns: minmax(108px, 132px) minmax(300px, 1fr) minmax(130px, 170px);
+      grid-template-columns: minmax(108px, 132px) minmax(108px, 132px) minmax(280px, 1fr) minmax(130px, 170px);
       grid-template-rows: auto auto auto;
-      gap: 0.55rem;
+      gap: 0.75rem;
       align-items: start;
     }
 
@@ -218,12 +225,10 @@
     }
 
     .hud-panel {
-      background: rgba(12, 15, 20, 0.72);
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
       border-radius: var(--radius-sm);
       padding: 0.55rem 0.7rem;
-      backdrop-filter: blur(6px);
-      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
     }
 
     .hud-speed {
@@ -256,8 +261,8 @@
     }
 
     .hud-compass {
-      grid-column: 1;
-      grid-row: 2;
+      grid-column: 2;
+      grid-row: 1;
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -355,10 +360,11 @@
     }
 
     .hud-attitude-cluster {
-      grid-column: 2;
+      grid-column: 3;
       grid-row: 1 / span 2;
+      width: 100%;
+      max-width: 420px;
       justify-self: center;
-      width: min(420px, 88vw);
       display: flex;
       flex-direction: column;
       align-items: center;
@@ -597,7 +603,7 @@
     }
 
     .hud-velocity {
-      grid-column: 3;
+      grid-column: 4;
       grid-row: 1;
       font-family: var(--mono);
       font-size: 0.7rem;
@@ -608,6 +614,38 @@
     .hud-velocity strong {
       color: var(--text);
       font-weight: 600;
+    }
+
+    @media (max-width: 900px) {
+      .cockpit-hud {
+        grid-template-columns: minmax(100px, 1fr) minmax(100px, 1fr);
+        grid-template-rows: auto auto auto auto auto;
+      }
+
+      .hud-speed {
+        grid-column: 1;
+        grid-row: 1;
+      }
+
+      .hud-compass {
+        grid-column: 2;
+        grid-row: 1;
+      }
+
+      .hud-attitude-cluster {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        max-width: none;
+      }
+
+      .hud-velocity {
+        grid-column: 1 / -1;
+        grid-row: 3;
+      }
+
+      .hud-telemetry-status {
+        grid-row: 4;
+      }
     }
 
     @media (max-width: 520px) {
@@ -629,7 +667,8 @@
       color: var(--text-muted);
       text-align: center;
       padding: 0.35rem 0.5rem;
-      background: rgba(0, 0, 0, 0.35);
+      background: rgba(0, 0, 0, 0.2);
+      border: 1px solid var(--border);
       border-radius: var(--radius-sm);
     }
 
@@ -1083,91 +1122,99 @@
     </header>
 
     <div class="main-grid">
-      <section class="stage" aria-labelledby="live-video-heading">
-        <div class="stage-header" id="live-video-heading">Live video</div>
-        <div class="stage-body">
-          <div class="cockpit-hud" id="cockpitHud" hidden aria-label="Robot motion telemetry">
-            <div class="hud-panel hud-speed">
-              <p class="hud-speed-label">Ground speed</p>
-              <p class="hud-speed-value"><span id="hudSpeedValue">—</span><span class="hud-speed-unit">m/s</span></p>
-            </div>
-            <div class="hud-panel hud-compass" aria-label="Heading compass">
-              <p class="hud-speed-label">Heading</p>
-              <div class="hud-compass-wrap">
-                <div class="hud-compass-rose" id="hudCompassRose" aria-hidden="true">
-                  <span class="hud-compass-tick major" style="transform: rotate(0deg)"></span>
-                  <span class="hud-compass-tick" style="transform: rotate(30deg)"></span>
-                  <span class="hud-compass-tick" style="transform: rotate(60deg)"></span>
-                  <span class="hud-compass-tick major" style="transform: rotate(90deg)"></span>
-                  <span class="hud-compass-tick" style="transform: rotate(120deg)"></span>
-                  <span class="hud-compass-tick" style="transform: rotate(150deg)"></span>
-                  <span class="hud-compass-tick major" style="transform: rotate(180deg)"></span>
-                  <span class="hud-compass-tick" style="transform: rotate(210deg)"></span>
-                  <span class="hud-compass-tick" style="transform: rotate(240deg)"></span>
-                  <span class="hud-compass-tick major" style="transform: rotate(270deg)"></span>
-                  <span class="hud-compass-tick" style="transform: rotate(300deg)"></span>
-                  <span class="hud-compass-tick" style="transform: rotate(330deg)"></span>
-                  <span class="hud-compass-cardinal n">N</span>
-                  <span class="hud-compass-cardinal e">E</span>
-                  <span class="hud-compass-cardinal s">S</span>
-                  <span class="hud-compass-cardinal w">W</span>
-                </div>
-                <div class="hud-compass-lubber" aria-hidden="true"></div>
+      <div class="main-column">
+        <section class="stage" aria-labelledby="live-video-heading">
+          <div class="stage-header" id="live-video-heading">Live video</div>
+          <div class="stage-body">
+            <div id="videos"></div>
+          </div>
+          <div class="metrics-bar" aria-label="Stream metrics">
+            <p id="latency">Signaling RTT: —</p>
+            <p id="streamStatus">Streams: —</p>
+          </div>
+        </section>
+
+        <section class="telemetry-section" aria-labelledby="motion-telemetry-heading">
+          <div class="stage-header" id="motion-telemetry-heading">Motion telemetry</div>
+          <div class="telemetry-body">
+            <div class="cockpit-hud" id="cockpitHud" aria-label="Robot motion telemetry">
+              <div class="hud-panel hud-speed">
+                <p class="hud-speed-label">Ground speed</p>
+                <p class="hud-speed-value"><span id="hudSpeedValue">—</span><span class="hud-speed-unit">m/s</span></p>
               </div>
-              <p class="hud-compass-heading">
-                <span id="hudHeadingValue">—</span><span class="hud-compass-heading-unit">°</span>
-              </p>
-            </div>
-            <div class="hud-panel hud-attitude-cluster">
-              <div class="hud-attitude-row">
-                <div class="hud-attitude-3d">
-                  <p class="hud-attitude-3d-label">3D attitude</p>
-                  <div class="hud-attitude-3d-scene" aria-hidden="true">
-                    <div class="hud-attitude-3d-grid"></div>
-                    <div class="hud-attitude-3d-pivot" id="hudAttitude3dPivot">
-                      <div class="hud-attitude-3d-cube" id="hudAttitude3dCube">
-                        <div class="hud-attitude-3d-face front">F</div>
-                        <div class="hud-attitude-3d-face back">B</div>
-                        <div class="hud-attitude-3d-face right">R</div>
-                        <div class="hud-attitude-3d-face left">L</div>
-                        <div class="hud-attitude-3d-face top">T</div>
-                        <div class="hud-attitude-3d-face bottom"></div>
-                        <div class="hud-attitude-3d-nose"></div>
+              <div class="hud-panel hud-compass" aria-label="Heading compass">
+                <p class="hud-speed-label">Heading</p>
+                <div class="hud-compass-wrap">
+                  <div class="hud-compass-rose" id="hudCompassRose" aria-hidden="true">
+                    <span class="hud-compass-tick major" style="transform: rotate(0deg)"></span>
+                    <span class="hud-compass-tick" style="transform: rotate(30deg)"></span>
+                    <span class="hud-compass-tick" style="transform: rotate(60deg)"></span>
+                    <span class="hud-compass-tick major" style="transform: rotate(90deg)"></span>
+                    <span class="hud-compass-tick" style="transform: rotate(120deg)"></span>
+                    <span class="hud-compass-tick" style="transform: rotate(150deg)"></span>
+                    <span class="hud-compass-tick major" style="transform: rotate(180deg)"></span>
+                    <span class="hud-compass-tick" style="transform: rotate(210deg)"></span>
+                    <span class="hud-compass-tick" style="transform: rotate(240deg)"></span>
+                    <span class="hud-compass-tick major" style="transform: rotate(270deg)"></span>
+                    <span class="hud-compass-tick" style="transform: rotate(300deg)"></span>
+                    <span class="hud-compass-tick" style="transform: rotate(330deg)"></span>
+                    <span class="hud-compass-cardinal n">N</span>
+                    <span class="hud-compass-cardinal e">E</span>
+                    <span class="hud-compass-cardinal s">S</span>
+                    <span class="hud-compass-cardinal w">W</span>
+                  </div>
+                  <div class="hud-compass-lubber" aria-hidden="true"></div>
+                </div>
+                <p class="hud-compass-heading">
+                  <span id="hudHeadingValue">—</span><span class="hud-compass-heading-unit">°</span>
+                </p>
+              </div>
+              <div class="hud-panel hud-attitude-cluster">
+                <div class="hud-attitude-row">
+                  <div class="hud-attitude-3d">
+                    <p class="hud-attitude-3d-label">3D attitude</p>
+                    <div class="hud-attitude-3d-scene" aria-hidden="true">
+                      <div class="hud-attitude-3d-grid"></div>
+                      <div class="hud-attitude-3d-pivot" id="hudAttitude3dPivot">
+                        <div class="hud-attitude-3d-cube" id="hudAttitude3dCube">
+                          <div class="hud-attitude-3d-face front">F</div>
+                          <div class="hud-attitude-3d-face back">B</div>
+                          <div class="hud-attitude-3d-face right">R</div>
+                          <div class="hud-attitude-3d-face left">L</div>
+                          <div class="hud-attitude-3d-face top">T</div>
+                          <div class="hud-attitude-3d-face bottom"></div>
+                          <div class="hud-attitude-3d-nose"></div>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-                <div class="hud-attitude-2d">
-                  <p class="hud-attitude-2d-label">Horizon</p>
-                  <div class="hud-horizon-wrap" aria-hidden="true">
-                    <div class="hud-horizon" id="hudHorizon">
-                      <div class="hud-horizon-sky"></div>
-                      <div class="hud-horizon-ground"></div>
-                      <div class="hud-horizon-line"></div>
+                  <div class="hud-attitude-2d">
+                    <p class="hud-attitude-2d-label">Horizon</p>
+                    <div class="hud-horizon-wrap" aria-hidden="true">
+                      <div class="hud-horizon" id="hudHorizon">
+                        <div class="hud-horizon-sky"></div>
+                        <div class="hud-horizon-ground"></div>
+                        <div class="hud-horizon-line"></div>
+                      </div>
+                      <div class="hud-horizon-reticle"></div>
                     </div>
-                    <div class="hud-horizon-reticle"></div>
                   </div>
                 </div>
+                <p class="hud-euler" id="hudEuler">Roll — · Pitch — · Yaw —</p>
               </div>
-              <p class="hud-euler" id="hudEuler">Roll — · Pitch — · Yaw —</p>
-            </div>
-            <div class="hud-panel hud-velocity" id="hudVelocity">
-              <div><strong>Vx</strong> <span id="hudVx">—</span> m/s</div>
-              <div><strong>Vy</strong> <span id="hudVy">—</span> m/s</div>
-              <div><strong>Vz</strong> <span id="hudVz">—</span> m/s</div>
-              <div style="margin-top:0.35rem"><strong>ω</strong> <span id="hudOmega">—</span> rad/s</div>
-            </div>
-            <div class="hud-telemetry-status" id="hudTelemetryStatus" data-live="false">
-              Motion telemetry: waiting for robot…
+              <div class="hud-panel hud-velocity" id="hudVelocity">
+                <div><strong>Vx</strong> <span id="hudVx">—</span> m/s</div>
+                <div><strong>Vy</strong> <span id="hudVy">—</span> m/s</div>
+                <div><strong>Vz</strong> <span id="hudVz">—</span> m/s</div>
+                <div style="margin-top:0.35rem"><strong>ω</strong> <span id="hudOmega">—</span> rad/s</div>
+              </div>
+              <div class="hud-telemetry-status" id="hudTelemetryStatus" data-live="false">
+                Motion telemetry: waiting for robot…
+              </div>
             </div>
           </div>
-          <div id="videos"></div>
-        </div>
-        <div class="metrics-bar" aria-label="Stream metrics">
-          <p id="latency">Signaling RTT: —</p>
-          <p id="streamStatus">Streams: —</p>
-        </div>
-      </section>
+        </section>
+      </div>
 
       <aside class="sidebar">
         <details class="panel" id="sensorSelectionPanel">

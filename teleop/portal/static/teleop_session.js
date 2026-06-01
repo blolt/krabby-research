@@ -152,9 +152,6 @@
       telemetryStaleTimer = null;
     }
     lastTelemetryMs = 0;
-    if (cockpitHudEl) {
-      cockpitHudEl.hidden = true;
-    }
     if (hudSpeedValueEl) hudSpeedValueEl.textContent = '—';
     if (hudHorizonEl) {
       hudHorizonEl.style.transform = 'translate(-50%, -50%) rotate(0deg)';
@@ -205,9 +202,6 @@
       return;
     }
     lastTelemetryMs = Date.now();
-    if (cockpitHudEl) {
-      cockpitHudEl.hidden = false;
-    }
     var vel = msg.velocity || {};
     var orient = msg.orientation_deg || {};
     var lin = vel.linear_m_s || [];
