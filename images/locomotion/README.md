@@ -4,12 +4,12 @@
 
 ```bash
 pip install krabby-launcher
-krabby install            # pull mainline-latest, set up udev + dialout
+krabby install            # pull release-latest, set up udev + dialout
 krabby firmware show      # verify boards
-krabby run                # start the locomotion stack
+krabby run                # start the full stack (HAL server + gamepad client + controller)
 ```
 
-`krabby run` wires GPU flags, serial + input device passthrough, and ZMQ ports automatically. See [krabby/README.md](../../krabby/README.md) for the full CLI reference.
+`krabby run` starts the HAL server **and** the krabby-uno client/controller together, wiring GPU flags, serial + input device passthrough, and ZMQ ports automatically. See [krabby/README.md](../../krabby/README.md) for the full CLI reference.
 
 ---
 
@@ -50,7 +50,10 @@ No AWS credentials required — ECR Public allows anonymous pulls.
 ```bash
 ECR=public.ecr.aws/t7t7b3i3/krabby-locomotion
 
-# Latest mainline build
+# Latest release build — the default channel `krabby install`/`run` pull
+docker pull ${ECR}:release-latest
+
+# Latest mainline (development) build
 docker pull ${ECR}:mainline-latest
 
 # Specific commit
@@ -65,7 +68,7 @@ docker pull ${ECR}:0.2.9
 ```bash
 docker run --rm --gpus all \
     -v /path/to/checkpoints:/workspace/checkpoints \
-    ${ECR}:mainline-latest \
+    ${ECR}:release-latest \
     --checkpoint /workspace/checkpoints/checkpoint.pt
 ```
 
@@ -73,7 +76,7 @@ With MCU flashing:
 ```bash
 docker run --rm --gpus all \
     --device /dev/ttyACM0 \
-    ${ECR}:mainline-latest \
+    ${ECR}:release-latest \
     krabby-firmware show
 ```
 
@@ -84,7 +87,12 @@ docker run --rm --gpus all \
 | `<sha7>` | Every push to a tracked branch |
 | `mainline-latest` | Every push to `mainline` |
 | `release-<x-y-z>-latest` | Every push to `release/x.y.z` |
+| `release-latest` | The newest `release/*` build (most recent push wins); **default channel** for `krabby install`/`run` |
 | `<semver>` (e.g. `0.2.9`) | Push of a `locomotion-v*` tag |
+
+In addition to per-commit pushes, a daily scheduled build (`on: schedule`, 07:30 UTC)
+rebuilds and publishes the newest `release/*` branch, keeping `release-latest` fresh
+even on quiet days. GitHub may delay or skip scheduled runs under load.
 
 ### PyPI Packages
 
