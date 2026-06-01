@@ -76,7 +76,14 @@ def main():
 
     subparsers.add_parser("help", help="Show this help message and exit.")
     subparsers.add_parser("install", help="Set up host udev rules and serial permissions.")
-    subparsers.add_parser("show", help="List attached boards and their firmware versions.")
+    show_p = subparsers.add_parser(
+        "show",
+        help="List attached boards and firmware versions; `show <branch>` lists that branch's builds.",
+    )
+    show_p.add_argument(
+        "branch", nargs="?", default=None, metavar="BRANCH",
+        help="Optional branch (e.g. release/0.2.9) — list all its builds newest-first, paged.",
+    )
     update_p = subparsers.add_parser("update", help="Flash firmware from S3 channel to board(s).")
     update_p.add_argument("channel", nargs="?", default=None, metavar="CHANNEL")
     update_p.add_argument("port", nargs="?", default=None, metavar="PORT")
@@ -94,7 +101,7 @@ def main():
 
     if args.command == "show":
         from firmware.cli import cmd_show
-        cmd_show()
+        cmd_show(args.branch)
         return
 
     if args.command == "update":

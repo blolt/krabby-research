@@ -13,7 +13,7 @@ This firmware drives a full leg pair (Left & Right) consisting of **6 Motors**.
   - 12V Power Supply
 - **Software:**
   - Python 3
-  - Libraries: `pip install pyserial keyboard`
+  - Libraries: `pip install pyserial` (the interactive menu uses the stdlib `termios`/`select`, so it works headless over SSH — no `keyboard`/`pynput`/X11 needed)
   - Arduino IDE
 
 ---
@@ -160,7 +160,7 @@ The robot now calibrates itself automatically and saves limits to EEPROM.
 
 ## 4. Firmware Store (`krabby-firmware-public`)
 
-Built firmware lives in a public S3 bucket. CI publishes a new build on every push to `mainline` or `release/*`.
+Built firmware lives in a public S3 bucket. CI publishes a new build on every push to `mainline` or `release/*`, plus a daily scheduled build of the newest `release/*` branch.
 
 ### 4.1 Bucket layout
 
@@ -168,6 +168,7 @@ Built firmware lives in a public S3 bucket. CI publishes a new build on every pu
 s3://krabby-firmware-public/
   index.json                               ← all branches, latest build per branch
   <branch>/latest.json                     ← pointer to the most recent build on <branch>
+  <branch>/builds.json                     ← full build history for <branch> (powers `show <branch>`)
   <branch>/<YYYYMMDD-HHMMSS-<sha7>>/
     firmware.hex                           ← compiled Arduino HEX
     manifest.json                          ← branch, commit, timestamp, board FQBN, VER string
@@ -199,8 +200,11 @@ If a follower board is missing, its slot contains `-`.
 # 1. One-time host setup (udev rules, dialout group, flash tools)
 sudo krabby-firmware install
 
-# 2. Check attached boards and available S3 builds
+# 2. Check attached boards and the latest build per branch
 krabby-firmware show
+
+# 2b. List one branch's full build history, newest-first (paged via $PAGER)
+krabby-firmware show release/0.2.0
 
 # 3. Flash all three boards in turn (replug USB between boards)
 krabby-firmware update                        # latest release/* build, auto-detects port
@@ -210,3 +214,18 @@ krabby-firmware update release/0.2.0 /dev/ttyACM2  # specific branch + port
 ```
 
 Downloaded HEX files are cached under `~/.cache/krabby-firmware/<branch>/<sha7>/firmware.hex` and reused on subsequent calls.
+
+### `krabby-firmware` vs `krabby firmware`
+
+Two ways to reach the same flash CLI:
+
+- **`krabby-firmware <args>`** — runs the flash tool **directly on the host**. Requires the
+  `krabby-firmware` package and host flash tools (`krabby-firmware install` sets up
+  `avrdude`/`arduino-cli`, udev, and `dialout`). Use this on a laptop or bench machine.
+- **`krabby firmware <args>`** — runs that same CLI **inside the locomotion image** (the
+  flash tools are bundled there), so a kit owner who only `pip install krabby-launcher`
+  can flash with no host setup. It forwards every argument verbatim, mounts the
+  `~/.cache/krabby-firmware` download cache, and passes the serial devices through.
+
+So `krabby firmware show release/0.2.0` and `krabby-firmware show release/0.2.0` behave
+identically — they differ only in *where* the tool runs.

@@ -2,17 +2,25 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
 import time
+import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
 from firmware.krabby_mcu import parse_ver_reply
-from firmware.manifest import FirmwareIndex, parse_index, latest_release_branch
+from firmware.manifest import (
+    BranchBuild,
+    FirmwareIndex,
+    latest_release_branch,
+    parse_builds,
+    parse_index,
+)
 
 BUCKET_BASE = "https://krabby-firmware-public.s3.amazonaws.com"
 CACHE_DIR = Path.home() / ".cache" / "krabby-firmware"
@@ -103,9 +111,39 @@ def _fetch_index() -> FirmwareIndex:
     return parse_index(_fetch_json(f"{BUCKET_BASE}/index.json"))
 
 
-# --- --show ---
+def _fetch_builds(branch: str) -> list[BranchBuild]:
+    return parse_builds(_fetch_json(f"{BUCKET_BASE}/{branch}/builds.json"))
 
-def cmd_show() -> None:
+
+def _page(text: str) -> None:
+    """Write text, routing through a pager when stdout is an interactive TTY.
+
+    Falls back to plain stdout if the pager can't be launched (OSError) or exits
+    non-zero — e.g. `less`/$PAGER missing makes the shell exit 127 — so the build
+    list is never silently swallowed (the locomotion image has no `less`).
+    """
+    if not text.endswith("\n"):
+        text += "\n"
+    if sys.stdout.isatty():
+        pager = os.environ.get("PAGER") or "less -FRX"
+        try:
+            proc = subprocess.Popen(pager, shell=True, stdin=subprocess.PIPE, text=True)
+            proc.communicate(text)
+            if proc.returncode == 0:
+                return
+        except (OSError, BrokenPipeError):
+            pass
+    sys.stdout.write(text)
+
+
+# --- show ---
+
+def cmd_show(branch: Optional[str] = None) -> None:
+    # `show <branch>` lists that branch's full build history, newest-first and paged.
+    if branch is not None:
+        _show_branch_builds(branch)
+        return
+
     ports = _all_mega_ports()
 
     # Probe all boards and fetch S3 index in parallel.
@@ -165,10 +203,34 @@ def cmd_show() -> None:
         print("S3 bucket has no builds yet.")
         return
 
-    print("Available S3 builds:")
+    print("Available S3 builds (latest per branch):")
     for name in sorted(index.branches):
         entry = index.branches[name]
         print(f"  {name:<30}  build {entry.build_key}")
+    print("\nRun `krabby-firmware show <branch>` to list a branch's builds newest-first.")
+
+
+def _show_branch_builds(branch: str) -> None:
+    """List every build for one branch, newest-first, through a pager."""
+    try:
+        builds = _fetch_builds(branch)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            sys.exit(f"No build history for branch '{branch}'. Run `krabby-firmware show` to list branches.")
+        sys.exit(f"Could not fetch builds for '{branch}': {exc}")
+    except Exception as exc:
+        sys.exit(f"Could not fetch builds for '{branch}': {exc}")
+
+    if not builds:
+        print(f"No builds found for branch '{branch}'.")
+        return
+
+    lines = [f"Builds for {branch} (newest first, {len(builds)} total):", ""]
+    for b in builds:
+        ver = b.ver_string or "?"
+        date = b.commit_date or "?"
+        lines.append(f"  {b.build_key:<26}  {date:<12}  {ver}")
+    _page("\n".join(lines) + "\n")
 
 
 # --- --update ---
