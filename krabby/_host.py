@@ -218,12 +218,96 @@ def _ensure_dialout() -> None:
             print(f"[err] usermod failed (exit {ret})", file=sys.stderr)
 
 
-def run_host_setup() -> None:
+_BOOT_SERVICE_PATH = Path("/etc/systemd/system/krabby-locomotion.service")
+_BOOT_SERVICE_NAME = "krabby-locomotion.service"
+
+
+def _boot_service_unit(krabby_bin: str, user: str) -> str:
+    """systemd unit that runs `krabby run` (the full gamepad stack) on boot."""
+    return f"""\
+[Unit]
+Description=Krabby locomotion stack
+Documentation=https://github.com/flliver/krabby-research
+After=docker.service
+Requires=docker.service
+StartLimitIntervalSec=300
+StartLimitBurst=10
+
+[Service]
+Type=simple
+User={user}
+# Clear any container left by an unclean shutdown so --name krabby is free.
+ExecStartPre=-/usr/bin/docker rm -f krabby
+ExecStart={krabby_bin} run
+# The container runs under containerd, not this unit's cgroup; stop it explicitly.
+ExecStop=/usr/bin/docker stop krabby
+# The launcher exits if the MCU has not enumerated yet at boot; retry until it does.
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target
+"""
+
+
+def _ensure_boot_service(launch_on_startup: bool) -> bool:
+    """Install (default) or remove the systemd unit that starts `krabby run` on boot.
+
+    Enabled for boot but not started here; the stack comes up on the next boot (run
+    `krabby run` to start immediately). `--no-launch-on-startup` tears down a prior unit.
+    """
+    if not shutil.which("systemctl"):
+        print("[skip] systemctl not found — skipping boot autostart (not a systemd host?)")
+        return True
+
+    if not launch_on_startup:
+        if _BOOT_SERVICE_PATH.exists():
+            _run(["systemctl", "disable", "--now", _BOOT_SERVICE_NAME])
+            try:
+                _BOOT_SERVICE_PATH.unlink()
+            except PermissionError:
+                print(f"[err] cannot remove {_BOOT_SERVICE_PATH} — run with sudo", file=sys.stderr)
+                return False
+            _run(["systemctl", "daemon-reload"])
+            print(f"[+]   boot autostart removed ({_BOOT_SERVICE_NAME})")
+        else:
+            print("[ok]  boot autostart not installed (--no-launch-on-startup)")
+        return True
+
+    # The service runs as the invoking user (not root) so it shares their install
+    # state and docker/dialout access, mirroring the manual `krabby run`.
+    krabby_bin = shutil.which("krabby") or "/usr/local/bin/krabby"
+    user = os.environ.get("SUDO_USER") or os.environ.get("USER") or "root"
+    unit = _boot_service_unit(krabby_bin, user)
+
+    if _BOOT_SERVICE_PATH.exists() and _BOOT_SERVICE_PATH.read_text() == unit:
+        print(f"[ok]  boot autostart unit already in place: {_BOOT_SERVICE_PATH}")
+    else:
+        try:
+            _BOOT_SERVICE_PATH.write_text(unit)
+        except PermissionError:
+            print(f"[err] cannot write {_BOOT_SERVICE_PATH} — run with sudo", file=sys.stderr)
+            return False
+        _run(["systemctl", "daemon-reload"])
+        print(f"[+]   wrote {_BOOT_SERVICE_PATH}")
+
+    ret = _run(["systemctl", "enable", _BOOT_SERVICE_NAME])
+    if ret != 0:
+        print(f"[err] systemctl enable {_BOOT_SERVICE_NAME} failed (exit {ret})", file=sys.stderr)
+        return False
+    print(f"[ok]  boot autostart enabled (runs as {user}); starts on next boot. "
+          f"Disable with `krabby install --no-launch-on-startup` or `sudo systemctl disable {_BOOT_SERVICE_NAME}`.")
+    return True
+
+
+def run_host_setup(launch_on_startup: bool = True) -> None:
     ok = _ensure_udev_rule()
     ok &= _ensure_pro_controller_udev()
     ok &= _ensure_pro_controller_led_udev()
     ok &= _ensure_hid_nintendo()
     ok &= _ensure_bt_input_conf()
+    ok &= _ensure_boot_service(launch_on_startup)
     _ensure_dialout()
     if ok:
         print("\nHost setup complete. Replug your Mega boards.")

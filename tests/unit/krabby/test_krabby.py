@@ -124,6 +124,87 @@ class TestVersion:
         assert "krabby 1.2.3" in capsys.readouterr().out
 
 
+class TestBootService:
+    """`krabby install` installs a systemd unit to start `krabby run` on boot
+    (default on); `--no-launch-on-startup` tears it down."""
+
+    def test_unit_content(self):
+        import krabby._host as h
+        u = h._boot_service_unit("/usr/local/bin/krabby", "krabby")
+        assert "ExecStart=/usr/local/bin/krabby run" in u
+        assert "User=krabby" in u
+        assert "ExecStop=/usr/bin/docker stop krabby" in u
+        assert "WantedBy=multi-user.target" in u
+        assert "Requires=docker.service" in u
+
+    def test_enable_writes_unit_and_enables(self, tmp_path, monkeypatch):
+        import krabby._host as h
+        calls = []
+        monkeypatch.setattr(h, "_BOOT_SERVICE_PATH", tmp_path / "krabby-locomotion.service")
+        monkeypatch.setattr(h.shutil, "which",
+                            lambda n: "/usr/bin/systemctl" if n == "systemctl" else "/usr/local/bin/krabby")
+        monkeypatch.setattr(h, "_run", lambda cmd: calls.append(cmd) or 0)
+        monkeypatch.setenv("SUDO_USER", "krabby")
+        assert h._ensure_boot_service(True) is True
+        unit = (tmp_path / "krabby-locomotion.service").read_text()
+        assert "ExecStart=/usr/local/bin/krabby run" in unit
+        assert "User=krabby" in unit
+        assert ["systemctl", "enable", "krabby-locomotion.service"] in calls
+
+    def test_idempotent_when_unit_unchanged(self, tmp_path, monkeypatch):
+        import krabby._host as h
+        path = tmp_path / "krabby-locomotion.service"
+        monkeypatch.setattr(h, "_BOOT_SERVICE_PATH", path)
+        monkeypatch.setattr(h.shutil, "which",
+                            lambda n: "/usr/bin/systemctl" if n == "systemctl" else "/usr/local/bin/krabby")
+        monkeypatch.setattr(h, "_run", lambda cmd: 0)
+        monkeypatch.setenv("SUDO_USER", "krabby")
+        path.write_text(h._boot_service_unit("/usr/local/bin/krabby", "krabby"))
+        mtime = path.stat().st_mtime_ns
+        assert h._ensure_boot_service(True) is True
+        assert path.stat().st_mtime_ns == mtime  # not rewritten
+
+    def test_disable_removes_unit(self, tmp_path, monkeypatch):
+        import krabby._host as h
+        path = tmp_path / "krabby-locomotion.service"
+        path.write_text("stale")
+        calls = []
+        monkeypatch.setattr(h, "_BOOT_SERVICE_PATH", path)
+        monkeypatch.setattr(h.shutil, "which", lambda n: "/usr/bin/systemctl")
+        monkeypatch.setattr(h, "_run", lambda cmd: calls.append(cmd) or 0)
+        assert h._ensure_boot_service(False) is True
+        assert not path.exists()
+        assert ["systemctl", "disable", "--now", "krabby-locomotion.service"] in calls
+
+    def test_skips_without_systemctl(self, monkeypatch):
+        import krabby._host as h
+        monkeypatch.setattr(h.shutil, "which", lambda n: None)
+        assert h._ensure_boot_service(True) is True  # graceful no-op on non-systemd hosts
+
+
+class TestInstallLaunchFlag:
+    """`--launch-on-startup` defaults to true; `--no-launch-on-startup` opts out."""
+
+    def _run_install(self, monkeypatch, argv):
+        cap = {}
+        monkeypatch.setattr(
+            "krabby.install.cmd_install",
+            lambda image_ref=None, launch_on_startup=True: cap.update(image=image_ref, launch=launch_on_startup),
+        )
+        monkeypatch.setattr(sys, "argv", argv)
+        krabby_main.main()
+        return cap
+
+    def test_default_is_true(self, monkeypatch):
+        assert self._run_install(monkeypatch, ["krabby", "install"])["launch"] is True
+
+    def test_no_launch_on_startup_disables(self, monkeypatch):
+        assert self._run_install(monkeypatch, ["krabby", "install", "--no-launch-on-startup"])["launch"] is False
+
+    def test_explicit_launch_on_startup(self, monkeypatch):
+        assert self._run_install(monkeypatch, ["krabby", "install", "--launch-on-startup"])["launch"] is True
+
+
 # ---------------------------------------------------------------------------
 # _docker: command construction
 # ---------------------------------------------------------------------------

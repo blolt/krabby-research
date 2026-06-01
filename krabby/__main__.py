@@ -34,6 +34,12 @@ def main() -> None:
     # install
     p_install = sub.add_parser("install", help="Pull the locomotion image and set up the host")
     p_install.add_argument("--image", metavar="REF", help=f"Image ref to install (default: {DEFAULT_TAG})")
+    p_install.add_argument(
+        "--launch-on-startup",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Install a systemd unit so `krabby run` starts on boot (default: on; pass --no-launch-on-startup to skip)",
+    )
 
     # update
     p_update = sub.add_parser("update", help="Pull a newer image")
@@ -56,7 +62,7 @@ def main() -> None:
 
     if args.command == "install":
         from krabby.install import cmd_install
-        cmd_install(image_ref=args.image)
+        cmd_install(image_ref=args.image, launch_on_startup=args.launch_on_startup)
 
     elif args.command == "update":
         from krabby.update import cmd_update

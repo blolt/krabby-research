@@ -13,8 +13,9 @@ pip install krabby-launcher
 ## Usage
 
 ```
-krabby install            # pull release-latest, set up udev + dialout
-krabby install --image <ref>   # pull a specific tag or digest
+krabby install            # pull release-latest, set up udev + dialout, enable boot autostart
+krabby install --image <ref>          # pull a specific tag or digest
+krabby install --no-launch-on-startup # set up the host but DON'T start on boot
 
 krabby update             # re-pull the last installed image
 krabby update --image <ref>    # pull a different tag
@@ -38,6 +39,23 @@ the `krabby-uno` client/controller together — so a paired gamepad drives the r
 a single command. To run just the client (e.g. the two-process debug flow), use the
 `krabby-uno` console script from the controller package (`pip install krabby-controller`)
 against the server's TCP endpoints (`tcp://host:6001` / `:6002`).
+
+## Start on boot
+
+`krabby install` installs a systemd unit (`krabby-locomotion.service`) that runs
+`krabby run` on boot — **enabled by default**. It runs as the invoking user, starts
+after `docker.service`, and retries if the MCU hasn't enumerated yet at boot.
+
+```bash
+sudo krabby install                       # enables boot autostart (default)
+sudo krabby install --no-launch-on-startup  # host setup only; no autostart
+sudo systemctl disable krabby-locomotion    # turn off later
+journalctl -u krabby-locomotion -f          # service logs
+```
+
+The unit starts the **gamepad** stack. ⚠️ On boot the stack goes live; if a gamepad
+is paired/connected it can drive the robot unattended. To run a policy instead, edit
+`ExecStart` in the unit to `krabby run -- --checkpoint /path/to/ckpt.pt`.
 
 ## Image refs
 

@@ -32,7 +32,7 @@ pip install krabby-launcher
 sudo krabby install
 ```
 
-This pulls `release-latest` from ECR (the stable release channel), writes the udev rule for the Mega 2560 boards, and adds you to the `dialout` group. Replug USB after this step.
+This pulls `release-latest` from ECR (the stable release channel), writes the udev rule for the Mega 2560 boards, adds you to the `dialout` group, and installs a systemd unit so the stack starts on boot. Replug USB after this step. (Pass `--no-launch-on-startup` to skip the boot autostart; see [krabby/README.md](krabby/README.md#start-on-boot).)
 
 ### 3. Verify the boards
 
