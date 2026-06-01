@@ -22,6 +22,7 @@ from teleop.edge.depth_preview import depth_meters_to_rgb24_u8
 from teleop.edge.hal_rgb_track import HalRgbSnapshotVideoTrack
 from teleop.edge.portal_client import portal_client_loop
 from teleop.edge.viewer_catalog import parse_viewer_catalog_ids_from_payload
+from teleop.edge.telemetry import build_telemetry_payload
 from teleop.edge.webrtc_input_controller import WebRTCInputController
 
 logger = logging.getLogger(__name__)
@@ -247,6 +248,7 @@ def start_hal_teleop_signaling_thread(
 
         latest_rgb: dict[str, np.ndarray] = {}
         latest_capture_ns: dict[str, int] = {}
+        latest_telemetry: dict[str, Any] | None = None
         rgb_lock = threading.Lock()
         poll_stop = threading.Event()
         hal_teleop = HalClient(hal_client_config, context=transport_context)
@@ -291,7 +293,16 @@ def start_hal_teleop_signaling_thread(
                             exc_info=True,
                         )
                         continue
-                    if obs is None or obs.rgbd_by_catalog_id is None:
+                    if obs is None:
+                        continue
+                    with rgb_lock:
+                        latest_telemetry = build_telemetry_payload(
+                            timestamp_ns=int(obs.timestamp_ns),
+                            base_quat_w=obs.base_quat_w,
+                            base_ang_vel_b=obs.base_ang_vel_b,
+                            base_lin_vel_b=obs.base_lin_vel_b,
+                        )
+                    if obs.rgbd_by_catalog_id is None:
                         continue
                     poll_ids = catalog_state.snapshot_poll_ids()
                     with rgb_lock:
@@ -366,6 +377,12 @@ def start_hal_teleop_signaling_thread(
                 cap = dict(latest_capture_ns)
             return {"capture_timestamps_ns": cap}
 
+        def _telemetry_getter() -> dict[str, Any] | None:
+            with rgb_lock:
+                if latest_telemetry is None:
+                    return None
+                return dict(latest_telemetry)
+
         def _on_control_message(payload: dict[str, Any]) -> None:
             def _warn_rate_limited(msg: str) -> None:
                 now = time.monotonic()
@@ -402,6 +419,8 @@ def start_hal_teleop_signaling_thread(
                     hello_ack_payload_builder=_hello_ack_payload,
                     pong_payload_builder=_pong_payload,
                     control_message_handler=_on_control_message,
+                    telemetry_getter=_telemetry_getter,
+                    telemetry_hz=20.0,
                 )
             )
             await asyncio.to_thread(stop_event.wait)

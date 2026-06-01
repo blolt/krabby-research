@@ -36,6 +36,9 @@ from hal.server.jetson.depth_scan_features import (
     extract_depth_features_from_map,
     validate_depth_frame,
 )
+from hal.server.jetson.zed_camera import ZedCamera
+from hal.server.jetson.zed_imu import ZedImuSample, apply_mount_to_imu_sample
+from hal.server.jetson.zed_tracking import tracking_lin_vel_sensor_to_base
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +71,50 @@ def _expected_rgb_depth_shapes_for_entry(
     rgb_w, rgb_h = entry.resolution
     depth_w, depth_h = entry.depth_resolution
     return (rgb_h, rgb_w, 3), (depth_h, depth_w)
+
+
+def _primary_zed_imu_sample(
+    front_camera: Optional[RgbDepthCamera],
+    primary_entry: JetsonSensorCatalogEntry,
+) -> Optional[ZedImuSample]:
+    """Read IMU from primary ZED after its latest grab, expressed in robot base frame."""
+    if not isinstance(front_camera, ZedCamera) or not front_camera.has_imu():
+        return None
+    raw = front_camera.get_imu_sample()
+    if raw is None:
+        return None
+    mount = np.array(
+        [
+            primary_entry.pose.qx,
+            primary_entry.pose.qy,
+            primary_entry.pose.qz,
+            primary_entry.pose.qw,
+        ],
+        dtype=np.float32,
+    )
+    return apply_mount_to_imu_sample(raw, mount)
+
+
+def _primary_zed_tracking_lin_vel_b(
+    front_camera: Optional[RgbDepthCamera],
+    primary_entry: JetsonSensorCatalogEntry,
+) -> Optional[np.ndarray]:
+    """Linear velocity from primary ZED positional tracking, in robot base frame."""
+    if not isinstance(front_camera, ZedCamera) or not front_camera.has_tracking():
+        return None
+    lin_vel_sensor = front_camera.get_tracking_lin_vel_sensor()
+    if lin_vel_sensor is None:
+        return None
+    mount = np.array(
+        [
+            primary_entry.pose.qx,
+            primary_entry.pose.qy,
+            primary_entry.pose.qz,
+            primary_entry.pose.qw,
+        ],
+        dtype=np.float32,
+    )
+    return tracking_lin_vel_sensor_to_base(lin_vel_sensor, mount)
 
 
 class JetsonHalServer(HalServerBase):
@@ -132,6 +179,8 @@ class JetsonHalServer(HalServerBase):
                 self._side_catalog_id = row.id
                 break
         self.side_camera: Optional[RgbDepthCamera] = None
+        self._zed_imu_active: bool = False
+        self._zed_tracking_active: bool = False
 
         # GStreamer multi-sensor interface (optional)
         self._sensor_interface: Optional[SensorInterface] = None
@@ -239,6 +288,22 @@ class JetsonHalServer(HalServerBase):
             )
 
         self.front_camera = self._hal_rgbd_cameras.get(self._primary_catalog_id)
+        self._zed_imu_active = (
+            isinstance(self.front_camera, ZedCamera)
+            and self.front_camera.has_imu()
+        )
+        if self._zed_imu_active:
+            logger.info(
+                "Primary ZED IMU will populate base_quat_w and base_ang_vel_b in observations"
+            )
+        self._zed_tracking_active = (
+            isinstance(self.front_camera, ZedCamera)
+            and self.front_camera.has_tracking()
+        )
+        if self._zed_tracking_active:
+            logger.info(
+                "Primary ZED positional tracking will populate base_lin_vel_b in observations"
+            )
         if self.front_camera is None:
             logger.warning(
                 "Primary catalog camera %r not opened (device missing, driver error, or catalog). "
@@ -262,22 +327,29 @@ class JetsonHalServer(HalServerBase):
     def initialize_sensors(self) -> None:
         """Initialize state sensors (IMU/encoders).
 
-        **WARNING**: This is currently a placeholder implementation.
-        Real sensor data (IMU, encoders) is required for production deployment.
-        Placeholder data (zeros) will cause incorrect policy behavior and is unsafe.
-
-        TODO: Implement real sensor initialization:
-        - Initialize IMU driver
-        - Initialize encoder drivers  
-        - Configure sensor parameters
-        - Set self.state_source to real sensor interface
+        Primary ZED (when present): IMU fills ``base_quat_w`` / ``base_ang_vel_b``;
+        positional tracking fills ``base_lin_vel_b``. Joint velocities still need encoders.
         """
-        # Placeholder - actual implementation needs sensor drivers
+        if self._zed_imu_active or self._zed_tracking_active:
+            parts = []
+            if self._zed_imu_active:
+                parts.append("IMU → base_quat_w, base_ang_vel_b")
+            if self._zed_tracking_active:
+                parts.append("positional tracking → base_lin_vel_b")
+            logger.info("ZED sensors active: %s", "; ".join(parts))
+            if not self._zed_tracking_active:
+                logger.info("base_lin_vel_b remains zero (ZED tracking not enabled)")
+            if not self._zed_imu_active:
+                logger.info(
+                    "base_quat_w / base_ang_vel_b remain placeholders (no ZED onboard IMU)"
+                )
+            logger.info("Joint velocities still require encoder drivers")
+            return
+
         logger.warning(
-            "⚠️  PLACEHOLDER MODE: Sensors not initialized. "
-            "Using placeholder data (zeros) for base pose, velocities, and joint velocities. "
-            "This will cause INCORRECT POLICY BEHAVIOR and is UNSAFE for production. "
-            "Implement real sensor drivers before deployment."
+            "⚠️  PLACEHOLDER MODE: No ZED IMU or tracking on primary camera. "
+            "Using placeholder data (zeros) for base state. "
+            "Joint velocities also require encoder drivers."
         )
 
     def initialize_actuators(self) -> None:
@@ -423,14 +495,20 @@ class JetsonHalServer(HalServerBase):
         num_joints_vel = min(len(joint_vel), obs_joint_count)
         joint_velocities[:num_joints_vel] = joint_vel[:num_joints_vel].astype(np.float32)
         
-        # Extract base velocities (body frame) - for now use world frame values as placeholder
-        # TODO: Transform to body frame when real IMU data is available
         base_ang_vel_b = base_ang_vel.astype(np.float32)
         base_lin_vel_b = base_lin_vel.astype(np.float32)
-        
-        # Base quaternion (world frame, x,y,z,w format)
         base_quat_w = base_quat.astype(np.float32)
-        
+
+        primary_entry = JETSON_SENSOR_CATALOG_BY_ID[self._primary_catalog_id]
+        zed_imu = _primary_zed_imu_sample(self.front_camera, primary_entry)
+        if zed_imu is not None:
+            base_quat_w = zed_imu.base_quat_w
+            base_ang_vel_b = zed_imu.base_ang_vel_b
+
+        zed_lin_vel = _primary_zed_tracking_lin_vel_b(self.front_camera, primary_entry)
+        if zed_lin_vel is not None:
+            base_lin_vel_b = zed_lin_vel
+
         # Contact forces (placeholder - 5 values, normalized to [-0.5, 0.5])
         contact_forces = np.zeros(5, dtype=np.float32)
         
@@ -445,7 +523,6 @@ class JetsonHalServer(HalServerBase):
         # Catalog RGB-D: one grab per opened HAL camera. If the driver returns no frame
         # (rgb or depth None), use zero tensors at the catalog resolution. Shape mismatches
         # and other errors from get_camera_frames propagate (not converted to zeros).
-        primary_entry = JETSON_SENSOR_CATALOG_BY_ID[self._primary_catalog_id]
         camera_width, camera_height = primary_entry.resolution
         primary_depth_width, primary_depth_height = primary_entry.depth_resolution
         expected_rgb_shape = (camera_height, camera_width, 3)

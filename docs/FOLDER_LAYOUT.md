@@ -107,9 +107,10 @@ krabby-research/
 │           └── requirements.txt
 │
 └── scripts/                          # Deployment and utility scripts (current)
-    └── deploy/                       # Deployment scripts
-        ├── run_isaac_simulation.sh  # Launch IsaacSim HAL server
-        └── run_locomotion.sh        # Launch locomotion container (Jetson, inproc ZMQ)
+    ├── run_isaac_hal_server.sh       # Isaac Sim HAL (+ --teleop, --joystick)
+    ├── run_teleop_portal_x86_docker.sh
+    ├── run_jetson_hal_server_host.sh
+    └── …                             # jetson-reset, setup-docker-gpu, wheel-build/, etc.
 ```
 
 ## Key Points
