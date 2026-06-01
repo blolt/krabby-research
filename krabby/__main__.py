@@ -6,7 +6,7 @@ import sys
 
 from krabby._state import DEFAULT_TAG
 
-_VERSION = "0.1.7"
+_VERSION = "0.1.9"
 
 
 def main() -> None:
