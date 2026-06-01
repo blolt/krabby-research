@@ -212,14 +212,16 @@ class TestCmdShowBranch:
             cli_mod.cmd_show("release/0.2.9")
         assert "No builds found" in capsys.readouterr().out
 
-    def test_missing_branch_404_exits_with_hint(self):
-        err = urllib.error.HTTPError("u", 404, "not found", None, None)
+    @pytest.mark.parametrize("code", [403, 404])
+    def test_missing_branch_exits_with_hint(self, code):
+        # Real public bucket returns 403 for an absent key (no ListBucket); 404 if listable.
+        err = urllib.error.HTTPError("u", code, "no", None, None)
         with patch.object(cli_mod, "_fetch_builds", side_effect=err):
             with pytest.raises(SystemExit) as ei:
                 cli_mod.cmd_show("release/9.9.9")
-        assert "No build history" in str(ei.value)  # the 404-specific hint, not the generic error
+        assert "No build history" in str(ei.value)  # the friendly hint, not a raw HTTP error
 
-    def test_non_404_error_uses_generic_message(self):
+    def test_real_error_uses_generic_message(self):
         err = urllib.error.HTTPError("u", 500, "boom", None, None)
         with patch.object(cli_mod, "_fetch_builds", side_effect=err):
             with pytest.raises(SystemExit) as ei:

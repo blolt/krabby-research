@@ -215,7 +215,9 @@ def _show_branch_builds(branch: str) -> None:
     try:
         builds = _fetch_builds(branch)
     except urllib.error.HTTPError as exc:
-        if exc.code == 404:
+        # The public bucket grants s3:GetObject but not s3:ListBucket, so a GET of an
+        # absent key returns 403 (Access Denied), not 404 — treat both as "no history".
+        if exc.code in (403, 404):
             sys.exit(f"No build history for branch '{branch}'. Run `krabby-firmware show` to list branches.")
         sys.exit(f"Could not fetch builds for '{branch}': {exc}")
     except Exception as exc:
