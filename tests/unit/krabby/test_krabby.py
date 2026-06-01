@@ -66,6 +66,35 @@ class TestStateRoundtrip:
         assert load_state() == {}
 
 
+class TestStateHome:
+    """State must live in the invoking user's home even under `sudo krabby install`,
+    so the user's later unprivileged run/firmware commands read the same file."""
+
+    def test_uses_sudo_user_home(self, monkeypatch):
+        import sys, types
+        import krabby._state as st
+        monkeypatch.setenv("SUDO_USER", "krabby")
+        monkeypatch.setitem(sys.modules, "pwd",
+                            types.SimpleNamespace(getpwnam=lambda u: types.SimpleNamespace(pw_dir=f"/home/{u}")))
+        assert str(st._state_home()) == "/home/krabby"
+
+    def test_no_sudo_uses_real_home(self, monkeypatch):
+        import krabby._state as st
+        monkeypatch.delenv("SUDO_USER", raising=False)
+        monkeypatch.setattr("krabby._state.Path.home", lambda: st.Path("/home/me"))
+        assert str(st._state_home()) == "/home/me"
+
+    def test_unknown_sudo_user_falls_back(self, monkeypatch):
+        import sys, types
+        import krabby._state as st
+        monkeypatch.setenv("SUDO_USER", "ghost")
+        def _boom(_u):
+            raise KeyError(_u)
+        monkeypatch.setitem(sys.modules, "pwd", types.SimpleNamespace(getpwnam=_boom))
+        monkeypatch.setattr("krabby._state.Path.home", lambda: st.Path("/home/me"))
+        assert str(st._state_home()) == "/home/me"
+
+
 # ---------------------------------------------------------------------------
 # _docker: command construction
 # ---------------------------------------------------------------------------
