@@ -1,6 +1,6 @@
 # krabby-uno and krabby-uno-sim CLIs
 
-> **Running on a Jetson?** Use `krabby run` to start the locomotion stack — it handles GPU flags, device passthrough, and ZMQ ports automatically. See [images/locomotion/README.md](../../images/locomotion/README.md). The `krabby-uno` client below connects to the server started by `krabby run`.
+> **Running on a Jetson?** Use `krabby run` to start the locomotion stack — it handles GPU flags, device passthrough, and ZMQ ports automatically, and already starts a `krabby-uno` client/controller inside the same container. See [images/locomotion/README.md](../../images/locomotion/README.md). The standalone `krabby-uno` below is for the two-process debug flow (connect a separate client to a server-only run) or running the client on another host.
 
 ## Install
 

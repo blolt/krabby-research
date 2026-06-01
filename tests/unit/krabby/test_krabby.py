@@ -1,7 +1,7 @@
 """Unit tests for the krabby CLI package (AC8)."""
 from __future__ import annotations
 
-import pytest
+import sys
 
 
 # ---------------------------------------------------------------------------
@@ -21,6 +21,10 @@ from krabby._state import (
 class TestResolveImageRef:
     def test_none_returns_default(self):
         assert resolve_image_ref(None) == f"{ECR_REPO}:{DEFAULT_TAG}"
+
+    def test_default_tag_is_release_latest(self):
+        # Task E: kit owners track the stable release line by default.
+        assert DEFAULT_TAG == "release-latest"
 
     def test_bare_tag_is_prefixed(self):
         assert resolve_image_ref("v1.2.3") == f"{ECR_REPO}:v1.2.3"
@@ -66,7 +70,7 @@ class TestStateRoundtrip:
 # _docker: command construction
 # ---------------------------------------------------------------------------
 
-from krabby._docker import gpu_flags, serial_device_flags, run_cmd, firmware_cmd, uno_cmd
+from krabby._docker import gpu_flags, serial_device_flags, run_cmd, firmware_cmd, gamepad_cmd
 
 
 class TestGpuFlags:
@@ -160,74 +164,230 @@ class TestRunCmd:
         assert cmd_no_mounts == cmd_empty_mounts
 
 
-class TestUnoCmd:
-    def test_entrypoint_is_krabby_uno(self):
-        cmd = uno_cmd("myimage:tag", [])
+class TestGamepadCmd:
+    def test_entrypoint_is_bash(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "aarch64")
+        cmd = gamepad_cmd("myimage:tag", [])
         idx = cmd.index("--entrypoint")
-        assert cmd[idx + 1] == "krabby-uno"
+        assert cmd[idx + 1] == "bash"
 
-    def test_shares_krabby_container_network(self):
-        cmd = uno_cmd("myimage:tag", [])
-        assert "--network=container:krabby" in cmd
+    def test_launches_server_and_client(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "aarch64")
+        script = " ".join(gamepad_cmd("myimage:tag", []))
+        # The single container brings up both the HAL server and the krabby-uno client.
+        assert "krabby-hal-server-jetson" in script
+        assert "--control-source gamepad" in script
+        assert "krabby-uno" in script
 
-    def test_dev_mount_for_gamepad_access(self):
-        cmd = uno_cmd("myimage:tag", [])
+    def test_forwards_signals_for_clean_shutdown(self):
+        script = " ".join(gamepad_cmd("myimage:tag", []))
+        assert "trap" in script
+
+    def test_exposes_zmq_ports(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "x86_64")
+        cmd = gamepad_cmd("myimage:tag", [])
+        assert "6001:6001" in cmd
+        assert "6002:6002" in cmd
+
+    def test_dev_mount_and_privileged(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "x86_64")
+        cmd = gamepad_cmd("myimage:tag", [])
+        assert "--privileged" in cmd
         assert "/dev:/dev" in cmd
 
-    def test_extra_args_appended(self):
-        cmd = uno_cmd("myimage:tag", ["--device-id", "1"])
-        assert cmd[-2:] == ["--device-id", "1"]
+    def test_gpu_flags_included(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "aarch64")
+        cmd = gamepad_cmd("myimage:tag", [])
+        assert "--runtime=nvidia" in cmd
 
-    def test_image_in_cmd(self):
-        cmd = uno_cmd("myimage:tag", [])
-        assert "myimage:tag" in cmd
+    def test_extra_args_forwarded_to_uno_after_script(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "x86_64")
+        cmd = gamepad_cmd("myimage:tag", ["--device-id", "1", "--rate", "50"])
+        # client args trail the script's $0 placeholder so they arrive as "$@" for krabby-uno
+        assert cmd[-4:] == ["--device-id", "1", "--rate", "50"]
+        c_idx = cmd.index("-c")
+        bash_dollar0 = cmd.index("bash", c_idx + 2)  # the $0 placeholder after `-c <script>`
+        assert bash_dollar0 < cmd.index("--device-id")
+
+    def test_image_in_cmd(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "x86_64")
+        assert "myimage:tag" in gamepad_cmd("myimage:tag", [])
+
+    def test_propagates_child_exit_status(self, monkeypatch):
+        # A crashed server/client must fail `krabby run`, not look like a clean exit.
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "aarch64")
+        script = " ".join(gamepad_cmd("myimage:tag", []))
+        assert "wait -n" in script
+        assert "status=$?" in script
+        assert "exit $status" in script
+
+    def test_robot_value_injected_into_server(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "aarch64")
+        cmd = gamepad_cmd("myimage:tag", ["--robot", "go2"])
+        script = " ".join(cmd)
+        assert "--control-source gamepad --robot go2" in script  # server matched to client
+        assert cmd[-2:] == ["--robot", "go2"]                    # still forwarded to client via $@
+
+    def test_no_robot_leaves_server_default(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "aarch64")
+        assert "--robot" not in " ".join(gamepad_cmd("myimage:tag", []))
+
+    def test_unknown_robot_not_injected_into_server(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "aarch64")
+        # only known topologies are injected server-side (guards against arg injection)
+        script = " ".join(gamepad_cmd("myimage:tag", ["--robot", "bogus"]))
+        assert "--control-source gamepad --observation-bind" in script
 
 
-from krabby.run import cmd_run, _GAMEPAD_ONLY_ENTRYPOINT, _GAMEPAD_ONLY_ARGS
+from krabby.run import cmd_run
+from krabby import __main__ as krabby_main
 
 
-class TestCmdRunGamepadOnly:
+class TestCmdRun:
     def _run(self, monkeypatch, **kwargs):
-        """Call cmd_run with subprocess and sys.exit mocked; return captured run_cmd kwargs."""
+        """Call cmd_run with the docker builders, subprocess, and sys.exit mocked.
+
+        Returns ("gamepad"|"inference", captured_kwargs) so tests can assert which
+        path ran and with what args.
+        """
         captured = {}
 
-        def fake_run_cmd(ref, extra_args, entrypoint=None, extra_mounts=None):
-            captured.update(ref=ref, extra_args=extra_args, entrypoint=entrypoint)
+        def fake_gamepad_cmd(ref, extra_args, extra_mounts=None):
+            captured.update(mode="gamepad", ref=ref, extra_args=extra_args, extra_mounts=extra_mounts)
             return ["docker", "run", ref]
 
+        def fake_run_cmd(ref, extra_args, entrypoint=None, extra_mounts=None):
+            captured.update(mode="inference", ref=ref, extra_args=extra_args, entrypoint=entrypoint, extra_mounts=extra_mounts)
+            return ["docker", "run", ref]
+
+        monkeypatch.setattr("krabby.run.gamepad_cmd", fake_gamepad_cmd)
         monkeypatch.setattr("krabby.run.run_cmd", fake_run_cmd)
         monkeypatch.setattr("krabby.run.subprocess.run", lambda cmd: type("R", (), {"returncode": 0})())
         monkeypatch.setattr("krabby.run.sys.exit", lambda _code: None)
         cmd_run(**kwargs)
         return captured
 
-    def test_entrypoint_is_hal_server_jetson(self, monkeypatch):
+    def test_base_call_launches_gamepad_stack(self, monkeypatch):
+        captured = self._run(monkeypatch, image_ref="img:tag")
+        assert captured["mode"] == "gamepad"
+        assert captured["extra_args"] == []
+
+    def test_gamepad_only_flag_launches_gamepad_stack(self, monkeypatch):
         captured = self._run(monkeypatch, image_ref="img:tag", gamepad_only=True)
+        assert captured["mode"] == "gamepad"
+
+    def test_gamepad_client_args_forwarded(self, monkeypatch):
+        captured = self._run(monkeypatch, image_ref="img:tag", gamepad_only=True, extra_args=["--device-id", "1"])
+        assert captured["mode"] == "gamepad"
+        assert captured["extra_args"] == ["--device-id", "1"]
+
+    def test_checkpoint_args_select_inference(self, monkeypatch):
+        captured = self._run(monkeypatch, image_ref="img:tag", extra_args=["--checkpoint", "/ckpt.pt"])
+        assert captured["mode"] == "inference"
+        assert captured["extra_args"] == ["--checkpoint", "/ckpt.pt"]
+
+    def test_explicit_entrypoint_selects_inference(self, monkeypatch):
+        captured = self._run(monkeypatch, image_ref="img:tag", entrypoint="krabby-hal-server-jetson")
+        assert captured["mode"] == "inference"
         assert captured["entrypoint"] == "krabby-hal-server-jetson"
 
-    def test_args_contain_control_source_gamepad(self, monkeypatch):
-        captured = self._run(monkeypatch, image_ref="img:tag", gamepad_only=True)
-        assert captured["extra_args"] == ["--control-source", "gamepad"]
+    def test_extra_mounts_passed_through_gamepad(self, monkeypatch):
+        captured = self._run(monkeypatch, image_ref="img:tag", extra_mounts=["/a:/a"])
+        assert captured["mode"] == "gamepad"
+        assert captured["extra_mounts"] == ["/a:/a"]
 
-    def test_extra_args_appended_after_gamepad_args(self, monkeypatch):
-        captured = self._run(monkeypatch, image_ref="img:tag", gamepad_only=True, extra_args=["--robot", "go2"])
-        assert captured["extra_args"] == ["--control-source", "gamepad", "--robot", "go2"]
+    def test_leading_double_dash_stripped_then_inference(self, monkeypatch):
+        # argparse REMAINDER yields ["--", "--checkpoint", ...]; the `--` must not reach the container.
+        captured = self._run(monkeypatch, image_ref="img:tag", extra_args=["--", "--checkpoint", "/ckpt.pt"])
+        assert captured["mode"] == "inference"
+        assert captured["extra_args"] == ["--checkpoint", "/ckpt.pt"]
 
-    def test_no_args_no_entrypoint_exits_1(self):
-        with pytest.raises(SystemExit) as exc_info:
-            cmd_run(image_ref="img:tag")
-        assert exc_info.value.code == 1
+    def test_gamepad_client_args_without_flag_stay_gamepad(self, monkeypatch):
+        # client args like --device-id must NOT be misrouted to the inference server
+        captured = self._run(monkeypatch, image_ref="img:tag", extra_args=["--device-id", "1"])
+        assert captured["mode"] == "gamepad"
+        assert captured["extra_args"] == ["--device-id", "1"]
 
-    def test_no_args_error_message_mentions_gamepad_only(self, capsys):
-        with pytest.raises(SystemExit):
-            cmd_run(image_ref="img:tag")
-        assert "gamepad-only" in capsys.readouterr().err
+    def test_gamepad_only_overrides_checkpoint(self, monkeypatch):
+        captured = self._run(monkeypatch, image_ref="img:tag", gamepad_only=True, extra_args=["--checkpoint", "/c"])
+        assert captured["mode"] == "gamepad"
 
-    def test_gamepad_only_entrypoint_constant(self):
-        assert _GAMEPAD_ONLY_ENTRYPOINT == "krabby-hal-server-jetson"
+    def test_inference_passes_extra_mounts(self, monkeypatch):
+        captured = self._run(monkeypatch, image_ref="img:tag", extra_args=["--checkpoint", "/c"], extra_mounts=["/a:/a"])
+        assert captured["mode"] == "inference"
+        assert captured["extra_mounts"] == ["/a:/a"]
 
-    def test_gamepad_only_args_constant(self):
-        assert _GAMEPAD_ONLY_ARGS == ["--control-source", "gamepad"]
+
+class TestRunArgvEndToEnd:
+    """Drive the real argparse path via main() — guards the `--`/REMAINDER handling
+    that the direct-cmd_run tests can't see (they get pre-stripped lists)."""
+
+    def _capture(self, monkeypatch, argv):
+        captured = {}
+
+        def fake_gamepad_cmd(ref, extra_args, extra_mounts=None):
+            captured.update(mode="gamepad", extra_args=extra_args)
+            return ["docker"]
+
+        def fake_run_cmd(ref, extra_args, entrypoint=None, extra_mounts=None):
+            captured.update(mode="inference", extra_args=extra_args, entrypoint=entrypoint)
+            return ["docker"]
+
+        monkeypatch.setattr("krabby.run.gamepad_cmd", fake_gamepad_cmd)
+        monkeypatch.setattr("krabby.run.run_cmd", fake_run_cmd)
+        monkeypatch.setattr("krabby.run.installed_image", lambda: "img:tag")
+        monkeypatch.setattr("krabby.run.subprocess.run", lambda cmd: type("R", (), {"returncode": 0})())
+        monkeypatch.setattr("krabby.run.sys.exit", lambda _code: None)
+        monkeypatch.setattr(sys, "argv", argv)
+        krabby_main.main()
+        return captured
+
+    def test_checkpoint_via_double_dash_strips_and_infers(self, monkeypatch):
+        captured = self._capture(monkeypatch, ["krabby", "run", "--", "--checkpoint", "/ckpt.pt"])
+        assert captured["mode"] == "inference"
+        assert captured["extra_args"] == ["--checkpoint", "/ckpt.pt"]  # no leading --
+
+    def test_device_id_via_double_dash_is_gamepad(self, monkeypatch):
+        captured = self._capture(monkeypatch, ["krabby", "run", "--gamepad-only", "--", "--device-id", "1"])
+        assert captured["mode"] == "gamepad"
+        assert captured["extra_args"] == ["--device-id", "1"]
+
+    def test_bare_double_dash_is_gamepad(self, monkeypatch):
+        captured = self._capture(monkeypatch, ["krabby", "run", "--"])
+        assert captured["mode"] == "gamepad"
+        assert captured["extra_args"] == []
+
+    def test_no_args_is_gamepad(self, monkeypatch):
+        captured = self._capture(monkeypatch, ["krabby", "run"])
+        assert captured["mode"] == "gamepad"
+
+
+class TestCmdFirmwareInteractive:
+    def _capture(self, monkeypatch, stdin_tty, stdout_tty):
+        captured = {}
+
+        def fake_firmware_cmd(ref, args, interactive=False):
+            captured["interactive"] = interactive
+            return ["docker"]
+
+        monkeypatch.setattr("krabby.firmware.firmware_cmd", fake_firmware_cmd)
+        monkeypatch.setattr("krabby.firmware.installed_image", lambda: "img:tag")
+        monkeypatch.setattr("krabby.firmware.subprocess.run", lambda cmd: type("R", (), {"returncode": 0})())
+        monkeypatch.setattr("krabby.firmware.sys.exit", lambda _code: None)
+        monkeypatch.setattr("krabby.firmware.sys.stdin", type("S", (), {"isatty": lambda self: stdin_tty})())
+        monkeypatch.setattr("krabby.firmware.sys.stdout", type("S", (), {"isatty": lambda self: stdout_tty})())
+        from krabby.firmware import cmd_firmware
+        cmd_firmware(["show"], image_ref="img:tag")
+        return captured
+
+    def test_interactive_when_both_streams_tty(self, monkeypatch):
+        assert self._capture(monkeypatch, True, True)["interactive"] is True
+
+    def test_not_interactive_when_stdout_piped(self, monkeypatch):
+        assert self._capture(monkeypatch, True, False)["interactive"] is False
+
+    def test_not_interactive_when_stdin_piped(self, monkeypatch):
+        assert self._capture(monkeypatch, False, True)["interactive"] is False
 
 
 class TestFirmwareCmd:
@@ -261,3 +421,11 @@ class TestFirmwareCmd:
         cmd = firmware_cmd("myimage:tag", ["show"])
         assert "--device" in cmd
         assert "/dev/ttyACM0" in cmd
+
+    def test_no_tty_by_default(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.glob.glob", lambda _: [])
+        assert "-it" not in firmware_cmd("myimage:tag", ["show"])
+
+    def test_interactive_allocates_tty(self, monkeypatch):
+        monkeypatch.setattr("krabby._docker.glob.glob", lambda _: [])
+        assert "-it" in firmware_cmd("myimage:tag", [], interactive=True)

@@ -32,7 +32,7 @@ pip install krabby-launcher
 sudo krabby install
 ```
 
-This pulls `mainline-latest` from ECR, writes the udev rule for the Mega 2560 boards, and adds you to the `dialout` group. Replug USB after this step.
+This pulls `release-latest` from ECR (the stable release channel), writes the udev rule for the Mega 2560 boards, and adds you to the `dialout` group. Replug USB after this step.
 
 ### 3. Verify the boards
 
@@ -54,31 +54,25 @@ Run once per board — replug USB between boards. Boards are auto-detected from 
 
 Connect all three Megas to the Jetson via the powered USB hub.
 
-### 6. Start the locomotion stack
+### 6. Drive with a gamepad
 
-For gamepad-only control (no checkpoint required):
+Pair a Pro Controller over Bluetooth ([CONNECT_PRO_CONTROLLER.md](controller/scripts/jetson/CONNECT_PRO_CONTROLLER.md)) **before** starting the stack, then:
 
 ```bash
-krabby run --gamepad-only
+krabby run
 ```
 
-For inference mode (requires a trained checkpoint):
+`krabby run` starts the whole gamepad stack — HAL server, `krabby-uno` client, and controller — in one container, so the paired controller drives the robot immediately. No second command. The container starts with GPU, serial, and input device passthrough; logs stream to stdout and Ctrl+C stops it.
+
+To drive from a *separate* client instead (e.g. a second terminal, or another host against a server-only run), use the `krabby-uno` console script from the controller package (`pip install krabby-controller`). See [controller/scripts/jetson/E2E_GAMEPAD_KRABBY.md](controller/scripts/jetson/E2E_GAMEPAD_KRABBY.md) for the full E2E and debug guide.
+
+### 7. Inference mode (optional)
+
+To run a trained policy instead of the gamepad:
 
 ```bash
 krabby run -- --checkpoint /path/to/checkpoint.pt
 ```
-
-The container starts with GPU, serial, and input device passthrough. Logs stream to stdout; Ctrl+C stops it.
-
-### 7. Drive with a gamepad (optional)
-
-Pair a Pro Controller over Bluetooth ([CONNECT_PRO_CONTROLLER.md](controller/scripts/jetson/CONNECT_PRO_CONTROLLER.md)), then from a second terminal:
-
-```bash
-krabby uno
-```
-
-See [controller/scripts/jetson/E2E_GAMEPAD_KRABBY.md](controller/scripts/jetson/E2E_GAMEPAD_KRABBY.md) for the full E2E guide.
 
 ---
 

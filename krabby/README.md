@@ -13,30 +13,43 @@ pip install krabby-launcher
 ## Usage
 
 ```
-krabby install            # pull mainline-latest, set up udev + dialout
+krabby install            # pull release-latest, set up udev + dialout
 krabby install --image <ref>   # pull a specific tag or digest
 
 krabby update             # re-pull the last installed image
 krabby update --image <ref>    # pull a different tag
 
-krabby run                # start the locomotion container
-krabby run --image <ref> -- --checkpoint /path/to/ckpt.pt
+krabby run                # full gamepad stack: HAL server + krabby-uno client + controller
+krabby run --gamepad-only      # explicit alias for the gamepad stack
+krabby run -- --device-id 1    # forward client args to krabby-uno (gamepad mode)
+krabby run -- --checkpoint /path/to/ckpt.pt   # inference mode (policy checkpoint)
 
-krabby firmware show      # run krabby-firmware show inside the container
-krabby firmware update    # run krabby-firmware update inside the container
-krabby firmware <args>    # any krabby-firmware subcommand/flags
+krabby firmware show           # run krabby-firmware show inside the container
+krabby firmware show <branch>  # list a branch's builds newest-first, paged
+krabby firmware update         # run krabby-firmware update inside the container
+krabby firmware <args>         # any krabby-firmware subcommand/flags
 
 krabby --version
 krabby --help
 ```
+
+`krabby run` starts the **whole** gamepad stack in one container — the HAL server and
+the `krabby-uno` client/controller together — so a paired gamepad drives the robot with
+a single command. To run just the client (e.g. the two-process debug flow), use the
+`krabby-uno` console script from the controller package (`pip install krabby-controller`)
+against the server's TCP endpoints (`tcp://host:6001` / `:6002`).
 
 ## Image refs
 
 The default image is pulled from ECR:
 
 ```
-public.ecr.aws/t7t7b3i3/krabby-locomotion:mainline-latest
+public.ecr.aws/t7t7b3i3/krabby-locomotion:release-latest
 ```
+
+`release-latest` tracks the newest `release/*` build — the stable channel for kit
+owners (CI moves the tag on each release build; see `images/locomotion/README.md`).
+Use `--image mainline-latest` to follow the development line instead.
 
 A bare tag (e.g. `--image v1.2.3`) is expanded to the full ECR URI automatically.
 Pass a fully-qualified URI to use a different registry entirely.
@@ -53,6 +66,15 @@ On `x86_64` it uses `--gpus all`.
 
 ## Firmware pass-through
 
-`krabby firmware` mounts `~/.cache/krabby-firmware` into the container so cached
-firmware artifacts are shared across runs.  Serial devices (`/dev/ttyACM*`,
-`/dev/ttyUSB*`) are passed through automatically via `--device`.
+There are two related but distinct commands — same flash CLI, different host requirements:
+
+| Command | Where it runs | When to use |
+|---------|---------------|-------------|
+| `krabby firmware <args>` | the flash CLI **inside the installed image** | the normal path — no host flash tools needed (you only `pip install krabby-launcher`) |
+| `krabby-firmware <args>` | the flash CLI **directly on the host** | running the firmware package standalone (`pip install krabby-firmware`), e.g. on a laptop without the locomotion image |
+
+`krabby firmware` forwards every argument verbatim to `krabby-firmware` in a transient
+container, mounts `~/.cache/krabby-firmware` so cached artifacts are shared across runs,
+and passes serial devices (`/dev/ttyACM*`, `/dev/ttyUSB*`) through via `--device`. When
+your shell is interactive it allocates a TTY, so the interactive menu and paged
+`show <branch>` output behave the same as running `krabby-firmware` directly.

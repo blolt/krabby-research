@@ -322,7 +322,8 @@ def main():
         else:
             logger.info(
                 "Gamepad mode active: HAL bound at observation=%s, command=%s. "
-                "Run `krabby uno` to connect.",
+                "`krabby run` starts the krabby-uno client automatically; to connect a "
+                "separate client, run `krabby-uno`.",
                 hal_observation_bind,
                 hal_command_bind,
             )
