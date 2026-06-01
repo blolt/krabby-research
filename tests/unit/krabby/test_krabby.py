@@ -95,6 +95,35 @@ class TestStateHome:
         assert str(st._state_home()) == "/home/me"
 
 
+class TestVersion:
+    """`krabby --version` is read from package metadata (set from the release tag),
+    so it can never drift from the published version — nothing to bump by hand."""
+
+    def test_reads_installed_metadata(self, monkeypatch):
+        import krabby.__main__ as m
+        monkeypatch.setattr(m, "_pkg_version", lambda name: "9.9.9")
+        assert m._version() == "9.9.9"
+
+    def test_fallback_when_not_installed(self, monkeypatch):
+        import krabby.__main__ as m
+        from importlib.metadata import PackageNotFoundError
+        def _missing(name):
+            raise PackageNotFoundError(name)
+        monkeypatch.setattr(m, "_pkg_version", _missing)
+        assert m._version() == "0+unknown"
+
+    def test_version_flag_prints_metadata_version(self, monkeypatch, capsys):
+        import krabby.__main__ as m
+        monkeypatch.setattr(m, "_pkg_version", lambda name: "1.2.3")
+        monkeypatch.setattr(sys, "argv", ["krabby", "--version"])
+        try:
+            m.main()
+            raise AssertionError("expected SystemExit from --version")
+        except SystemExit as e:
+            assert e.code == 0
+        assert "krabby 1.2.3" in capsys.readouterr().out
+
+
 # ---------------------------------------------------------------------------
 # _docker: command construction
 # ---------------------------------------------------------------------------

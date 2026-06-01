@@ -3,10 +3,23 @@ from __future__ import annotations
 
 import argparse
 import sys
+from importlib.metadata import PackageNotFoundError, version as _pkg_version
 
 from krabby._state import DEFAULT_TAG
 
-_VERSION = "0.1.10"
+
+def _version() -> str:
+    """Version for `krabby --version`, read from the installed package metadata.
+
+    The release tag already sets the version in pyproject at build time, which lands
+    in the wheel metadata — so reading it here means there's no second place to bump
+    and it can never drift from the published version. Falls back to a dev marker when
+    run from an uninstalled source tree.
+    """
+    try:
+        return _pkg_version("krabby-launcher")
+    except PackageNotFoundError:
+        return "0+unknown"
 
 
 def main() -> None:
@@ -14,7 +27,7 @@ def main() -> None:
         prog="krabby",
         description="Install, update, and run the Krabby locomotion stack.",
     )
-    parser.add_argument("--version", action="version", version=f"krabby {_VERSION}")
+    parser.add_argument("--version", action="version", version=f"krabby {_version()}")
 
     sub = parser.add_subparsers(dest="command", metavar="<command>")
 
