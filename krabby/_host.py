@@ -83,6 +83,49 @@ def _ensure_pro_controller_udev() -> bool:
         return False
 
 
+def _dkms_state(pkg_name: str, version: str) -> str | None:
+    """DKMS state for a module/version: 'installed', 'built', 'added', or None."""
+    try:
+        res = subprocess.run(["dkms", "status", "-m", pkg_name, "-v", version],
+                             capture_output=True, text=True)
+    except FileNotFoundError:
+        return None
+    out = res.stdout.lower()
+    for st in ("installed", "built", "added"):
+        if st in out:
+            return st
+    return None
+
+
+def _dkms_ensure_installed(src: Path, pkg_name: str, version: str) -> bool:
+    """Add/build/install a DKMS module, skipping any step already done.
+
+    `dkms add` errors out if the module is already in the tree, so a prior run
+    that added but never finished building/installing (e.g. it was interrupted)
+    used to make every subsequent `krabby install` fail. Branch on the current
+    dkms state instead so re-runs are idempotent.
+    """
+    state = _dkms_state(pkg_name, version)
+    if state is None:
+        if _run(["dkms", "add", str(src)]) != 0:
+            print("[err] dkms add failed", file=sys.stderr)
+            return False
+        state = "added"
+    else:
+        print(f"[ok]  {pkg_name}/{version} already in DKMS tree ({state})")
+    if state == "added":
+        print(f"      building {pkg_name}/{version} (this may take a minute) ...")
+        if _run(["dkms", "build", "-m", pkg_name, "-v", version]) != 0:
+            print("[err] dkms build failed", file=sys.stderr)
+            return False
+        state = "built"
+    if state == "built":
+        if _run(["dkms", "install", "-m", pkg_name, "-v", version]) != 0:
+            print("[err] dkms install failed", file=sys.stderr)
+            return False
+    return True
+
+
 def _ensure_hid_nintendo() -> bool:
     try:
         if subprocess.run(["modinfo", "hid_nintendo"], capture_output=True).returncode == 0:
@@ -119,15 +162,7 @@ def _ensure_hid_nintendo() -> bool:
             print("[err] could not parse PACKAGE_NAME/VERSION from dkms.conf", file=sys.stderr)
             return False
 
-        if _run(["dkms", "add", str(src)]) != 0:
-            print("[err] dkms add failed", file=sys.stderr)
-            return False
-        print(f"      building {pkg_name}/{version} (this may take a minute) ...")
-        if _run(["dkms", "build", "-m", pkg_name, "-v", version]) != 0:
-            print("[err] dkms build failed", file=sys.stderr)
-            return False
-        if _run(["dkms", "install", "-m", pkg_name, "-v", version]) != 0:
-            print("[err] dkms install failed", file=sys.stderr)
+        if not _dkms_ensure_installed(src, pkg_name, version):
             return False
 
     if _run(["modprobe", "hid_nintendo"]) != 0:

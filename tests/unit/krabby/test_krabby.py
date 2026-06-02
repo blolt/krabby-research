@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import sys
+import types
+from pathlib import Path
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +182,76 @@ class TestBootService:
         import krabby._host as h
         monkeypatch.setattr(h.shutil, "which", lambda n: None)
         assert h._ensure_boot_service(True) is True  # graceful no-op on non-systemd hosts
+
+
+class TestDkmsEnsureInstalled:
+    """`krabby install`'s DKMS step must be idempotent: a module left in the
+    'added' or 'built' state by an interrupted run should resume, not fail on
+    `dkms add` (regression — that aborted every re-run)."""
+
+    def _run_recorder(self, monkeypatch):
+        import krabby._host as h
+        calls = []
+        monkeypatch.setattr(h, "_run", lambda cmd: calls.append(cmd) or 0)
+        return h, calls
+
+    def _verbs(self, calls):
+        return [c[1] for c in calls if c[:1] == ["dkms"]]
+
+    def test_fresh_module_adds_builds_installs(self, monkeypatch):
+        h, calls = self._run_recorder(monkeypatch)
+        monkeypatch.setattr(h, "_dkms_state", lambda p, v: None)
+        assert h._dkms_ensure_installed(Path("/src"), "nintendo", "3.2") is True
+        assert self._verbs(calls) == ["add", "build", "install"]
+
+    def test_already_added_skips_add(self, monkeypatch):
+        h, calls = self._run_recorder(monkeypatch)
+        monkeypatch.setattr(h, "_dkms_state", lambda p, v: "added")
+        assert h._dkms_ensure_installed(Path("/src"), "nintendo", "3.2") is True
+        assert self._verbs(calls) == ["build", "install"]  # no add
+
+    def test_already_built_only_installs(self, monkeypatch):
+        h, calls = self._run_recorder(monkeypatch)
+        monkeypatch.setattr(h, "_dkms_state", lambda p, v: "built")
+        assert h._dkms_ensure_installed(Path("/src"), "nintendo", "3.2") is True
+        assert self._verbs(calls) == ["install"]
+
+    def test_already_installed_does_nothing(self, monkeypatch):
+        h, calls = self._run_recorder(monkeypatch)
+        monkeypatch.setattr(h, "_dkms_state", lambda p, v: "installed")
+        assert h._dkms_ensure_installed(Path("/src"), "nintendo", "3.2") is True
+        assert self._verbs(calls) == []
+
+    def test_add_failure_returns_false(self, monkeypatch):
+        import krabby._host as h
+        monkeypatch.setattr(h, "_dkms_state", lambda p, v: None)
+        monkeypatch.setattr(h, "_run", lambda cmd: 1)  # add fails
+        assert h._dkms_ensure_installed(Path("/src"), "nintendo", "3.2") is False
+
+    def test_dkms_state_parses_status(self, monkeypatch):
+        import krabby._host as h
+        monkeypatch.setattr(
+            h.subprocess, "run",
+            lambda *a, **k: types.SimpleNamespace(
+                stdout="nintendo/3.2, 5.15.148-tegra, aarch64: installed\n", returncode=0),
+        )
+        assert h._dkms_state("nintendo", "3.2") == "installed"
+
+    def test_dkms_state_added(self, monkeypatch):
+        import krabby._host as h
+        monkeypatch.setattr(
+            h.subprocess, "run",
+            lambda *a, **k: types.SimpleNamespace(stdout="nintendo/3.2: added\n", returncode=0),
+        )
+        assert h._dkms_state("nintendo", "3.2") == "added"
+
+    def test_dkms_state_absent(self, monkeypatch):
+        import krabby._host as h
+        monkeypatch.setattr(
+            h.subprocess, "run",
+            lambda *a, **k: types.SimpleNamespace(stdout="", returncode=0),
+        )
+        assert h._dkms_state("nintendo", "3.2") is None
 
 
 class TestInstallLaunchFlag:
