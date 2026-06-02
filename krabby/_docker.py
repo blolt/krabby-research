@@ -13,6 +13,34 @@ def gpu_flags() -> list[str]:
     return ["--gpus", "all"]
 
 
+def host_network_flags() -> list[str]:
+    """`--network host` on Jetson, nothing on x86.
+
+    Tegra kernels don't ship the iptables `raw` table that Docker's default
+    bridge driver needs, so *any* bridge container fails at start with "can't
+    initialize iptables table `raw'" (exit 125) — even one that publishes no
+    ports (Docker programs the raw table for every bridge endpoint). Host
+    networking sidesteps the bridge entirely. On x86 (testing) the bridge
+    works, so add nothing. See docs/JETSON_DEPLOYMENT.md "Docker iptables /
+    networking errors".
+    """
+    if platform.machine() == "aarch64":
+        return ["--network", "host"]
+    return []
+
+
+def network_flags() -> list[str]:
+    """Networking for the HAL server's ZMQ endpoints (6001/6002).
+
+    On Jetson, host networking exposes the endpoints on the host directly and
+    `-p` would be redundant. On x86 (testing) the bridge works, so publish the
+    ports explicitly.
+    """
+    if host := host_network_flags():
+        return host
+    return ["-p", "6001:6001", "-p", "6002:6002"]
+
+
 def serial_device_flags() -> list[str]:
     flags: list[str] = []
     for pattern in ("/dev/ttyACM*", "/dev/ttyUSB*"):
@@ -52,8 +80,7 @@ def run_cmd(image_ref: str, extra_args: list[str], entrypoint: str | None = None
         *ep,
         "-v", "/dev:/dev",
         *mounts,
-        "-p", "6001:6001",
-        "-p", "6002:6002",
+        *network_flags(),
         image_ref,
         *extra_args,
     ]
@@ -68,6 +95,7 @@ def firmware_cmd(image_ref: str, firmware_args: list[str], interactive: bool = F
     return [
         "docker", "run", "--rm",
         *tty_flags,
+        *host_network_flags(),
         *serial_device_flags(),
         "-v", cache_mount,
         "-e", "LD_PRELOAD=",
@@ -138,8 +166,7 @@ def gamepad_cmd(image_ref: str, extra_args: list[str], extra_mounts: list[str] |
         *gpu_flags(),
         "-v", "/dev:/dev",
         *mounts,
-        "-p", "6001:6001",
-        "-p", "6002:6002",
+        *network_flags(),
         "--entrypoint", "bash",
         image_ref,
         "-c", _gamepad_launch_script(server_robot),
