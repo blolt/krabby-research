@@ -126,6 +126,8 @@ build-wheels:
 	@rm -rf parkour/dist && $(PYTHON) scripts/wheel-build/build_parkour_wheel.py
 	@cd teleop/edge && rm -rf dist && $(PYTHON) -m build --wheel
 	@cd teleop/portal && rm -rf dist && $(PYTHON) -m build --wheel
+	@cd krabby && rm -rf dist && $(PYTHON) -m build --wheel
+	@cd bench && rm -rf dist && $(PYTHON) -m build --wheel
 	@echo "Wheels built in dist/ directories"
 
 .PHONY: clean
@@ -140,6 +142,8 @@ clean:
 	rm -rf data_collection/dist data_collection/build data_collection/*.egg-info
 	rm -rf teleop/edge/dist teleop/edge/build teleop/edge/*.egg-info
 	rm -rf teleop/portal/dist teleop/portal/build teleop/portal/*.egg-info
+	rm -rf krabby/dist krabby/build krabby/*.egg-info
+	rm -rf bench/dist bench/build bench/*.egg-info
 	rm -rf controller/dist controller/build controller/*.egg-info
 	find . -type d -name __pycache__ -exec rm -r {} + 2>/dev/null || true
 	find . -type f -name "*.pyc" -delete
