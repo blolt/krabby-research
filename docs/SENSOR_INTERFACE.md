@@ -51,6 +51,10 @@ Pipeline strings can be used with `Gst.parse_launch()` or `gst-launch-1.0` (repl
 
 Both implement the same abstract `SensorInterface`: `list_sensors()`, `get_gstreamer_handle(sensor)`, `build_pipeline(handle, ...)`.
 
+## Live teleop and HAL observations
+
+**`build_pipeline`** produces encoded or display pipelines for **`hal/tools/multi_stream_display`** and **`hal/server/streaming_map`**. **Live WebRTC teleop** shares the same **catalog ids** and **`list_sensors()`** on Jetson and Isaac; video flows from **`HalClient`** → **`HardwareObservations.rgbd_by_catalog_id`** → **aiortc**, alongside policy and the data collector on one observation bus. Offer-time **`build_pipeline(..., fakesink)`** validates that each selected sensor can produce H.264.
+
 ## ZED 2i on Jetson: default front camera example
 
 The stack still treats the **Stereolabs ZED 2i** as the **reference** front RGB-D camera on Jetson. Other devices are supported only if they implement the same **`RgbDepthCamera`** contract and register a driver (see [Other front RGB-D drivers](#other-front-rgb-drivers) below).

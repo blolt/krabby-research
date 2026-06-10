@@ -149,11 +149,15 @@ Terminate **TLS** in front of the portal in production; preserve **WebSocket Upg
 
 Inference uses **`get_observations()`**. Viewer depth previews (if shown) are for humans only; raw depth for models stays on HAL. Encoding helpers live in **`hal/server/gstreamer_runtime.py`**.
 
+### GStreamer sensor interface vs live media
+
+**`SensorInterface`** (`list_sensors`, `get_gstreamer_handle`, `build_pipeline`) is the shared Jetson/Isaac API for sensor discovery and GStreamer pipeline strings (encode, tooling, tests). **Live teleop** uses that API for **`available_catalog_ids`**, offer validation, and offer-time **`build_pipeline(..., fakesink)`** preflight per selected sensor.
+
+**Live video** is **`HalClient`** → **`HardwareObservations.rgbd_by_catalog_id`** → **`HalRgbSnapshotVideoTrack`** → **aiortc** (same path on Jetson and Isaac). Policy, the data collector, and teleop all subscribe to that observation bus: one capture per sensor, latest-only frames, time-aligned RGB/depth/telemetry, and a single WebRTC encode at the network edge. Encoded GStreamer tails from **`build_pipeline`** are used by **`hal.server.streaming_map`** and **`hal/tools/multi_stream_display`**.
+
 ### Pipelines and codecs
 
-**`hal.server.streaming_map`** maps sensors to **`build_pipeline`** for encoded tails (e.g. files, **`fakesink`**, **`appsink`**). That path is separate from live teleop.
-
-**Live teleop** uses **`aiortc`**; the browser negotiates **VP8** or **H.264** on the peer connection. HAL **`build_pipeline(..., encoding='h264'|'h265')`** targets recorded / headless encode checks, not the **`teleop_edge`** WebRTC session.
+**Live teleop** encodes on the robot with **`aiortc`** from **`HalRgbSnapshotVideoTrack`** frames; the browser negotiates **VP8** or **H.264** on the peer connection.
 
 ### Latency
 
