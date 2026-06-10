@@ -43,6 +43,12 @@ STUN_TURN_SERVERS: list[dict[str, Any]] = copy.deepcopy(BUILTIN_STUN_SERVERS)
 # If non-empty, appended as ``?token=`` on the robot's outbound signaling WebSocket URL.
 HTTP_AUTH_TOKEN: str = ""
 
+# QoS: lower fps then drop lowest-priority streams when outbound bitrate or loss exceeds budget.
+QOS_ENABLED: bool = True
+
+# Nominal per-stream bitrate budget (kbps) used by the degradation ladder.
+QOS_KBPS_BUDGET_PER_STREAM: float = 2000.0
+
 
 def build_teleop_edge_settings() -> TeleopEdgeSettings:
     """Assemble :class:`TeleopEdgeSettings` from the module constants above."""
@@ -68,6 +74,10 @@ def build_teleop_edge_settings() -> TeleopEdgeSettings:
     if not ice:
         ice = copy.deepcopy(BUILTIN_STUN_SERVERS)
 
+    qos_kbps = float(QOS_KBPS_BUDGET_PER_STREAM)
+    if qos_kbps < 100.0:
+        qos_kbps = 100.0
+
     return TeleopEdgeSettings(
         mode=mode,
         server_signaling_ws_url=url,
@@ -75,4 +85,6 @@ def build_teleop_edge_settings() -> TeleopEdgeSettings:
         max_video_m_lines=max_lines,
         stun_turn_servers=ice,
         http_auth_token=(HTTP_AUTH_TOKEN or "").strip(),
+        qos_enabled=bool(QOS_ENABLED),
+        qos_kbps_budget_per_stream=qos_kbps,
     )

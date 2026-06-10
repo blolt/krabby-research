@@ -97,6 +97,8 @@ Edit **`teleop.edge.robot_settings`** (checked into the repo; override values pe
 | **`TELEOP_EDGE_MODE`** | **`"off"`** or **`"agent"`**. **`"agent"`** without a non-empty URL is treated as **`off`**. |
 | **`SERVER_RECONNECT_S`** | Reconnect backoff after dial-out errors. |
 | **`MAX_VIDEO_M_LINES`** | Cap on recvonly video **`m=`** lines per offer (clamped 1–32). |
+| **`QOS_ENABLED`** | When true, robot adapts teleop video under bandwidth pressure (see **QoS and degradation**). |
+| **`QOS_KBPS_BUDGET_PER_STREAM`** | Nominal per-stream bitrate budget (kbps) for the degradation ladder (default 2000). |
 | **`STUN_TURN_SERVERS`** | ICE list for the **robot’s** WebRTC answers. Keep aligned with **`teleop.portal.ice_config.STUN_TURN_SERVERS`** on the portal host so browser **`GET /api/teleop-config`** and robot use the same bootstrap. If empty or invalid, **`build_teleop_edge_settings`** uses **`BUILTIN_STUN_SERVERS`**. |
 | **`HTTP_AUTH_TOKEN`** | If non-empty, appended as **`?token=`** on the robot’s outbound signaling WebSocket (must match **`teleop.portal.settings.HTTP_TOKEN`** when the portal requires auth). |
 
@@ -119,7 +121,7 @@ Terminate **TLS** in front of the portal in production; preserve **WebSocket Upg
 - **Robot path:** outbound client to **`…/ws/robot`**; JSON messages: **`hello`**, **`ping`**, **`offer`**, **`answer`**, **`error`**.
 - **Non-trickle:** gather ICE to **complete** before sending the **offer** (bundled JS listens for **`icegatheringstatechange`**).
 - **Multiple video lines:** **N** recvonly video transceivers → **N** sender tracks if within **`robot_settings.MAX_VIDEO_M_LINES`**.
-- **Congestion:** standard WebRTC; no custom algorithm in-repo.
+- **Congestion / QoS:** robot-side degradation controller in **`teleop.edge.qos`** (see **QoS and degradation**).
 
 ### Data channels
 
@@ -155,10 +157,51 @@ Inference uses **`get_observations()`**. Viewer depth previews (if shown) are fo
 
 ### Latency
 
+**Targets (p95 over 60 s steady state):**
+
+| Streams | Glass-to-glass budget |
+|---------|------------------------|
+| 1 | **&lt; 300 ms** |
+| 4 | **&lt; 500 ms** |
+
+Constants: **`teleop.edge.qos.G2G_TARGET_MS_SINGLE_STREAM`**, **`G2G_TARGET_MS_FOUR_STREAMS`**.
+
 The UI reports two different latency signals:
 
 - **RTT** comes from WebSocket **ping** / **pong** and measures signaling round-trip time, not media glass-to-glass latency.
 - **g2g** is an estimated capture-to-render value for the first selected stream when robot capture timestamps are available. It uses ping/pong wall-clock offset estimation, so treat it as an approximation and keep browser/robot clocks synced.
+
+#### Glass-to-glass measurement method
+
+1. **Clock sync:** run NTP (or chrony) on the robot and operator host. Offset estimation in the portal adds tens of milliseconds of error when clocks drift.
+2. **Setup:** open the portal viewer with **1** or **4** recvonly video lines (catalog ids in offer order). Wait until ICE is connected and video is rendering (~10 s warmup).
+3. **Sample:** every **2 s** the portal sends **ping**; **pong** includes **`capture_timestamps_ns`** per active catalog id and the HUD updates **g2g~** ms for the first selected stream.
+4. **Record:** collect **30** g2g samples (~60 s). Compute **p50** and **p95** (helpers in **`teleop.edge.latency.summarize_g2g_samples`**).
+5. **Pass criteria:** p95 ≤ target for the stream count under test.
+
+**Formula** (implemented in **`teleop.edge.latency.estimate_g2g_ms`**):
+
+- `offset_ms` ≈ robot wall-clock minus browser wall-clock (EMA-smoothed from ping/pong **`t_wall_ms`** / **`server_ms`**).
+- `g2g_ms` = `browser_now_ms` − (`capture_timestamp_ns` / 1e6 − `offset_ms`).
+
+RTT and g2g measure different paths; use g2g for the latency requirement above.
+
+### QoS and degradation
+
+When **`QOS_ENABLED`** is true, **`TeleopQosController`** polls WebRTC **`getStats()`** on the robot (~1 Hz), derives outbound video kbps and packet-loss fraction, and drives **`HalRgbSnapshotVideoTrack`**:
+
+1. **Lower target fps** (30 → 24 → 15 → 10 → 5) while all streams remain active.
+2. **Drop lowest-priority streams** (highest track index / last catalog id in the offer) down to **one** active stream; inactive tracks emit black at **1 fps** to keep the peer connection alive.
+
+**Budget model:** total nominal budget = `stream_count × QOS_KBPS_BUDGET_PER_STREAM` (default 2000 kbps per stream). Degradation steps trigger on outbound bitrate falling below budget fractions and/or rising packet loss; recovery uses **2** consecutive healthy samples (hysteresis).
+
+Robot logs **`teleop qos:`** every level change and ~5 s while degraded. **pong** includes **`qos`** snapshot (`level`, `target_fps`, `active_stream_count`, `outbound_kbps`, `packet_loss_fraction`).
+
+**Characterization tests:** **`tests/unit/teleop/test_qos.py`** documents the degradation ladder (budget and loss triggers, fps, active stream count). Run:
+
+```bash
+pytest tests/unit/teleop/test_qos.py -v
+```
 
 ### Troubleshooting
 

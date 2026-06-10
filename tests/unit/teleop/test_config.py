@@ -75,3 +75,15 @@ def test_empty_stun_list_falls_back_to_builtin() -> None:
     robot_settings.STUN_TURN_SERVERS = []
     s = build_teleop_edge_settings()
     assert s.stun_turn_servers == robot_settings.BUILTIN_STUN_SERVERS
+
+
+def test_qos_settings_defaults() -> None:
+    s = build_teleop_edge_settings()
+    assert s.qos_enabled is True
+    assert s.qos_kbps_budget_per_stream == 2000.0
+
+
+def test_qos_kbps_budget_clamped() -> None:
+    robot_settings.QOS_KBPS_BUDGET_PER_STREAM = 10.0
+    s = build_teleop_edge_settings()
+    assert s.qos_kbps_budget_per_stream == 100.0

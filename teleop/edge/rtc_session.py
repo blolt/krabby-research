@@ -9,6 +9,8 @@ from typing import Any, Callable, Optional
 
 from aiortc import RTCPeerConnection, RTCSessionDescription
 
+from teleop.edge.qos import TeleopQosController
+from teleop.edge.qos_monitor import run_qos_stats_loop
 from teleop.edge.telemetry import TELEMETRY_CHANNEL_LABEL
 from teleop.edge.sdp_util import (
     count_video_m_lines,
@@ -71,6 +73,7 @@ async def create_answer_for_offer(
     control_message_handler: Callable[[dict[str, Any]], None] | None = None,
     telemetry_getter: TelemetryGetter | None = None,
     telemetry_hz: float = 20.0,
+    qos_controller: TeleopQosController | None = None,
 ) -> tuple[str, RTCPeerConnection]:
     """Apply remote offer, attach one video track per ``m=video`` line, return (answer_sdp, pc).
 
@@ -83,9 +86,14 @@ async def create_answer_for_offer(
     await pc.setRemoteDescription(offer)
     n_video = count_video_m_lines(offer_sdp)
     assert video_track_factory is not None or n_video == 0
+    if qos_controller is not None and n_video > 0:
+        qos_controller.configure_streams(n_video)
     for i in range(n_video):
         track: Any = video_track_factory(i)
         pc.addTrack(track)
+
+    if qos_controller is not None and n_video > 0 and qos_controller.enabled:
+        asyncio.create_task(run_qos_stats_loop(pc, qos_controller))
 
     telemetry_channel = None
     if telemetry_getter is not None:
@@ -133,6 +141,7 @@ async def handle_first_offer_message(
     control_message_handler: Callable[[dict[str, Any]], None] | None = None,
     telemetry_getter: TelemetryGetter | None = None,
     telemetry_hz: float = 20.0,
+    qos_controller: TeleopQosController | None = None,
 ) -> tuple[str | None, str | None, RTCPeerConnection | None]:
     """Parse offer JSON. Returns (error_json, answer_sdp, pc) — only one of error or answer set."""
     if payload.get("type") != "offer":
@@ -185,5 +194,6 @@ async def handle_first_offer_message(
         control_message_handler=control_message_handler,
         telemetry_getter=telemetry_getter,
         telemetry_hz=telemetry_hz,
+        qos_controller=qos_controller,
     )
     return None, ans_sdp, pc

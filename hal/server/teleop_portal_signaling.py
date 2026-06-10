@@ -23,6 +23,7 @@ from teleop.edge.config import TeleopEdgeSettings
 from teleop.edge.depth_preview import depth_meters_to_rgb24_u8
 from teleop.edge.hal_rgb_track import HalRgbSnapshotVideoTrack
 from teleop.edge.portal_client import portal_client_loop
+from teleop.edge.qos import TeleopDegradationPolicy, TeleopQosController
 from teleop.edge.viewer_catalog import parse_viewer_catalog_ids_from_payload
 from teleop.edge.telemetry import build_telemetry_payload
 from teleop.edge.webrtc_input_controller import WebRTCInputController
@@ -372,6 +373,13 @@ def start_hal_teleop_signaling_thread(
                     return None
                 return np.copy(arr)
 
+        qos_policy = TeleopDegradationPolicy(
+            stream_count=len(bootstrap_sensor_catalog_ids),
+            kbps_budget_per_stream=settings.qos_kbps_budget_per_stream,
+        )
+        qos_controller = TeleopQosController(qos_policy)
+        qos_controller.set_enabled(settings.qos_enabled)
+
         def _make_track_factory():
             def factory(track_index: int) -> HalRgbSnapshotVideoTrack:
                 cid = catalog_state.catalog_id_for_track(track_index)
@@ -383,6 +391,8 @@ def start_hal_teleop_signaling_thread(
                 return HalRgbSnapshotVideoTrack(
                     frame_getter=lambda c=cid: _rgb_copy(c),
                     catalog_id=cid or None,
+                    track_index=track_index,
+                    qos_controller=qos_controller,
                 )
 
             return factory
@@ -398,7 +408,7 @@ def start_hal_teleop_signaling_thread(
         def _pong_payload() -> dict[str, Any]:
             with rgb_lock:
                 cap = dict(latest_capture_ns)
-            return {"capture_timestamps_ns": cap}
+            return {"capture_timestamps_ns": cap, "qos": qos_controller.snapshot()}
 
         def _telemetry_getter() -> dict[str, Any] | None:
             return get_telemetry_copy()
@@ -441,6 +451,7 @@ def start_hal_teleop_signaling_thread(
                     control_message_handler=_on_control_message,
                     telemetry_getter=_telemetry_getter,
                     telemetry_hz=20.0,
+                    qos_controller=qos_controller,
                 )
             )
             await asyncio.to_thread(stop_event.wait)
