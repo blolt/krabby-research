@@ -153,12 +153,12 @@ if side is None:
     raise SystemExit(
         "Expected a non-primary side MaixSense catalog row "
         "(camera_driver='maixsense_a075v', hal_open_rgbd=True), but none was found."
-)
-side_host = (side.maixsense_host or "").strip() or "(unset)"
-if side.maixsense_port is not None:
-    side_port = side.maixsense_port
-else:
-    side_port = "(unset)"
+    )
+maixsense_rows = [
+    e
+    for e in JETSON_SENSOR_CATALOG
+    if e.camera_driver == "maixsense_a075v" and (e.is_primary or e.hal_open_rgbd)
+]
 
 # Force teleop config from launcher.
 teleop_settings.TELEOP_EDGE_MODE = "agent"
@@ -169,7 +169,10 @@ print(
     f"side={side.id}({side.camera_driver})"
 )
 print(f"[launcher] Teleop signaling URL: {teleop_url}")
-print(f"[launcher] Side MaixSense endpoint: {side_host}:{side_port}")
+for row in maixsense_rows:
+    host = (row.maixsense_host or "").strip() or "(unset)"
+    port = row.maixsense_port if row.maixsense_port is not None else "(unset)"
+    print(f"[launcher] MaixSense {row.id}: {host}:{port}")
 if task_name:
     print(f"[launcher] Task reference: {task_name} (Jetson main does not consume --task)")
 

@@ -74,7 +74,8 @@ def test_rgbd_catalog_writes_rgb_and_depth_topics() -> None:
     dep = np.ones((2, 3), dtype=np.float32)
     obs = create_dummy_hw_obs(camera_height=2, camera_width=3)
     obs.rgbd_by_catalog_id = {
-        "side_rgbd": RgbdCatalogObservation(rgb=rgb, depth=dep),
+        "side_right_rgbd": RgbdCatalogObservation(rgb=rgb, depth=dep),
+        "side_left_rgbd": RgbdCatalogObservation(rgb=rgb, depth=dep),
         "front_rgbd": RgbdCatalogObservation(rgb=rgb, depth=dep),
     }
     rows = observation_to_writes(ts, obs, topics, ())
@@ -82,8 +83,10 @@ def test_rgbd_catalog_writes_rgb_and_depth_topics() -> None:
     assert topics_found == {
         catalog_camera_topic("front_rgbd", "rgb"),
         catalog_camera_topic("front_rgbd", "depth"),
-        catalog_camera_topic("side_rgbd", "rgb"),
-        catalog_camera_topic("side_rgbd", "depth"),
+        catalog_camera_topic("side_right_rgbd", "rgb"),
+        catalog_camera_topic("side_right_rgbd", "depth"),
+        catalog_camera_topic("side_left_rgbd", "rgb"),
+        catalog_camera_topic("side_left_rgbd", "depth"),
     }
 
 

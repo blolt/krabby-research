@@ -76,10 +76,9 @@ JETSON_SENSOR_CATALOG: tuple[JetsonSensorCatalogEntry, ...] = (
         depth_mode="NEURAL_PLUS",
         gst_depth_quant_range_m=(0.2, 25.0),
     ),
-    # Second RGB-D (policy side slot when ``policy_scan_slot="side"``): driver is per-row.
-    # This row is configured for MaixSense A075V with literal host/port.
+    # Right flank MaixSense (~ body −Y in ROS base frame; see sim ``_SIDE_RIGHT_POS``).
     JetsonSensorCatalogEntry(
-        id="side_rgbd",
+        id="side_right_rgbd",
         type="rgbd",
         modality="rgbd",
         # MaixSense RGB is typically 640x480 for current config.
@@ -103,6 +102,33 @@ JETSON_SENSOR_CATALOG: tuple[JetsonSensorCatalogEntry, ...] = (
         hal_open_rgbd=True,
         policy_scan_slot="side",
         maixsense_host="192.168.233.1",
+        maixsense_port=80,
+        gst_depth_quant_range_m=(0.15, 1.5),
+    ),
+    # Left flank MaixSense (~ body +Y). Reconfigure module to 192.168.233.2 over SSH
+    # (/etc/init.d/rc.preboot); see docs/MAIXSENSE_A075V_SETUP.md.
+    JetsonSensorCatalogEntry(
+        id="side_left_rgbd",
+        type="rgbd",
+        modality="rgbd",
+        resolution=(640, 480),
+        depth_resolution=(320, 240),
+        fps=30,
+        pose=SensorPose(
+            x=0.0,
+            y=0.08,
+            z=0.12,
+            qx=0.0,
+            qy=0.0,
+            qz=0.7071067811865476,
+            qw=0.7071067811865476,
+        ),
+        appsrc_pixel_format="RGB",
+        is_primary=False,
+        camera_driver="maixsense_a075v",
+        depth_mode="NEURAL",
+        hal_open_rgbd=True,
+        maixsense_host="192.168.233.2",
         maixsense_port=80,
         gst_depth_quant_range_m=(0.15, 1.5),
     ),

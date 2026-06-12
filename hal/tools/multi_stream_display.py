@@ -340,12 +340,14 @@ def _isaac_interface_from_sim_cfgs(robot_link: str = "base") -> IsaacSensorInter
 
     from hal.server.isaac.sim_rgbd_camera_cfgs import sim_rgbd_camera_cfgs_for_robot_link
 
-    fc, fr, sc, sr = sim_rgbd_camera_cfgs_for_robot_link(robot_link)
+    fc, fr, src, srr, slc, slr = sim_rgbd_camera_cfgs_for_robot_link(robot_link)
     scene_sensors = {
         "front_camera": SimpleNamespace(cfg=fc),
         "front_rgb": SimpleNamespace(cfg=fr),
-        "side_camera": SimpleNamespace(cfg=sc),
-        "side_rgb": SimpleNamespace(cfg=sr),
+        "side_right_camera": SimpleNamespace(cfg=src),
+        "side_right_rgb": SimpleNamespace(cfg=srr),
+        "side_left_camera": SimpleNamespace(cfg=slc),
+        "side_left_rgb": SimpleNamespace(cfg=slr),
     }
     return IsaacSensorInterface(scene_sensors=scene_sensors)
 

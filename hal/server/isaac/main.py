@@ -32,7 +32,11 @@ from data_collection.config import load_config
 logger = logging.getLogger(__name__)
 CONTROL_RATE_HZ = 100.0
 # Sensor catalog ids passed to teleop signaling when HAL introspects RGB-D streams (--teleop).
-TELEOP_BOOTSTRAP_SENSOR_CATALOG_IDS: tuple[str, ...] = ("front_rgbd", "side_rgbd")
+TELEOP_BOOTSTRAP_SENSOR_CATALOG_IDS: tuple[str, ...] = (
+    "front_rgbd",
+    "side_right_rgbd",
+    "side_left_rgbd",
+)
 
 # Outbound WebSocket to krabby-teleop-portal ``/ws/robot``. Default for Isaac sim when the portal
 # runs alongside on the same machine (see Docker note in docs / reply when using bridge networks).
@@ -323,10 +327,14 @@ def main():
         _sensor_dt = env_cfg.sim.dt * env_cfg.decimation
         env_cfg.scene.front_camera.update_period = _sensor_dt
         env_cfg.scene.front_rgb.update_period = _sensor_dt
-        env_cfg.scene.side_camera.update_period = _sensor_dt
-        env_cfg.scene.side_rgb.update_period = _sensor_dt
+        env_cfg.scene.side_right_camera.update_period = _sensor_dt
+        env_cfg.scene.side_right_rgb.update_period = _sensor_dt
+        env_cfg.scene.side_left_camera.update_period = _sensor_dt
+        env_cfg.scene.side_left_rgb.update_period = _sensor_dt
         logger.info(
-            "HAL sim RGB-D sensors on Robot/%s (front_rgb, front_camera, side_rgb, side_camera)",
+            "HAL sim RGB-D sensors on Robot/%s "
+            "(front_rgb, front_camera, side_right_rgb, side_right_camera, "
+            "side_left_rgb, side_left_camera)",
             sim_rgbd_link,
         )
 

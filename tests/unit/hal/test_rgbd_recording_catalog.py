@@ -10,7 +10,8 @@ from hal.server.rgbd_recording_catalog import hal_rgbd_catalog_ids_for_recording
 def test_hal_rgbd_catalog_ids_match_jetson_registry() -> None:
     ids = hal_rgbd_catalog_ids_for_recording()
     assert "front_rgbd" in ids
-    assert "side_rgbd" in ids
+    assert "side_right_rgbd" in ids
+    assert "side_left_rgbd" in ids
     assert "front_rgbd_gray16_depth" not in ids
 
 
