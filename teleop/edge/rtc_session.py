@@ -181,7 +181,7 @@ async def handle_first_offer_message(
                     "type": "error",
                     "message": (
                         "video requires HAL camera tracks (run krabby-hal-server-jetson with "
-                        "--teleop and robot teleop settings in teleop.edge.robot_settings)"
+                        "--teleop-ip and teleop/edge/robot_settings for ICE/STUN)"
                     ),
                 }
             ),

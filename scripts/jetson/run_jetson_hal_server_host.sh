@@ -25,7 +25,7 @@ Control source notes:
       --control-source portal
   - Set CONTROL_SOURCE below to "inference" to use policy commands instead.
 
-To customize runtime values (image, checkpoint, collector path, teleop URL),
+To customize runtime values (image, checkpoint, collector path, teleop IP),
 edit the "Hardcoded launch settings" section in this file.
 EOF
 }
@@ -71,7 +71,7 @@ done
 TASK_NAME="Isaac-Extreme-Parkour-Teacher-Unitree-Go2-Play-v0"
 ROBOT_TYPE="go2"
 CONTROL_SOURCE="portal"   # "portal" (default) or "inference"
-TELEOP_WS_URL="ws://10.0.0.130:9000/ws/robot"
+TELEOP_IP="10.0.0.130"
 COLLECTOR_HOST_DIR="/tmp/krabby_bags"
 CONTAINER_COLLECTOR_DIR="/workspace/bags"
 ZED_CACHE_HOST_DIR="${HOME}/zed-resources"
@@ -113,7 +113,7 @@ echo "Using checkpoint (container): $CHECKPOINT_PATH"
 echo "Using task reference: $TASK_NAME"
 echo "Using robot definition: $ROBOT_TYPE"
 echo "Using control source: $CONTROL_SOURCE"
-echo "Using teleop signaling URL: $TELEOP_WS_URL"
+echo "Using teleop portal IP: $TELEOP_IP"
 echo "Using side MaixSense endpoint: from sensor catalog"
 echo "Using ZED resources mount: $ZED_RESOURCES_SUBDIR:$ZED_RESOURCES_CONTAINER_DIR"
 echo "Using ZED settings mount: $ZED_SETTINGS_SUBDIR:$ZED_SETTINGS_CONTAINER_DIR"
@@ -121,14 +121,9 @@ echo "Using ZED settings mount: $ZED_SETTINGS_SUBDIR:$ZED_SETTINGS_CONTAINER_DIR
 PY_BOOTSTRAP="$(cat <<'PYEOF'
 import sys
 
-import teleop.edge.robot_settings as teleop_settings
 from hal.server.jetson.sensor_backend_jetson import JETSON_SENSOR_CATALOG
 
 task_name = "Isaac-Extreme-Parkour-Teacher-Unitree-Go2-Play-v0"
-teleop_url = "ws://10.0.0.130:9000/ws/robot"
-
-if not teleop_url:
-    raise SystemExit("KRABBY_TELEOP_SIGNALING_WS_URL is empty; refusing to launch teleop")
 
 front = next((e for e in JETSON_SENSOR_CATALOG if e.is_primary and e.id == "front_rgbd"), None)
 if front is None:
@@ -160,15 +155,10 @@ maixsense_rows = [
     if e.camera_driver == "maixsense_a075v" and (e.is_primary or e.hal_open_rgbd)
 ]
 
-# Force teleop config from launcher.
-teleop_settings.TELEOP_EDGE_MODE = "agent"
-teleop_settings.SERVER_SIGNALING_WS_URL = teleop_url
-
 print(
     f"[launcher] Camera config OK: front={front.id}({front.camera_driver}), "
     f"side={side.id}({side.camera_driver})"
 )
-print(f"[launcher] Teleop signaling URL: {teleop_url}")
 for row in maixsense_rows:
     host = (row.maixsense_host or "").strip() or "(unset)"
     port = row.maixsense_port if row.maixsense_port is not None else "(unset)"
@@ -176,14 +166,42 @@ for row in maixsense_rows:
 if task_name:
     print(f"[launcher] Task reference: {task_name} (Jetson main does not consume --task)")
 
-sys.argv = [sys.argv[0], "--teleop", *sys.argv[1:]]
 from hal.server.jetson.main import main
 
 main()
 PYEOF
 )"
 
-exec sudo docker run --rm --runtime=nvidia --network host \
+# Fixed name so EXIT/INT/TERM can stop an orphaned container if the docker CLI detaches
+# (Ctrl+C returning a shell prompt while HAL + teleop keep running).
+CONTAINER_NAME="${KRABBY_JETSON_HAL_CONTAINER_NAME:-krabby-jetson-hal}"
+CLEANUP_DONE=0
+
+stop_hal_container() {
+  if ! sudo docker ps -q --filter "name=^/${CONTAINER_NAME}$" 2>/dev/null | grep -q .; then
+    return 0
+  fi
+  echo "Stopping container ${CONTAINER_NAME}..."
+  sudo docker stop -t 15 "$CONTAINER_NAME" >/dev/null 2>&1 || true
+}
+
+cleanup() {
+  if [ "$CLEANUP_DONE" -eq 1 ]; then
+    return 0
+  fi
+  CLEANUP_DONE=1
+  local exit_code=$?
+  trap - EXIT INT TERM HUP
+  stop_hal_container
+  exit "$exit_code"
+}
+
+trap cleanup EXIT INT TERM HUP
+
+# Prior orphaned run (same fixed name).
+stop_hal_container
+
+sudo docker run --rm --name "$CONTAINER_NAME" --runtime=nvidia --network host \
   -v "$CHECKPOINT_HOST_DIR:/workspace/checkpoints" \
   -v "$COLLECTOR_HOST_DIR:$CONTAINER_COLLECTOR_DIR" \
   -v "$ZED_RESOURCES_SUBDIR:$ZED_RESOURCES_CONTAINER_DIR" \
@@ -196,4 +214,5 @@ exec sudo docker run --rm --runtime=nvidia --network host \
   --checkpoint "$CHECKPOINT_PATH" \
   --control-source "$CONTROL_SOURCE" \
   --robot "$ROBOT_TYPE" \
+  --teleop-ip "$TELEOP_IP" \
   --data-collector-output-dir "$CONTAINER_COLLECTOR_DIR"

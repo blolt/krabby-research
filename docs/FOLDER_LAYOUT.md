@@ -107,7 +107,7 @@ krabby-research/
 │           └── requirements.txt
 │
 └── scripts/                          # Deployment and utility scripts (current)
-    ├── run_isaac_hal_server.sh       # Isaac Sim HAL (+ --teleop, --joystick)
+    ├── run_isaac_hal_server.sh       # Run Isaac Sim HAL server in Docker
     ├── run_teleop_portal_x86_docker.sh
     ├── run_jetson_hal_server_host.sh
     └── …                             # jetson-reset, setup-docker-gpu, wheel-build/, etc.

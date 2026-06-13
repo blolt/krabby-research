@@ -21,7 +21,7 @@ class TeleopEdgeSettings:
     stun_turn_servers: list[dict[str, Any]]
     http_auth_token: str = ""
     qos_enabled: bool = True
-    qos_kbps_budget_per_stream: float = 2000.0
+    qos_kbps_budget_per_stream: float = 120.0
 
     @property
     def agent_enabled(self) -> bool:

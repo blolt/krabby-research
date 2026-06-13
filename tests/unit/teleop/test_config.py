@@ -80,10 +80,19 @@ def test_empty_stun_list_falls_back_to_builtin() -> None:
 def test_qos_settings_defaults() -> None:
     s = build_teleop_edge_settings()
     assert s.qos_enabled is True
-    assert s.qos_kbps_budget_per_stream == 2000.0
+    assert s.qos_kbps_budget_per_stream == 120.0
 
 
 def test_qos_kbps_budget_clamped() -> None:
     robot_settings.QOS_KBPS_BUDGET_PER_STREAM = 10.0
     s = build_teleop_edge_settings()
     assert s.qos_kbps_budget_per_stream == 100.0
+
+
+def test_host_or_url_overrides_module_signaling() -> None:
+    robot_settings.TELEOP_EDGE_MODE = "off"
+    robot_settings.SERVER_SIGNALING_WS_URL = ""
+    s = build_teleop_edge_settings(host_or_url="10.0.0.130")
+    assert s.mode == "agent"
+    assert s.agent_enabled
+    assert s.server_signaling_ws_url == "ws://10.0.0.130:9000/ws/robot"

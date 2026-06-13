@@ -145,7 +145,7 @@ Pipelines use **appsrc** as the source. You must push buffers (e.g. from ZED SDK
 ## Isaac sensor setup
 
 - **Front ZED-like**: Use a scene config that adds `front_camera` (depth) and `front_rgb` (RGB), e.g. `ZedLikeSceneCfg` from `hal.server.isaac.zed_like_scene_cfg`. Resolution is 640×480 in the current HAL server.
-- **Side RGB-D (Jetson-matching ids)**: With `--teleop`, `hal.server.isaac.main` calls `attach_sim_rgbd_sensors_to_scene_cfg`, which adds `side_right_rgb` / `side_right_camera` and `side_left_rgb` / `side_left_camera` (poses match `JETSON_SENSOR_CATALOG`). `IsaacSensorInterface` maps them to **`side_right_rgbd`** and **`side_left_rgbd`** plus gray16 depth preview rows.
+- Side RGB-D (Jetson-matching ids): With `--teleop-ip`, `hal.server.isaac.main` calls `attach_sim_rgbd_sensors_to_scene_cfg`, which adds `side_right_rgb` / `side_right_camera` and `side_left_rgb` / `side_left_camera` (poses match `JETSON_SENSOR_CATALOG`). `IsaacSensorInterface` maps them to `side_right_rgbd` and `side_left_rgbd` plus gray16 depth preview rows.
 - **Radar and extras**: Add matching synthetic sensors in the scene and extend `IsaacSensorInterface` (or pass `configured_sensors=`) so `list_sensors()` includes them with the same IDs as on Jetson. Pipeline generation remains the same; you feed frames from the sim into `appsrc`.
 
 ## Adding new sensor backends
@@ -165,7 +165,7 @@ There is **no** wrapper script under `scripts/` for this tool: use **`python -m 
 
 - **`--no-display`**: prints declared sensors and example `build_pipeline(...)` strings only.
 - **Jetson + display**: uses the **configured front observation driver** from the catalog (default **`zed`**, i.e. ZED SDK / `pyzed`); shows live **RGB + depth** from that device. See [ZED 2i on Jetson: default front camera example](#zed-2i-on-jetson-default-front-camera-example) for install, Docker/USB, and NEURAL model notes. Which streams the tool actually opens is defined in **`hal/tools/multi_stream_display.py`** (the live path targets the front RGB-depth pair; it does not automatically fan out to every sensor **`list_sensors()`** might report).
-- **Isaac + display**: starts **Isaac Lab** with **`ZedLikeSceneCfg`** (`front_rgb` + `front_camera` depth). Pass the same **`AppLauncher`** flags as other Isaac HAL scripts (e.g. `hal.server.isaac.main --teleop`). Optional: **`--num_envs`** (default 1).
+- **Isaac + display**: starts **Isaac Lab** with **`ZedLikeSceneCfg`** (`front_rgb` + `front_camera` depth). Pass the same **`AppLauncher`** flags as other Isaac HAL scripts (e.g. `hal.server.isaac.main --teleop-ip 127.0.0.1`). Optional: **`--num_envs`** (default 1).
 
 Assumes **Linux with X11** for display mode: allow Docker to use the host display and mount the X11 socket. If `DISPLAY` is unset, use `:0`.
 

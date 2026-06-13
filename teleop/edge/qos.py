@@ -76,7 +76,7 @@ class TeleopDegradationPolicy:
         *,
         stream_count: int = 1,
         nominal_fps: float = 30.0,
-        kbps_budget_per_stream: float = 2000.0,
+        kbps_budget_per_stream: float = 120.0,
         recovery_hold_samples: int = 2,
     ) -> None:
         self._stream_count = max(1, int(stream_count))
@@ -102,20 +102,40 @@ class TeleopDegradationPolicy:
         self._recovery_streak = 0
 
     def total_kbps_budget(self) -> float:
+        """Nominal budget if every requested stream were active at ``nominal_fps``."""
         return self._stream_count * self._kbps_budget_per_stream
+
+    @staticmethod
+    def active_stream_count_for_level(level: int, stream_count: int) -> int:
+        step = _DEGRADATION_LADDER[level]
+        if level == 5:
+            return 1
+        return max(1, stream_count - step.active_streams_delta)
+
+    def kbps_budget_for_level(self, level: int) -> float:
+        """Expected outbound budget at ``level`` (active streams × per-stream × fps scale)."""
+        active = self.active_stream_count_for_level(level, self._stream_count)
+        step = _DEGRADATION_LADDER[level]
+        fps_scale = step.target_fps / self._nominal_fps
+        return active * self._kbps_budget_per_stream * fps_scale
 
     def observe(
         self,
         *,
         outbound_kbps: float,
         packet_loss_fraction: float,
+        max_level: int | None = None,
     ) -> QosDegradationState:
         outbound_kbps = max(0.0, float(outbound_kbps))
         packet_loss_fraction = min(1.0, max(0.0, float(packet_loss_fraction)))
         self._last_outbound_kbps = outbound_kbps
         self._last_loss = packet_loss_fraction
 
-        budget = self.total_kbps_budget()
+        # Compare measured outbound to the budget implied by the *current* degradation
+        # level (active streams + target fps). Using the full requested stream count while
+        # already degraded caused a lock at level 5: one surviving stream cannot fill a
+        # six-stream nominal budget, so recovery never triggered.
+        budget = self.kbps_budget_for_level(self._level)
         budget_fraction = (outbound_kbps / budget) if budget > 0.0 else 1.0
 
         required_level = self._required_level(budget_fraction, packet_loss_fraction)
@@ -130,11 +150,12 @@ class TeleopDegradationPolicy:
         else:
             self._recovery_streak = 0
 
+        if max_level is not None and self._level > max_level:
+            self._level = max_level
+            self._recovery_streak = 0
+
         step = _DEGRADATION_LADDER[self._level]
-        if self._level == 5:
-            active = 1
-        else:
-            active = max(1, self._stream_count - step.active_streams_delta)
+        active = self.active_stream_count_for_level(self._level, self._stream_count)
         reason = self._build_reason(budget_fraction, packet_loss_fraction, step)
         return QosDegradationState(
             level=self._level,
@@ -171,10 +192,12 @@ class TeleopQosController:
     """Thread-safe holder for the active degradation state (HAL poll + aiortc recv)."""
 
     _REPORT_INTERVAL_S = 5.0
+    _GRACE_AFTER_RECONFIGURE_S = 10.0
 
     def __init__(self, policy: TeleopDegradationPolicy | None = None) -> None:
         self._policy = policy or TeleopDegradationPolicy()
         self._lock = threading.Lock()
+        self._grace_until_mono_s = 0.0
         self._state = QosDegradationState(
             level=0,
             target_fps=30.0,
@@ -199,6 +222,7 @@ class TeleopQosController:
     def configure_streams(self, stream_count: int) -> None:
         with self._lock:
             self._policy.set_stream_count(stream_count)
+            self._grace_until_mono_s = time.monotonic() + self._GRACE_AFTER_RECONFIGURE_S
             self._state = QosDegradationState(
                 level=0,
                 target_fps=30.0,
@@ -229,9 +253,11 @@ class TeleopQosController:
                 )
                 return self._state
             prev_level = self._state.level
+            max_level = 0 if time.monotonic() < self._grace_until_mono_s else None
             self._state = self._policy.observe(
                 outbound_kbps=outbound_kbps,
                 packet_loss_fraction=packet_loss_fraction,
+                max_level=max_level,
             )
             now = time.monotonic()
             if (

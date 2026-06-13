@@ -47,20 +47,29 @@ HTTP_AUTH_TOKEN: str = ""
 QOS_ENABLED: bool = True
 
 # Nominal per-stream bitrate budget (kbps) used by the degradation ladder.
-QOS_KBPS_BUDGET_PER_STREAM: float = 2000.0
+# Calibrated for live teleop ``HalRgbSnapshotVideoTrack`` + aiortc VP8 (~100 kbps/stream),
+# not full GStreamer H.264 tails (which can be 1–2 Mbps/stream).
+QOS_KBPS_BUDGET_PER_STREAM: float = 120.0
 
 
-def build_teleop_edge_settings() -> TeleopEdgeSettings:
-    """Assemble :class:`TeleopEdgeSettings` from the module constants above."""
-    mode = (TELEOP_EDGE_MODE or "off").strip().lower()
-    if mode not in ("off", "agent"):
-        logger.warning("teleop: unknown TELEOP_EDGE_MODE %r; using off", TELEOP_EDGE_MODE)
-        mode = "off"
+def build_robot_signaling_ws_url(host_or_url: str, *, port: int = 9000) -> str:
+    """Build ``ws://host:port/ws/robot`` from an IP/hostname, or pass through an existing URL."""
+    s = (host_or_url or "").strip()
+    if not s:
+        raise ValueError("teleop host/IP must be non-empty")
+    lower = s.lower()
+    if lower.startswith("ws://") or lower.startswith("wss://"):
+        return s
+    return f"ws://{s}:{port}/ws/robot"
 
-    url = (SERVER_SIGNALING_WS_URL or "").strip() or None
-    if mode == "agent" and not url:
-        mode = "off"
 
+def build_teleop_edge_settings(*, host_or_url: str | None = None) -> TeleopEdgeSettings:
+    """Assemble :class:`TeleopEdgeSettings` from the module constants above.
+
+    When ``host_or_url`` is set (HAL ``--teleop-ip``), mode is forced to ``agent`` and the
+    signaling URL is built from that host; module ``TELEOP_EDGE_MODE`` / ``SERVER_SIGNALING_WS_URL``
+    are ignored for those fields.
+    """
     reconnect = SERVER_RECONNECT_S
     if reconnect < 0.5:
         reconnect = 0.5
@@ -77,6 +86,19 @@ def build_teleop_edge_settings() -> TeleopEdgeSettings:
     qos_kbps = float(QOS_KBPS_BUDGET_PER_STREAM)
     if qos_kbps < 100.0:
         qos_kbps = 100.0
+
+    if host_or_url is not None:
+        mode = "agent"
+        url = build_robot_signaling_ws_url(host_or_url)
+    else:
+        mode = (TELEOP_EDGE_MODE or "off").strip().lower()
+        if mode not in ("off", "agent"):
+            logger.warning("teleop: unknown TELEOP_EDGE_MODE %r; using off", TELEOP_EDGE_MODE)
+            mode = "off"
+
+        url = (SERVER_SIGNALING_WS_URL or "").strip() or None
+        if mode == "agent" and not url:
+            mode = "off"
 
     return TeleopEdgeSettings(
         mode=mode,

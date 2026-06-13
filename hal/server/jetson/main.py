@@ -83,12 +83,14 @@ def main():
         ),
     )
     parser.add_argument(
-        "--teleop",
-        action="store_true",
+        "--teleop-ip",
+        type=str,
+        default=None,
+        metavar="HOST",
         help=(
-            "Run teleop WebRTC in-process: RGB from HAL RGB-D cameras. "
-            "Configure signaling URL, mode, and optional sensor ids in teleop/edge/robot_settings.py. "
-            "Ignored in --control-source gamepad."
+            "Teleop portal host (IP or hostname). Enables outbound WebRTC signaling to "
+            "ws://HOST:9000/ws/robot using HAL RGB-D cameras. Required for --control-source portal. "
+            "Optional for inference (video alongside policy). Ignored for gamepad."
         ),
     )
     parser.add_argument(
@@ -139,12 +141,13 @@ def main():
 
     if args.control_source == "inference" and not args.checkpoint:
         parser.error("--checkpoint is required when --control-source inference")
-    if args.control_source == "portal" and not args.teleop:
-        logger.info("control-source=portal selected: enabling --teleop automatically")
-        args.teleop = True
-    if args.control_source == "gamepad" and args.teleop:
-        logger.info("control-source=gamepad: ignoring --teleop (no in-process teleop client)")
-        args.teleop = False
+    if args.control_source == "portal" and not args.teleop_ip:
+        parser.error("--control-source portal requires --teleop-ip")
+    if args.control_source == "gamepad" and args.teleop_ip:
+        logger.info("control-source=gamepad: ignoring --teleop-ip (no in-process teleop client)")
+        args.teleop_ip = None
+
+    teleop_enabled = args.teleop_ip is not None
 
     if args.robot == "hex":
         robot_definition = KRABBY_HEX_DEFINITION
@@ -224,24 +227,17 @@ def main():
             logger.error("MCU not available — check firmware and wiring. Exiting.")
             sys.exit(1)
 
-        # ----- Teleop signaling (portal mode, or inference with --teleop) -----
+        # ----- Teleop signaling (portal mode, or inference with --teleop-ip) -----
 
-        if args.teleop:
+        if teleop_enabled:
             from teleop.edge.robot_settings import build_teleop_edge_settings
 
             # Bootstrap HAL poll until the browser sends ``catalog_ids`` on hello/offer (portal viewer).
             teleop_sensor_ids = [hal_server._primary_catalog_id]
-            _teleop_st = build_teleop_edge_settings()
-            if not _teleop_st.agent_enabled:
-                logger.error(
-                    "--teleop requires agent mode with a non-empty signaling URL: set "
-                    "TELEOP_EDGE_MODE=\"agent\" and SERVER_SIGNALING_WS_URL in "
-                    "teleop/edge/robot_settings.py; teleop signaling not started",
-                )
-                teleop_sensor_ids = None
-            elif not hal_server._hal_rgbd_cameras:
+            _teleop_st = build_teleop_edge_settings(host_or_url=args.teleop_ip)
+            if not hal_server._hal_rgbd_cameras:
                 logger.warning(
-                    "--teleop: no HAL RGB-D cameras opened after initialize_cameras(); "
+                    "--teleop-ip: no HAL RGB-D cameras opened after initialize_cameras(); "
                     "teleop signaling still starts (video will be black until cameras work)",
                 )
 
@@ -309,7 +305,7 @@ def main():
                 parkour_client.initialize()
                 logger.info("Parkour inference client initialized")
                 parkour_client.start_thread(running_flag=lambda: running)
-                if args.teleop:
+                if teleop_enabled:
                     logger.info(
                         "Teleop video active; inference commands use source=inference; operator overrides when portal sends",
                     )

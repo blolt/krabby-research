@@ -1,19 +1,19 @@
 # Teleop (WebRTC remote viewing)
 
-Jetson HAL with **`--teleop`** runs an **outbound** WebSocket client to the URL in **`teleop.edge.robot_settings`** (source: **`teleop/edge/robot_settings.py`**) and answers **SDP** with **HAL-backed** video. A **second `HalClient`** (same ZMQ endpoints as inference) subscribes to **`HardwareObservations`** and samples **`rgbd_by_catalog_id`** for each viewer line. The reference **operator server** is **`krabby-teleop-portal`** (wheel root: **`teleop/portal/`**): **HTTP** UI, **`GET /api/teleop-config`**, FIFO relay **`/ws/browser`** ↔ **`/ws/robot`**. After **offer/answer**, media is **browser ↔ robot** (ICE/STUN/TURN as negotiated).
+Jetson or Isaac HAL with **`--teleop-ip HOST`** runs an **outbound** WebSocket client to **`ws://HOST:9000/ws/robot`** (built by **`build_robot_signaling_ws_url`** in **`teleop/edge/robot_settings.py`**) and answers **SDP** with **HAL-backed** video. A **second `HalClient`** (same ZMQ endpoints as inference) subscribes to **`HardwareObservations`** and samples **`rgbd_by_catalog_id`** for each viewer line. The reference **operator server** is **`krabby-teleop-portal`** (wheel root: **`teleop/portal/`**): **HTTP** UI, **`GET /api/teleop-config`**, FIFO relay **`/ws/browser`** ↔ **`/ws/robot`**. After **offer/answer**, media is **browser ↔ robot** (ICE/STUN/TURN as negotiated).
 
-**Two packages:** **`krabby-teleop-edge`** (wheel root: **`teleop/edge/`**) on robots only; **`krabby-teleop-portal`** (wheel root: **`teleop/portal/`**) on the operator host. Robot code calls **`teleop.edge.robot_settings.build_teleop_edge_settings()`** and **`portal_client_loop`** / **`run_robot_signaling_loop`**. The portal calls **`teleop.portal.settings.build_portal_auth_settings()`**, **`teleop.portal.ice_config.build_browser_ice_config()`**, and **`teleop.portal.relay.create_portal_app`**. Dev helpers: **`scripts/run_teleop_portal_x86_docker.sh`** (portal in Docker) and HAL **`--teleop`** on Jetson or Isaac; unit tests under **`tests/unit/teleop/`**.
+**Two packages:** **`krabby-teleop-edge`** (wheel root: **`teleop/edge/`**) on robots only; **`krabby-teleop-portal`** (wheel root: **`teleop/portal/`**) on the operator host. Robot code calls **`teleop.edge.robot_settings.build_teleop_edge_settings()`** and **`portal_client_loop`** / **`run_robot_signaling_loop`**. The portal calls **`teleop.portal.settings.build_portal_auth_settings()`**, **`teleop.portal.ice_config.build_browser_ice_config()`**, and **`teleop.portal.relay.create_portal_app`**. Dev helpers: **`scripts/run_teleop_portal_x86_docker.sh`** (portal in Docker) and HAL **`--teleop-ip`** on Jetson or Isaac; unit tests under **`tests/unit/teleop/`**.
 
 ---
 
 ## Purpose and core functionality
 
-**Goal:** remote operators view **live** video and sensor streams over **WebRTC**. The robot runs an agent that **connects outbound** to a **remote teleop server** for signaling and answers with **HAL-backed** video where **`--teleop`** is enabled; **HAL** continues to expose **`get_observations()`** and the rest of the stack for autonomy and logging alongside teleop.
+**Goal:** remote operators view **live** video and sensor streams over **WebRTC**. The robot runs an agent that **connects outbound** to a **remote teleop server** for signaling and answers with **HAL-backed** video when **`--teleop-ip`** is set; **HAL** continues to expose **`get_observations()`** and the rest of the stack for autonomy and logging alongside teleop.
 
 **What ships:**
 
 1. **`krabby-teleop-portal`** — the **remote teleop server** reference app: operator **HTTP** page, **`GET /api/teleop-config`** (STUN/TURN / ICE helpers for the browser), **`/ws/browser`**, and **`/ws/robot`**. A small FIFO relay pairs one browser socket with one robot socket and forwards JSON text unchanged.
-2. **`teleop.edge`** (used from Jetson HAL **`--teleop`**) — **outbound** WebSocket signaling and **aiortc** answers; **video tracks** read RGB from the teleop **`HalClient`** subscription via **`HalRgbSnapshotVideoTrack`**.
+2. **`teleop.edge`** (used from Jetson / Isaac HAL **`--teleop-ip`**) — **outbound** WebSocket signaling and **aiortc** answers; **video tracks** read RGB from the teleop **`HalClient`** subscription via **`HalRgbSnapshotVideoTrack`**.
 3. **WebRTC media** is **browser ↔ robot** after signaling completes (ICE/STUN/TURN as usual), unless you add a separate media relay.
 
 ---
@@ -65,7 +65,7 @@ Use **`aiortc`** for the live robot-side WebRTC path (`teleop.edge` session/sign
   Operator browser ◄──── WebRTC media ───────────────────► Robot (ICE; may use TURN)
 ```
 
-Configure the robot by editing **`teleop.edge.robot_settings`**: set **`TELEOP_EDGE_MODE`** to **`"agent"`** and **`SERVER_SIGNALING_WS_URL`** to your portal’s **`/ws/robot`** URL. With Jetson **`--teleop`**, signaling starts when a freshly built **`TeleopEdgeSettings`** has **`agent_enabled`** true (agent mode plus non-empty URL).
+Pass **`--teleop-ip HOST`** on Jetson or Isaac HAL entry points. The HAL builds **`ws://HOST:9000/ws/robot`** (or pass a full **`ws://`** / **`wss://`** URL). Omit **`--teleop-ip`** to disable teleop. Jetson **`--control-source portal`** requires **`--teleop-ip`**. ICE, QoS, auth token, and stream caps still come from **`teleop.edge.robot_settings`** via **`build_teleop_edge_settings(host_or_url=…)`**.
 
 ### Typical flow
 
@@ -87,18 +87,28 @@ When HAL fills **`base_quat_w`**, **`base_ang_vel_b`**, and **`base_lin_vel_b`**
 
 ## Configuration
 
-### Robot (Jetson HAL **`--teleop`**)
+### Robot (Jetson / Isaac HAL **`--teleop-ip`**)
 
-Edit **`teleop.edge.robot_settings`** (checked into the repo; override values per deployment or image layer):
+**Portal host (CLI):** **`--teleop-ip HOST`** on **`hal.server.jetson.main`** or **`hal.server.isaac.main`**. Examples:
+
+```bash
+# Jetson portal control
+python -m hal.server.jetson.main --control-source portal --teleop-ip 10.0.0.130
+
+# Isaac sim with local portal
+./scripts/run_isaac_hal_server.sh --teleop-ip 127.0.0.1
+```
+
+**Module settings** in **`teleop.edge.robot_settings`** (checked into the repo; override per deployment or image layer):
 
 | Constant | Role |
 |----------|------|
-| **`SERVER_SIGNALING_WS_URL`** | WebSocket on the teleop server (e.g. **`wss://host/ws/robot`**). Required for agent mode. |
-| **`TELEOP_EDGE_MODE`** | **`"off"`** or **`"agent"`**. **`"agent"`** without a non-empty URL is treated as **`off`**. |
+| **`SERVER_SIGNALING_WS_URL`** | Default URL when **`build_teleop_edge_settings()`** is called without **`host_or_url`** (tests, custom entry points). HAL **`--teleop-ip`** overrides this. |
+| **`TELEOP_EDGE_MODE`** | **`"off"`** or **`"agent"`** for module-only builds. HAL **`--teleop-ip`** forces **`agent`**. |
 | **`SERVER_RECONNECT_S`** | Reconnect backoff after dial-out errors. |
 | **`MAX_VIDEO_M_LINES`** | Cap on recvonly video **`m=`** lines per offer (clamped 1–32). |
 | **`QOS_ENABLED`** | When true, robot adapts teleop video under bandwidth pressure (see **QoS and degradation**). |
-| **`QOS_KBPS_BUDGET_PER_STREAM`** | Nominal per-stream bitrate budget (kbps) for the degradation ladder (default 2000). |
+| **`QOS_KBPS_BUDGET_PER_STREAM`** | Nominal per-stream bitrate budget (kbps) for the degradation ladder (default **120**, tuned for aiortc snapshot teleop ~100 kbps/stream; raise for high-bitrate GStreamer tails). |
 | **`STUN_TURN_SERVERS`** | ICE list for the **robot’s** WebRTC answers. Keep aligned with **`teleop.portal.ice_config.STUN_TURN_SERVERS`** on the portal host so browser **`GET /api/teleop-config`** and robot use the same bootstrap. If empty or invalid, **`build_teleop_edge_settings`** uses **`BUILTIN_STUN_SERVERS`**. |
 | **`HTTP_AUTH_TOKEN`** | If non-empty, appended as **`?token=`** on the robot’s outbound signaling WebSocket (must match **`teleop.portal.settings.HTTP_TOKEN`** when the portal requires auth). |
 
@@ -197,7 +207,7 @@ When **`QOS_ENABLED`** is true, **`TeleopQosController`** polls WebRTC **`getSta
 1. **Lower target fps** (30 → 24 → 15 → 10 → 5) while all streams remain active.
 2. **Drop lowest-priority streams** (highest track index / last catalog id in the offer) down to **one** active stream; inactive tracks emit black at **1 fps** to keep the peer connection alive.
 
-**Budget model:** total nominal budget = `stream_count × QOS_KBPS_BUDGET_PER_STREAM` (default 2000 kbps per stream). Degradation steps trigger on outbound bitrate falling below budget fractions and/or rising packet loss; recovery uses **2** consecutive healthy samples (hysteresis).
+**Budget model:** total nominal budget = `stream_count × QOS_KBPS_BUDGET_PER_STREAM` (default **120 kbps** per stream for **`HalRgbSnapshotVideoTrack`** + aiortc). Each stats sample compares measured outbound to the budget for the **current** degradation level (active streams × target fps), so a single surviving stream is not judged against the full multi-camera budget. After offer renegotiation, escalation is suppressed for **10 s** while encoders ramp. Degradation steps trigger on outbound bitrate falling below budget fractions and/or rising packet loss; recovery uses **2** consecutive healthy samples (hysteresis).
 
 Robot logs **`teleop qos:`** every level change and ~5 s while degraded. **pong** includes **`qos`** snapshot (`level`, `target_fps`, `active_stream_count`, `outbound_kbps`, `packet_loss_fraction`).
 
@@ -211,7 +221,7 @@ pytest tests/unit/teleop/test_qos.py -v
 
 | Symptom | Check |
 |---------|--------|
-| **`--teleop` but no video** | **`robot_settings.SERVER_SIGNALING_WS_URL`** and agent mode; portal running; FIFO pair (one browser, one robot). |
+| **`--teleop-ip` but no video** | Portal running at **`HOST:9000`**; FIFO pair (one browser, one robot); HAL cameras initialized. |
 | **403** on portal | **`teleop.portal.settings.HTTP_TOKEN`** on the portal host and same value in **`robot_settings.HTTP_AUTH_TOKEN`** (query **`?token=`** on robot WS URL). |
 | **ICE failed** | **TURN** entries in **`teleop.portal.ice_config`** (browser) and matching **`robot_settings.STUN_TURN_SERVERS`** (robot); verify in browser devtools. |
 | **too many recvonly video m-lines** | Lower stream count or raise **`robot_settings.MAX_VIDEO_M_LINES`**. |

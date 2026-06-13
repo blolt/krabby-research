@@ -157,3 +157,23 @@ def test_qos_controller_logs_on_level_change(caplog) -> None:
     with caplog.at_level(logging.INFO):
         controller.observe_sample(outbound_kbps=1500.0, packet_loss_fraction=0.0)
     assert "teleop qos: level=1" in caplog.text
+
+
+def test_snapshot_teleop_level5_recovers_from_low_outbound() -> None:
+    """One active stream at ~50 kbps must not stay locked at level 5 forever."""
+    policy = TeleopDegradationPolicy(stream_count=6, kbps_budget_per_stream=120.0)
+    policy.observe(outbound_kbps=52.0, packet_loss_fraction=0.0)
+    assert policy.level == 5
+
+    state = policy.observe(outbound_kbps=52.0, packet_loss_fraction=0.0)
+    assert state.level == 5
+
+    state = policy.observe(outbound_kbps=52.0, packet_loss_fraction=0.0)
+    assert state.level == 0
+    assert state.active_stream_count == 6
+
+
+def test_kbps_budget_scales_with_active_streams_and_fps() -> None:
+    policy = TeleopDegradationPolicy(stream_count=6, kbps_budget_per_stream=120.0)
+    assert policy.kbps_budget_for_level(0) == pytest.approx(720.0)
+    assert policy.kbps_budget_for_level(5) == pytest.approx(20.0)
