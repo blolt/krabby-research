@@ -66,7 +66,7 @@ def test_rotating_writer_single_message_roundtrip(tmp_path):
         cfg.output_dir,
         rotation_max_bytes=10_000_000,
         rotation_max_minutes=60.0,
-        max_disk_usage_fraction=0.99,
+        min_free_fraction=0.01,
         topic_msgtypes=specs,
     )
     obs = _minimal_obs_with_camera()

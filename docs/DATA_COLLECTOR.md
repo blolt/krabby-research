@@ -74,8 +74,8 @@ hal:
   observation_endpoint: "inproc://hal_observation"
   command_endpoint: "inproc://hal_commands"
 output_dir: "/data/krabby_bags"
-max_disk_usage_fraction: 0.5
-rotation_max_bytes: 1073741824
+min_free_fraction: 0.10
+rotation_max_bytes: 262144000
 rotation_max_minutes: 30.0
 rates:
   images_hz: 10.0
@@ -126,7 +126,7 @@ Under `output_dir`, each **segment** is a standard **rosbag2 v9** directory with
 
 **Rotation:** when the current segment’s on-disk size reaches `rotation_max_bytes` **or** its age reaches `rotation_max_minutes`, the writer closes that directory and opens a new one (sequence increments).
 
-**Disk cap:** `max_disk_usage_fraction` applies to the **filesystem** that backs `output_dir` (`total` capacity from the OS). The implementation sums sizes of all bag directories under `output_dir` (those with `metadata.yaml`) and deletes **oldest** bags first until usage is under the limit. Mount `output_dir` on a volume sized for the retention you want.
+**Disk cap:** `min_free_fraction` is the share of filesystem **total** capacity that must remain free. The max allowed bag bytes is `filesystem_free + bag_bytes_in_output_dir - (min_free_fraction × total)` — existing bags count as reclaimable space. When summed bag size exceeds that limit, **oldest** bags are deleted first. Quota is checked when opening each segment (startup and rotation). Mount `output_dir` on a volume sized for the retention you want.
 
 **Effective sample rate:** `rates.images_hz` and `rates.joints_imu_hz` cap how often the collector samples; together with HAL’s **latest-only** subscriber behavior and the publisher’s own rate, the bag may contain fewer messages than a naive “Hz × duration” estimate.
 

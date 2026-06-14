@@ -219,7 +219,8 @@ build-test-image-arm: build-wheels
 	@echo "Building ARM test Docker image..."
 	@echo "Note: This target is for building on ARM testing environment (native ARM64)"
 	@echo "      For cross-platform builds from x86_64, use buildx manually"
-	$(DOCKER_BUILD) -f images/testing/arm/Dockerfile -t krabby-testing-arm:latest .
+	@echo "      --network=host: Docker bridge networking can fail on some Jetson kernels"
+	$(DOCKER_BUILD) --network=host -f images/testing/arm/Dockerfile -t krabby-testing-arm:latest .
 	@echo "ARM test image built: krabby-testing-arm:latest"
 
 .PHONY: test

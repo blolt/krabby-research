@@ -13,8 +13,8 @@ hal:
 
 output_dir: "/data/krabby_bags"
 
-max_disk_usage_fraction: 0.5
-rotation_max_bytes: 1073741824
+min_free_fraction: 0.10
+rotation_max_bytes: 262144000
 rotation_max_minutes: 30.0
 
 rates:

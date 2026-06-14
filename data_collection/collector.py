@@ -75,7 +75,7 @@ class HalDataCollector:
                 cfg.output_dir,
                 rotation_max_bytes=cfg.rotation_max_bytes,
                 rotation_max_minutes=cfg.rotation_max_minutes,
-                max_disk_usage_fraction=cfg.max_disk_usage_fraction,
+                min_free_fraction=cfg.min_free_fraction,
                 topic_msgtypes=self._topic_specs,
             )
         except (ImportError, RuntimeError) as e:
