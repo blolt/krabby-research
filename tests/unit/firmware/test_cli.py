@@ -86,7 +86,7 @@ class TestCmdShow:
                     cli_mod.cmd_show()
         out = capsys.readouterr().out
         assert "left: 0.2.8" in out
-        assert "primary" not in out
+        assert "front" not in out
 
     def test_role_hint_labels_follower_as_right(self, capsys):
         index = _make_index({"release/0.2.8": "20250101-120000-abc1234"})
@@ -97,7 +97,7 @@ class TestCmdShow:
                     cli_mod.cmd_show()
         out = capsys.readouterr().out
         assert "right: 0.2.8" in out
-        assert "primary" not in out
+        assert "front" not in out
 
     def test_combined_ver_fills_all_three_ports(self, capsys):
         """Leader's combined VER shows all three role slots; port annotation when ROLE_HINT present."""
@@ -118,7 +118,7 @@ class TestCmdShow:
                 with patch.object(cli_mod, "_fetch_index", return_value=index):
                     cli_mod.cmd_show()
         out = capsys.readouterr().out
-        assert "primary (/dev/ttyACM0): 0.2.9" in out
+        assert "front (/dev/ttyACM0): 0.2.9" in out
         assert "left (/dev/ttyUSB0): 0.2.9" in out
         assert "right (/dev/ttyUSB1): 0.2.9" in out
         assert "no version response" not in out
@@ -140,7 +140,7 @@ class TestCmdShow:
                 with patch.object(cli_mod, "_fetch_index", return_value=index):
                     cli_mod.cmd_show()
         out = capsys.readouterr().out
-        assert "primary: 0.2.9" in out
+        assert "front: 0.2.9" in out
         assert "left: 0.2.8" in out
         assert "right: 0.2.8" in out
         # Old bug: all three ports mapped to slot 0, showing 0.2.9 for left/right too

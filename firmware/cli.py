@@ -150,7 +150,7 @@ def cmd_show(branch: Optional[str] = None) -> None:
     probe_results = {port: fut.result() for port, fut in probe_futures}
 
     if ports:
-        # Leader returns combined VER (slot 0=primary, 1=left, 2=right via UART).
+        # Leader returns combined VER (slot 0=front, 1=left, 2=right via UART).
         # Display role slots directly so old firmware without ROLE_HINT still shows
         # correct per-board versions instead of all mapping to slot 0.
         combined: list[tuple[str, str, str]] | None = None
@@ -169,16 +169,16 @@ def cmd_show(branch: Optional[str] = None) -> None:
             for port in ports:
                 _, role_hint = probe_results[port]
                 if role_hint:
-                    role_to_port.setdefault("primary" if role_hint == "front" else role_hint, port)
+                    role_to_port.setdefault(role_hint, port)
 
-            for role, slot in [("primary", 0), ("left", 1), ("right", 2)]:
+            for role, slot in [("front", 0), ("left", 1), ("right", 2)]:
                 v, b, c = combined[slot] if slot < len(combined) else ("-", "-", "-")
                 port_label = f" ({role_to_port[role]})" if role in role_to_port else ""
                 print(f"  {role}{port_label}: {v} ({b} {c})")
         else:
             for port in ports:
                 ver_line, role_hint = probe_results[port]
-                role = role_hint if role_hint and role_hint != "front" else "primary"
+                role = role_hint or "front"
                 parsed = parse_ver_reply(ver_line) if ver_line else None
                 if parsed:
                     v, b, c = parsed[0]

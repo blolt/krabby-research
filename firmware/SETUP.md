@@ -153,7 +153,7 @@ python -m firmware --debug
 | 32 | 1 byte | Role magic sentinel (`0xAB`) — written once after first successful role election |
 | 33 | 1 byte | `BoardRole` value: `1`=FRONT, `2`=LEFT, `3`=RIGHT |
 
-The role bytes survive power cycles. On each boot, the board prints `ROLE_HINT: LEFT/RIGHT/FRONT` immediately before the 3-second role-election window. `krabby-firmware show` reads this hint so follower boards can be labeled correctly even when probed individually (when they would otherwise appear as `ROLE_UNKNOWN` and show as "primary").
+The role bytes survive power cycles. On each boot, the board prints `ROLE_HINT: LEFT/RIGHT/FRONT` immediately before the 3-second role-election window. `krabby-firmware show` reads this hint so follower boards can be labeled correctly even when probed individually (when they would otherwise appear as `ROLE_UNKNOWN` and show as "front").
 
 Role bytes are only written when a valid role is elected (FRONT, LEFT, or RIGHT). A board that times out as ROLE_UNKNOWN does not update EEPROM, preserving the last valid role.
 
@@ -204,7 +204,7 @@ Send `V\n` on the main serial (115200 baud). The leader board collects replies f
 VER <versions> <branches> <commits>
 ```
 
-Each field is `primary|left|right` pipe-delimited. Example:
+Each field is `front|left|right` pipe-delimited. Example:
 
 ```
 VER 0.2.0|0.2.0|0.2.0 release/0.2.0|release/0.2.0|release/0.2.0 abc1234|def5678|ghi9012

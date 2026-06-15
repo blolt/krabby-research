@@ -40,7 +40,7 @@ This pulls `release-latest` from ECR (the stable release channel), writes the ud
 krabby firmware show
 ```
 
-All three boards should appear with their role (`primary`, `left`, `right`) and version.
+All three boards should appear with their role (`front`, `left`, `right`) and version.
 
 ### 4. Flash all three boards (first time or after a firmware update)
 

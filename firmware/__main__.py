@@ -28,7 +28,7 @@ JOG_PWM = 255
 _last_seen: dict[str, float] = {}
 _quit = False
 _HOLD_WINDOW = 0.15  # seconds
-_BOARD_ROLES = ("primary", "left   ", "right  ")  # padded for log column alignment
+_BOARD_ROLES = ("front  ", "left   ", "right  ")  # padded for log column alignment
 
 
 def _read_keys(fd: int) -> None:
