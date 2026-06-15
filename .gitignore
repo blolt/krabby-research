@@ -226,3 +226,9 @@ parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/tempscripts/
 # macOS Finder artifact
 .DS_Store
 docs/m14-task1-plan.html
+
+# Beads / Dolt files — local-only issue tracker, never commit
+.beads/
+.dolt/
+*.db
+.beads-credential-key

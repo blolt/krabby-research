@@ -41,7 +41,11 @@ This firmware drives a full leg pair (Left & Right) consisting of **6 Motors**.
 
 ### 2.1 Serial RX buffer (leader board, 3-board setup)
 
-When using the **leader** board that forwards telemetry from left/right followers, the default 64-byte serial RX buffer can overflow and drop bytes (corrupt or missing actuators in telemetry). Use a **256-byte** RX buffer for Serial2/Serial3 on the leader.
+When using the **leader** board that forwards telemetry from left/right followers, a small serial RX buffer can overflow and drop bytes (corrupt or missing actuators in telemetry, "can't keep up" on the host). The leader needs a **256-byte** RX buffer for Serial1/Serial2 so it can hold a full ~200-byte forwarded line from each follower while it services USB and the actuator update.
+
+The Makefile passes this define on every build, so you usually don't have to do anything. `make compile-firmware` / `make upload-firmware` bake `-DSERIAL_RX_BUFFER_SIZE=256` into the `arduino-cli compile` invocation unconditionally (see `firmware/Makefile` `BUILD_PROPS`), exactly as CI (`.github/workflows/publish-firmware.yml`) does. `firmware/install.py`'s `platform.local.txt` write is now a **belt-and-suspenders backup for IDE builds, not a requirement** — a `make`-built or CI-built binary already has the 256-byte buffer regardless of whether `install.py` ran or which AVR core version is installed. (Some core versions, e.g. 1.8.7, already default the Mega's RX buffer to 256; passing the define guarantees it on every core version and board variant.)
+
+The manual edits below are only needed if you build the sketch **directly from the Arduino IDE** without the `platform.local.txt` override.
 
 **You do not flash the core separately.** The Arduino “core” is just C++ source that is compiled *with* your sketch into a single firmware image. Change the buffer size, then build and upload as usual.
 
@@ -103,6 +107,20 @@ Wiring is selected at **compile time** in **`arduino/board_pins.h`** (`#define K
   - See **`firmware/Makefile`** for **`ARDUINO_CLI`**, **`FQBN`**, **`PIN_REV`**.
 
 Flash each Mega with the image that matches **that** board’s wiring. All three boards use the same sketch; role is elected at runtime.
+
+#### Remote flashing over SSH (boards on another host)
+
+When the USB hub is plugged into a **different machine** than the one you build on — e.g. a Jetson Orin you reach over SSH — use **`flash-remote`**. It compiles locally (where the arduino-cli toolchain lives), copies the `.hex` to the remote, and runs **`avrdude`** there against the board's serial port. No S3 publish and no Docker image needed; it flashes your exact working-tree build.
+
+```bash
+# from the build machine (REMOTE = any ssh target; PORT = the device ON the remote)
+make -C firmware flash-remote REMOTE=user@orin PORT=/dev/ttyACM0
+make -C firmware flash-remote REMOTE=orin PORT=/dev/ttyACM0 PIN_REV=1
+```
+
+One-time setup on the remote: `sudo apt install avrdude` and make sure your user can open the port (add to the `dialout` group). Flash the three boards one at a time, passing each board's `PORT` (find them with `krabby firmware show`, or `ls /dev/ttyACM*` / `ls /dev/ttyUSB*` on the remote). Overridable knobs: `AVRDUDE`, `SSH`, `SCP`, `REMOTE_HEX` (staging path on the remote) — see `firmware/Makefile`.
+
+This is distinct from `krabby firmware update` (which downloads a **published** HEX from S3) — `flash-remote` flashes a **local, unpublished** build.
 
 ### 2.4 Python SDK
 
