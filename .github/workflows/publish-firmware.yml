@@ -70,12 +70,29 @@ jobs:
       - name: Generate version.h
         run: python firmware/scripts/gen_version_h.py
 
+      # Materialize third-party Arduino libraries (pinned + SHA-256-verified
+      # upstream archives, plus the committed Krabby patches) into the
+      # gitignored firmware/arduino/libraries/ the --libraries flag points at.
+      # See docs/M16-DESIGN-DECISIONS.md §2.1.
+      # Guarded: scheduled runs take this workflow file from the default branch
+      # but check out the newest release/*, which may predate the fetch
+      # mechanism; on such refs there is nothing to fetch (arduino-cli accepts
+      # the then-missing --libraries dir), so skip instead of failing.
+      - name: Fetch pinned Arduino libraries
+        run: |
+          if [ -f firmware/scripts/fetch_arduino_libs.py ]; then
+            python firmware/scripts/fetch_arduino_libs.py
+          else
+            echo "No fetch_arduino_libs.py on this ref (pre-M16 release branch); skipping"
+          fi
+
       - name: Compile firmware
         run: |
           arduino-cli compile \
             --fqbn arduino:avr:mega \
             --build-property "compiler.cpp.extra_flags=-DSERIAL_RX_BUFFER_SIZE=256" \
             --build-property "compiler.c.extra_flags=-DSERIAL_RX_BUFFER_SIZE=256" \
+            --libraries firmware/arduino/libraries \
             --output-dir firmware/build \
             firmware/arduino
 
