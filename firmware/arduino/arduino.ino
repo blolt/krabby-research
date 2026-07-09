@@ -6,9 +6,12 @@
 
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <Wire.h>
+#include "SparkFun_BMI270_Arduino_Library.h"
 #include "board_pins.h"
 #include "command.h"
 #include "actuator_manager.h"
+#include "sensors_config.h"
 #include "version.h"
 
 // --- Serial: left follower = Serial1 (TX1/RX1 on Krabby-Uno v0.1 shield), right follower = Serial2 ---
@@ -26,6 +29,15 @@
 
 enum BoardRole { ROLE_UNKNOWN, ROLE_FRONT, ROLE_LEFT, ROLE_RIGHT };
 BoardRole currentRole = ROLE_UNKNOWN;
+
+// M16 I2C sensor cluster (IMU; later OLED/INA228/power mgmt) is leader-only.
+// ROLE_UNKNOWN also qualifies: it is the solo-board-on-USB bench case (defaults
+// to front actuators + USB serial), not a follower — followers are assigned
+// LEFT/RIGHT during role election.
+static inline bool isI2CClusterBoard()
+{
+    return currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN;
+}
 
 // EEPROM address 32: magic sentinel byte (0xAB); address 33: BoardRole value.
 // Calibration data (CalData) occupies addresses 0–25; gap at 26–31 kept for alignment.
@@ -107,8 +119,138 @@ const LinearActuator::ControlConfig ACTUATOR_CONFIG = {
 const size_t CMD_BUF_SIZE = 18;
 Command cmdBuf[CMD_BUF_SIZE];
 
-const int TELEMETRY_INTERVAL_MS = 50;
+// TELEMETRY_INTERVAL_MS lives in sensors_config.h (shared with the I2C poll cadence).
 unsigned long lastTelemetry = 0;
+
+// --- I2C sensor cluster (Milestone 16) — leader board only ---
+// The BMI270 IMU rides the leader's telemetry tick; followers never touch the bus.
+BMI270 imu;
+bool imuValid = false; // BMI270 init succeeded; runtime freshness is per-tick (valid field)
+
+// Gyro/accel bias in the RAW sensor frame (deg/s, g), captured at boot while
+// stationary and persisted at EEPROM_IMU_CAL_ADDR. Stored pre-transform so a
+// later change to IMU_AXIS_SRC/SIGN doesn't invalidate saved calibration.
+struct ImuCalData
+{
+    uint8_t magic;
+    uint8_t schema;
+    float gyroBiasDps[3];
+    // accelBiasG is the per-axis accelerometer offset, in g, in the raw
+    // sensor frame. No code writes it yet: boot calibration captures only the
+    // gyro bias, so accelBiasG holds zeros on every board today, and
+    // subtracting zero changes nothing. imuAppendTelemetry() nevertheless
+    // subtracts it on every tick, on purpose: when an accel-offset capture
+    // routine is added later, that change is a new writer function only — the
+    // telemetry wire format, the EEPROM byte layout, and the schema version
+    // all stay exactly as they are. The field exists now solely to keep the
+    // stored layout stable.
+    float accelBiasG[3];
+};
+static_assert(sizeof(ImuCalData) == EEPROM_IMU_CAL_SIZE,
+              "update EEPROM_IMU_CAL_SIZE in sensors_config.h");
+ImuCalData imuCal = {};
+
+static void imuCaptureGyroBias()
+{
+    float sum[3] = {0, 0, 0};
+    float lo[3], hi[3];
+    int good = 0;
+    for (int i = 0; i < IMU_CAL_SAMPLES; i++)
+    {
+        if (imu.getSensorData() == BMI2_OK)
+        {
+            float g[3] = {imu.data.gyroX, imu.data.gyroY, imu.data.gyroZ};
+            for (int a = 0; a < 3; a++)
+            {
+                sum[a] += g[a];
+                if (good == 0 || g[a] < lo[a]) lo[a] = g[a];
+                if (good == 0 || g[a] > hi[a]) hi[a] = g[a];
+            }
+            good++;
+        }
+        delay(IMU_CAL_SAMPLE_DELAY_MS);
+    }
+    if (good < IMU_CAL_SAMPLES / 2)
+    {
+        Serial.println("IMU CAL: too few samples; bias left at zero, not saved.");
+        return;
+    }
+    // Not stationary: leave EEPROM unwritten so the capture retries next boot.
+    for (int a = 0; a < 3; a++)
+    {
+        if (hi[a] - lo[a] > IMU_CAL_MAX_SPREAD_DPS)
+        {
+            Serial.println("IMU CAL: motion detected; bias left at zero, not saved.");
+            return;
+        }
+    }
+    for (int a = 0; a < 3; a++)
+        imuCal.gyroBiasDps[a] = sum[a] / good;
+    imuCal.magic = EEPROM_IMU_CAL_MAGIC;
+    imuCal.schema = EEPROM_IMU_CAL_SCHEMA;
+    EEPROM.put(EEPROM_IMU_CAL_ADDR, imuCal);
+    Serial.println("IMU CAL: gyro bias captured and saved to EEPROM.");
+}
+
+static void imuSetup()
+{
+    Wire.begin();
+    Wire.setClock(I2C_BUS_CLOCK_HZ);
+    Wire.setWireTimeout(I2C_WIRE_TIMEOUT_US, true);  // see sensors_config.h
+
+    uint8_t imuAddr = BMI270_I2C_ADDR;
+    if (imu.beginI2C(imuAddr) != BMI2_OK)
+    {
+        imuAddr = BMI270_I2C_ADDR_ALT;
+        if (imu.beginI2C(imuAddr) != BMI2_OK)
+        {
+            imuValid = false;
+            Serial.println("IMU CAL: BMI270 init failed at 0x68 and 0x69; shipping valid=0.");
+            return;
+        }
+    }
+    imuValid = true;
+    Serial.print("IMU CAL: BMI270 online at 0x");
+    Serial.println(imuAddr, HEX);
+
+    EEPROM.get(EEPROM_IMU_CAL_ADDR, imuCal);
+    if (imuCal.magic == EEPROM_IMU_CAL_MAGIC && imuCal.schema == EEPROM_IMU_CAL_SCHEMA)
+    {
+        Serial.println("IMU CAL: loaded from EEPROM.");
+    }
+    else
+    {
+        imuCal = ImuCalData{};
+        imuCaptureGyroBias();
+    }
+}
+
+// Append ";IMU ax ay az gx gy gz temp valid" (m/s^2, rad/s, C) to the open
+// telemetry line. Keep in sync with firmware/interfaces/joint_telemetry.py.
+static void imuAppendTelemetry(Print& out)
+{
+    float a[3] = {0, 0, 0}, g[3] = {0, 0, 0}, tempC = 0;
+    bool fresh = false;
+    if (imuValid && imu.getSensorData() == BMI2_OK)
+    {
+        float rawA[3] = {imu.data.accelX, imu.data.accelY, imu.data.accelZ};
+        float rawG[3] = {imu.data.gyroX, imu.data.gyroY, imu.data.gyroZ};
+        for (int i = 0; i < 3; i++)
+        {
+            a[i] = IMU_AXIS_SIGN[i] * (rawA[IMU_AXIS_SRC[i]] - imuCal.accelBiasG[IMU_AXIS_SRC[i]]) * IMU_ACCEL_G_TO_MS2;
+            g[i] = IMU_AXIS_SIGN[i] * (rawG[IMU_AXIS_SRC[i]] - imuCal.gyroBiasDps[IMU_AXIS_SRC[i]]) * IMU_GYRO_DEG_TO_RAD;
+        }
+        if (imu.getTemperature(&tempC) != BMI2_OK)
+            tempC = NAN; // AVR Print emits "nan"; parser drops non-finite segments
+        fresh = true;
+    }
+    out.print(";IMU ");
+    for (int i = 0; i < 3; i++) { out.print(a[i], 3); out.print(' '); }
+    for (int i = 0; i < 3; i++) { out.print(g[i], 4); out.print(' '); }
+    out.print(tempC, 1);
+    out.print(' ');
+    out.print(fresh ? 1 : 0);
+}
 
 // One line = "ROLE; " + ACT_COUNT segments; allow ~55 chars per segment to avoid truncation.
 // This buffer only holds *forwarded follower* lines, which never carry IMU/BATT
@@ -265,6 +407,9 @@ void setup()
     actuatorManager->initAll();
     hallHwInit();
     actuatorManager->loadCalibration();
+
+    if (isI2CClusterBoard())
+        imuSetup();
 
     Serial.print("Krabby Ready ");
     Serial.print(boardPinRevisionLabel());
@@ -449,6 +594,11 @@ void loop()
         mainSerial->print(roleName(currentRole));
         mainSerial->print("; ");
         actuatorManager->printTelemetry(*mainSerial);
+        // Leader appends its sensor segments to its own line only; forwarded
+        // LEFT/RIGHT lines pass through forwardFullLines() untouched.
+        if (isI2CClusterBoard())
+            imuAppendTelemetry(*mainSerial);
+        mainSerial->println();
         mainSerial->flush();  // ensure full line is sent before next loop (avoids two "LEFT;" in one buffer on host)
     }
 }
