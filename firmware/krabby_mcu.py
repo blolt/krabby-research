@@ -61,7 +61,7 @@ JOINT_GROUP_NAMES = (
 
 
 class KrabbyMCUSDK:
-    def __init__(self, port=None, baud=115200):
+    def __init__(self, port=None, baud=250000):  # must match BAUD_RATE in arduino.ino
         self.port = port or default_port()
         self.baud = baud
         self.ser = None

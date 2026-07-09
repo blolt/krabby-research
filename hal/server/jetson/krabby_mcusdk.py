@@ -49,7 +49,7 @@ class KrabbyMCUSDK:
         self,
         mcu_joints: tuple[str, ...],
         port: Optional[str] = None,
-        baud: int = 115200,
+        baud: int = 250000,  # must match BAUD_RATE in firmware/arduino/arduino.ino
         auto_connect: bool = True,
     ):
         """Initialize MCU SDK. mcu_joints: joint names for the MCU (e.g. from robot_definition.get_mcu_joints())."""

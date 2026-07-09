@@ -14,7 +14,12 @@
 // --- Serial: left follower = Serial1 (TX1/RX1 on Krabby-Uno v0.1 shield), right follower = Serial2 ---
 #define SERIAL_LEFT  Serial1  // pins 18 (TX1), 19 (RX1) — Krabby-Uno v0.1 shield Serial1 connector
 #define SERIAL_RIGHT Serial2   // pins 16 (TX2), 17 (RX2) — Krabby-Uno v0.1 shield Serial2 connector
-#define BAUD_RATE 115200
+// 250000 is an exact divider on the 16 MHz Mega (0% baud error, vs 115200's
+// +2.1% as deployed); the 16U2 bridge is also 16 MHz so passthrough stays exact.
+// Both ends of the follower UART links compile from this same define. The
+// avrdude bootloader flash baud (firmware/Makefile, cli.py) is separate — do
+// not change it. Per-tick byte budget lives next to TELEMETRY_LINE_MAX.
+#define BAUD_RATE 250000
 #define SYNC_TOKEN "SYNC"
 #define ASSIGN_LEFT  "ROLE:LEFT"
 #define ASSIGN_RIGHT "ROLE:RIGHT"
@@ -106,6 +111,21 @@ const int TELEMETRY_INTERVAL_MS = 50;
 unsigned long lastTelemetry = 0;
 
 // One line = "ROLE; " + ACT_COUNT segments; allow ~55 chars per segment to avoid truncation.
+// This buffer only holds *forwarded follower* lines, which never carry IMU/BATT
+// segments — the leader's own line (where sensor segments are appended) is
+// printed straight to mainSerial and never buffered here.
+//
+// Per-tick upstream byte budget (leader USB link, 8N1): BAUD_RATE/10 bytes/s
+// * TELEMETRY_INTERVAL_MS = 1250 B per 50 ms tick at 250000 baud. Each tick
+// carries three lines: the leader's own ("FRONT; " + 6 joint segments + IMU
+// segment [+ BATT in Task 3] + CRLF, 207-341 B derived per-field: each joint
+// segment 24-44 B (pos 6, pot/current 4, PWM 3, uint32 hall 10 worst); IMU
+// segment 49-63 B) plus two forwarded follower lines (158-278 B each — same
+// derivation minus the IMU segment). Bench-measured idle (2026-07-06):
+// leader line 229 B + 2 forwarded lines at 180 B = 589 B/tick = 47%
+// utilization (at 115200 the budget was 576 B, so 589 B = 102% — the M16
+// line no longer fit). Task 3 sizes its BATT segment (~53-75 B, an estimate
+// until that code exists) against this budget before appending.
 #define TELEMETRY_LINE_MAX (8 + (ACT_COUNT * 55))
 
 static char leftPartial[TELEMETRY_LINE_MAX];

@@ -8,7 +8,7 @@ from firmware.gui.app import KrabbyTestGUI
 def main():
     parser = argparse.ArgumentParser(description="Krabby MCU test GUI")
     parser.add_argument("--port", default=None, help="Serial port override")
-    parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--baud", type=int, default=250000)  # must match BAUD_RATE in arduino.ino
     args = parser.parse_args()
 
     app = KrabbyTestGUI(port=args.port, baud=args.baud)

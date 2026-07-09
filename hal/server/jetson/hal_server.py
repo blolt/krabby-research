@@ -135,7 +135,7 @@ class JetsonHalServer(HalServerBase):
         action_dim: int,
         robot_definition: RobotDefinition,
         mcu_port: Optional[str] = None,
-        mcu_baud: int = 115200,
+        mcu_baud: int = 250000,  # must match BAUD_RATE in firmware/arduino/arduino.ino
         mcu_auto_connect: bool = True,
     ):
         """Initialize Jetson HAL server.

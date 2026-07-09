@@ -66,7 +66,7 @@ class JointRow:
 
 
 class KrabbyTestGUI(tk.Tk):
-    def __init__(self, port: Optional[str] = None, baud: int = 115200):
+    def __init__(self, port: Optional[str] = None, baud: int = 250000):  # must match BAUD_RATE in arduino.ino
         super().__init__()
         self.title("Krabby MCU Test")
         self.resizable(True, True)

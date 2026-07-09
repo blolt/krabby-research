@@ -67,7 +67,7 @@ def _probe_version(port: str, timeout: float = 6.0) -> tuple[Optional[str], Opti
     except ImportError:
         return None, None
     try:
-        with serial.Serial(port, 115200, timeout=0.2) as ser:
+        with serial.Serial(port, 250000, timeout=0.2) as ser:  # must match BAUD_RATE in arduino.ino
             ready = False
             role_hint: Optional[str] = None
             v_retries = 0
