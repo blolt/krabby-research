@@ -3,12 +3,13 @@ import sys
 import argparse
 
 from firmware.gui.app import KrabbyTestGUI
+from firmware.krabby_mcu import DEFAULT_BAUD
 
 
 def main():
     parser = argparse.ArgumentParser(description="Krabby MCU test GUI")
     parser.add_argument("--port", default=None, help="Serial port override")
-    parser.add_argument("--baud", type=int, default=115200)
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD)
     args = parser.parse_args()
 
     app = KrabbyTestGUI(port=args.port, baud=args.baud)

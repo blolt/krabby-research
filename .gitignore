@@ -232,3 +232,8 @@ docs/m14-task1-plan.html
 .dolt/
 *.db
 .beads-credential-key
+
+# Third-party Arduino libraries are materialized at build time by
+# firmware/scripts/fetch_arduino_libs.py (pinned + checksummed + patched);
+# only the patches under firmware/arduino/patches/ are committed.
+firmware/arduino/libraries/

@@ -313,6 +313,8 @@ public:
         }
     }
 
+    // Prints the joint segments only — no line ending. The caller terminates the
+    // line so the leader can append sensor segments (e.g. ";IMU ...") first.
     void printTelemetry(Print& out) const
     {
         for (size_t i = 0; i < count; i++)
@@ -320,7 +322,6 @@ public:
             if (i) out.print(';'); // Only print semicolons between joints, not at the end
             actuators[i]->printTelemetry(out);
         }
-        out.println();
     }
 
     // ==================================================

@@ -10,11 +10,30 @@ import threading
 import time
 from typing import Dict, Optional
 
-from firmware.krabby_mcu import KrabbyMCUSDK, JOINT_GROUP_NAMES
+from firmware.krabby_mcu import DEFAULT_BAUD, KrabbyMCUSDK, JOINT_GROUP_NAMES
 from firmware.interfaces.joint_telemetry import JointTelemetry
 
-JOG_PWM = 200
-TELEMETRY_REFRESH_MS = 100
+JOG_PWM = 200               # jog magnitude sent while a Retract/Extend button is held
+TELEMETRY_REFRESH_MS = 100  # GUI poll period; decoupled from the firmware's telemetry tick
+
+# IMU readout states (three-state model, see docs/M16-ERROR-HANDLING.md, PR #3):
+# absent (placeholder below) / STALE (sensor present, not responding — the
+# "STALE" suffix comes from ImuTelemetry.format_compact) / fresh.
+# The em dash means "no IMU segment seen yet" — normal for follower-only
+# traffic or firmware predating the IMU segment, so it is not styled as an error.
+IMU_READOUT_ABSENT = "IMU: —"
+IMU_READOUT_PREFIX = "IMU: "
+
+# Placeholder for a joint cell before its first telemetry arrives.
+NO_VALUE_TEXT = "---"
+
+# Fonts: (family, size[, style]).
+FONT_STATUS = ("Segoe UI", 10)             # connection status line
+FONT_READOUT = ("Segoe UI", 9)             # secondary readouts (IMU row)
+FONT_TABLE_HEADER = ("Segoe UI", 9, "bold")
+FONT_GROUP_LABEL = ("Segoe UI", 9, "italic")   # FRONT/LEFT/RIGHT dividers
+FONT_JOINT_NAME = ("Consolas", 11, "bold")     # monospace so names align
+GROUP_LABEL_COLOR = "#666"                 # muted gray for the dividers
 
 
 class JointRow:
@@ -25,7 +44,7 @@ class JointRow:
         self._jog_cb = jog_cb
         self._active_dir = 0
 
-        self.lbl_name = ttk.Label(parent, text=name, font=("Consolas", 11, "bold"), width=6)
+        self.lbl_name = ttk.Label(parent, text=name, font=FONT_JOINT_NAME, width=6)
         self.lbl_name.grid(row=row, column=0, padx=4, pady=2, sticky="w")
 
         self.btn_retract = ttk.Button(parent, text="\u25C0 Retract", width=10)
@@ -38,10 +57,10 @@ class JointRow:
         self.btn_extend.bind("<ButtonPress-1>", lambda e: self._start_jog(-1))
         self.btn_extend.bind("<ButtonRelease-1>", lambda e: self._stop_jog())
 
-        self.var_pot = tk.StringVar(value="---")
-        self.var_cur = tk.StringVar(value="---")
-        self.var_pwm = tk.StringVar(value="---")
-        self.var_hall = tk.StringVar(value="---")
+        self.var_pot = tk.StringVar(value=NO_VALUE_TEXT)
+        self.var_cur = tk.StringVar(value=NO_VALUE_TEXT)
+        self.var_pwm = tk.StringVar(value=NO_VALUE_TEXT)
+        self.var_hall = tk.StringVar(value=NO_VALUE_TEXT)
 
         ttk.Label(parent, textvariable=self.var_pot, width=6, anchor="e").grid(row=row, column=3, padx=4)
         ttk.Label(parent, textvariable=self.var_cur, width=6, anchor="e").grid(row=row, column=4, padx=4)
@@ -66,7 +85,7 @@ class JointRow:
 
 
 class KrabbyTestGUI(tk.Tk):
-    def __init__(self, port: Optional[str] = None, baud: int = 115200):
+    def __init__(self, port: Optional[str] = None, baud: int = DEFAULT_BAUD):
         super().__init__()
         self.title("Krabby MCU Test")
         self.resizable(True, True)
@@ -84,13 +103,20 @@ class KrabbyTestGUI(tk.Tk):
         top.pack(fill="x")
 
         self._status_var = tk.StringVar(value="Connecting...")
-        ttk.Label(top, textvariable=self._status_var, font=("Segoe UI", 10)).pack(side="left")
+        ttk.Label(top, textvariable=self._status_var, font=FONT_STATUS).pack(side="left")
 
         btn_frame = ttk.Frame(top)
         btn_frame.pack(side="right")
         ttk.Button(btn_frame, text="Hold All", command=self._hold_all).pack(side="left", padx=4)
         ttk.Button(btn_frame, text="Neutral (0.5)", command=self._neutral).pack(side="left", padx=4)
         ttk.Button(btn_frame, text="Calibrate", command=self._calibrate).pack(side="left", padx=4)
+
+        # IMU readout (leader board only; shows the absent placeholder until
+        # an IMU segment arrives, then fresh values or a STALE suffix).
+        imu_row = ttk.Frame(self, padding=(8, 0))
+        imu_row.pack(fill="x")
+        self._imu_var = tk.StringVar(value=IMU_READOUT_ABSENT)
+        ttk.Label(imu_row, textvariable=self._imu_var, font=FONT_READOUT).pack(side="left")
 
         sep = ttk.Separator(self, orient="horizontal")
         sep.pack(fill="x", pady=4)
@@ -108,7 +134,7 @@ class KrabbyTestGUI(tk.Tk):
 
         headers = ["Joint", "Retract", "Extend", "Pot", "Cur", "PWM", "Hall"]
         for c, h in enumerate(headers):
-            ttk.Label(self._grid_frame, text=h, font=("Segoe UI", 9, "bold"), anchor="center").grid(
+            ttk.Label(self._grid_frame, text=h, font=FONT_TABLE_HEADER, anchor="center").grid(
                 row=0, column=c, padx=4, pady=(0, 4), sticky="ew"
             )
 
@@ -116,7 +142,7 @@ class KrabbyTestGUI(tk.Tk):
         for group_name, joint_names in JOINT_GROUP_NAMES:
             ttk.Label(
                 self._grid_frame, text=f"── {group_name} ──",
-                font=("Segoe UI", 9, "italic"), foreground="#666"
+                font=FONT_GROUP_LABEL, foreground=GROUP_LABEL_COLOR
             ).grid(row=row, column=0, columnspan=7, sticky="w", pady=(6, 2))
             row += 1
             for jname in joint_names:
@@ -146,6 +172,12 @@ class KrabbyTestGUI(tk.Tk):
         for name, jr in self._joint_rows.items():
             jt = self._mcu.joints.get(name)
             jr.update_from_telemetry(jt)
+
+        # Read the reader-thread-owned attribute once (it may be reset to None
+        # between the guard and the use otherwise).
+        imu = self._mcu.imu
+        if imu is not None:
+            self._imu_var.set(IMU_READOUT_PREFIX + imu.format_compact())
 
         if self._mcu.last_error:
             self._status_var.set(f"Error: {self._mcu.last_error}")

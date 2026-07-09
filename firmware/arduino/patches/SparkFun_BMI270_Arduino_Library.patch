@@ -1,0 +1,114 @@
+diff --git a/SparkFun_BMI270_Arduino_Library/src/SparkFun_BMI270_Arduino_Library.cpp b/SparkFun_BMI270_Arduino_Library/src/SparkFun_BMI270_Arduino_Library.cpp
+index 178b42e..a17e639 100644
+--- a/SparkFun_BMI270_Arduino_Library/src/SparkFun_BMI270_Arduino_Library.cpp
++++ b/SparkFun_BMI270_Arduino_Library/src/SparkFun_BMI270_Arduino_Library.cpp
+@@ -19,7 +19,11 @@ int8_t BMI270::begin()
+     sensor.write = writeRegisters;
+     sensor.delay_us = usDelay;
+     sensor.intf_ptr = &interfaceData;
+-    sensor.read_write_len = 32;
++    // Krabby patch: was 32. AVR Wire's TX buffer is 32 bytes and every chunk
++    // write is 1 register byte + N data bytes, so N must be even and <= 30 or
++    // the last byte of each chunk is silently dropped (config load then fails).
++    // 16 divides the 8192-byte config file evenly.
++    sensor.read_write_len = 16;
+ 
+     // Initialize the sensor
+     err = bmi270_init(&sensor);
+@@ -1204,7 +1208,12 @@ BMI2_INTF_RETURN_TYPE BMI270::readRegistersI2C(uint8_t regAddress, uint8_t* data
+     }
+ 
+     // Read bytes from these registers
+-    interfaceData->i2cPort->requestFrom(interfaceData->i2cAddress, numBytes);
++    // Krabby patch: fail on a short read (NACK/timeout) instead of returning
++    // BMI2_OK with an untouched buffer, which upstream ships as valid data.
++    if(interfaceData->i2cPort->requestFrom(interfaceData->i2cAddress, numBytes) != numBytes)
++    {
++        return BMI2_E_COM_FAIL;
++    }
+ 
+     // Store all requested bytes
+     for(uint32_t i = 0; i < numBytes && interfaceData->i2cPort->available(); i++)
+@@ -1334,7 +1343,20 @@ BMI2_INTF_RETURN_TYPE BMI270::writeRegistersSPI(uint8_t regAddress, const uint8_
+ /// @param interfacePtr Pointer to interface data, see BMI270_InterfaceData
+ void BMI270::usDelay(uint32_t period, void* interfacePtr)
+ {
+-    delayMicroseconds(period);
++    // Krabby patch: AVR's delayMicroseconds() is only valid to 16383 us and
++    // silently overflows above that. The driver waits up to 51 ms this way
++    // (incl. the ~20 ms config-load validation wait), so a bare call makes
++    // bmi270_init fail with BMI2_E_CONFIG_LOAD on the Mega. Split into
++    // millisecond + microsecond parts; correct on every platform.
++    if (period >= 1000)
++    {
++        delay(period / 1000);
++        delayMicroseconds(period % 1000);
++    }
++    else
++    {
++        delayMicroseconds(period);
++    }
+ }
+ 
+ /// @brief Helper function to generate the correct conversion value for accelerometer data
+diff --git a/SparkFun_BMI270_Arduino_Library/src/bmi270_api/bmi2.c b/SparkFun_BMI270_Arduino_Library/src/bmi270_api/bmi2.c
+index 5dce0ec..c9faa01 100644
+--- a/SparkFun_BMI270_Arduino_Library/src/bmi270_api/bmi2.c
++++ b/SparkFun_BMI270_Arduino_Library/src/bmi270_api/bmi2.c
+@@ -42,6 +42,11 @@
+ /******************************************************************************/
+ #include "bmi2.h"
+ 
++/* Krabby patch: memcpy_P for the PROGMEM config-file staging in upload_file(). */
++#ifdef __AVR__
++#include <avr/pgmspace.h>
++#endif
++
+ /***************************************************************************/
+ 
+ /*!         Local structures
+@@ -5693,7 +5698,22 @@ static int8_t upload_file(const uint8_t *config_data, uint16_t index, uint16_t w
+         if (rslt == BMI2_OK)
+         {
+             /* Burst write configuration file data corresponding to user set length */
++#ifdef __AVR__
++            /* Krabby patch: config_data points into PROGMEM (see bmi270.c); the bus
++             * write callback can only read RAM, so stage the chunk first. Chunk size
++             * is dev->read_write_len (16 in SparkFun_BMI270_Arduino_Library.cpp;
++             * must be even and <= 30 to fit AVR Wire's 32-byte TX buffer with the
++             * register byte). */
++            uint8_t chunk_ram[64];
++            if (write_len > sizeof(chunk_ram))
++            {
++                return BMI2_E_COM_FAIL;
++            }
++            memcpy_P(chunk_ram, config_data, write_len);
++            rslt = bmi2_set_regs(BMI2_INIT_DATA_ADDR, chunk_ram, write_len, dev);
++#else
+             rslt = bmi2_set_regs(BMI2_INIT_DATA_ADDR, (uint8_t *)config_data, write_len, dev);
++#endif
+         }
+     }
+     else
+diff --git a/SparkFun_BMI270_Arduino_Library/src/bmi270_api/bmi270.c b/SparkFun_BMI270_Arduino_Library/src/bmi270_api/bmi270.c
+index 4f2548a..66856bb 100644
+--- a/SparkFun_BMI270_Arduino_Library/src/bmi270_api/bmi270.c
++++ b/SparkFun_BMI270_Arduino_Library/src/bmi270_api/bmi270.c
+@@ -47,8 +47,16 @@
+ /*!              Global Variable
+  ****************************************************************************/
+ 
+-/*! @name  Global array that stores the configuration file of BMI270 */
++/*! @name  Global array that stores the configuration file of BMI270.
++ * Krabby patch: on AVR this ~8 KB blob must live in flash (PROGMEM) — the
++ * ATmega2560 has only 8 KB of SRAM total. bmi2.c:upload_file() stages each
++ * chunk into RAM with memcpy_P before the bus write. */
++#ifdef __AVR__
++#include <avr/pgmspace.h>
++const uint8_t bmi270_config_file[] PROGMEM = {
++#else
+ const uint8_t bmi270_config_file[] = {
++#endif
+     0xc8, 0x2e, 0x00, 0x2e, 0x80, 0x2e, 0x3d, 0xb1, 0xc8, 0x2e, 0x00, 0x2e, 0x80, 0x2e, 0x91, 0x03, 0x80, 0x2e, 0xbc,
+     0xb0, 0x80, 0x2e, 0xa3, 0x03, 0xc8, 0x2e, 0x00, 0x2e, 0x80, 0x2e, 0x00, 0xb0, 0x50, 0x30, 0x21, 0x2e, 0x59, 0xf5,
+     0x10, 0x30, 0x21, 0x2e, 0x6a, 0xf5, 0x80, 0x2e, 0x3b, 0x03, 0x00, 0x00, 0x00, 0x00, 0x08, 0x19, 0x01, 0x00, 0x22,
