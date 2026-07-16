@@ -11,6 +11,7 @@ service.
 | Method | Path | Auth | Purpose |
 |---|---|---|---|
 | `GET` | `/healthz` | none | Liveness check |
+| `GET` | `/devices` | operator group | Lists enrolled robots via Fleet Indexing (`SearchIndex`, `thingTypeName:Krab`). Returns `[{thingName, connected, connectivityTimestamp}]`. |
 | `POST` | `/devices/{thingName}/ssh-tunnel` | operator group | Opens a Secure Tunnel (`OpenTunnel`, `services=SSH`) to the device. Returns `{tunnelId, sourceAccessToken, region}` -- the *destination* token goes straight to the device over MQTT (`krabby agent`, not through this service). |
 | `DELETE` | `/devices/{thingName}/ssh-tunnel/{tunnelId}` | operator group | Force-closes the tunnel (`CloseTunnel`, `delete=True`). |
 
@@ -79,4 +80,8 @@ tunnel logic and the AWS calls it makes.
 
 `systemd/krabby-fleet-service.service` runs `krabby-fleet-service` as a
 dedicated `krabby-fleet` system user (not root -- this service needs no
-special privileges). `deploy/Caddyfile` reverse-proxies `/api/*` to it.
+special privileges). `deploy/Caddyfile` reverse-proxies `/api/*` to it,
+and `deploy/caddy.service` runs Caddy as its own dedicated `caddy` system
+user. `fleet/infra/scripts/deploy-fleet-service.sh` pushes this whole
+directory onto the `FleetServiceStack` instance and (re)starts both
+services on every deploy -- see `fleet/infra/fleet-service.md`.

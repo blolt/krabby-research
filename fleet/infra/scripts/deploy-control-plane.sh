@@ -50,6 +50,7 @@ fi
 echo "Using aws:    $(command -v aws) ($(aws --version 2>&1))"
 
 # Fail fast if credentials/session are missing or expired.
+export AWS_IDENTITY_JSON
 if ! AWS_IDENTITY_JSON="$(aws sts get-caller-identity --output json 2>/dev/null)"; then
   cat >&2 <<'EOF'
 AWS credentials are not working (sts:GetCallerIdentity failed).

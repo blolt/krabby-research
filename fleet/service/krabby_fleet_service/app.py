@@ -11,6 +11,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
 from krabby_fleet_service._auth import require_operator
+from krabby_fleet_service._devices import list_devices
 from krabby_fleet_service._tunnels import close_ssh_tunnel, open_ssh_tunnel
 
 app = FastAPI(title="krabby-fleet-service")
@@ -22,9 +23,20 @@ class SshTunnelResponse(BaseModel):
     region: str
 
 
+class DeviceSummary(BaseModel):
+    thingName: str
+    connected: bool
+    connectivityTimestamp: int | None = None
+
+
 @app.get("/healthz")
 def healthz() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/devices", response_model=list[DeviceSummary])
+def get_devices(_claims: dict[str, Any] = Depends(require_operator)) -> list[dict[str, Any]]:
+    return list_devices()
 
 
 @app.post("/devices/{thing_name}/ssh-tunnel", response_model=SshTunnelResponse)

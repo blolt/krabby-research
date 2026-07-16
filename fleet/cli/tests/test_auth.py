@@ -22,7 +22,9 @@ _CONFIG = Config(
 
 
 def _fake_token(exp_offset: int) -> str:
-    return jwt.encode({"exp": int(time.time()) + exp_offset}, "unused-secret", algorithm="HS256")
+    return jwt.encode(
+        {"exp": int(time.time()) + exp_offset}, "unused-secret-padded-to-32-bytes!", algorithm="HS256"
+    )
 
 
 def test_session_roundtrip(tmp_path, monkeypatch):

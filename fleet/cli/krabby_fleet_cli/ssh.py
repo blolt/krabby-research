@@ -27,7 +27,7 @@ def cmd_ssh(thing_name: str, user: Optional[str] = None) -> None:
         wait_until_ready(local_port, proxy_proc)
 
         ssh_user = user or config.default_ssh_user
-        print(f"[ok]  tunnel open -- connecting as {ssh_user}@localhost:{local_port}")
+        print(f"[ok]  tunnel {tunnel_id} open -- connecting as {ssh_user}@localhost:{local_port}")
         subprocess.run(
             [
                 "ssh",

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from krabby_fleet_cli._api import close_ssh_tunnel, open_ssh_tunnel
+from krabby_fleet_cli._api import close_ssh_tunnel, list_devices, open_ssh_tunnel
 from krabby_fleet_cli._config import Config
 
 _CONFIG = Config(
@@ -13,6 +13,27 @@ _CONFIG = Config(
     cognito_user_pool_id="us-east-1_TEST",
     cognito_client_id="test-client",
 )
+
+
+def test_list_devices_happy_path():
+    fake_resp = MagicMock(status_code=200)
+    fake_resp.json.return_value = [
+        {"thingName": "bench-krabby-ci", "connected": True, "connectivityTimestamp": 123},
+    ]
+    with patch("krabby_fleet_cli._api.requests.get", return_value=fake_resp) as get:
+        result = list_devices(_CONFIG, "access-token")
+
+    assert result == [{"thingName": "bench-krabby-ci", "connected": True, "connectivityTimestamp": 123}]
+    args, kwargs = get.call_args
+    assert args[0] == "https://fleet.example/api/devices"
+    assert kwargs["headers"] == {"Authorization": "Bearer access-token"}
+
+
+def test_list_devices_401_exits():
+    fake_resp = MagicMock(status_code=401)
+    with patch("krabby_fleet_cli._api.requests.get", return_value=fake_resp):
+        with pytest.raises(SystemExit):
+            list_devices(_CONFIG, "access-token")
 
 
 def test_open_ssh_tunnel_happy_path():

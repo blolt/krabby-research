@@ -59,6 +59,7 @@ fi
 echo "Using aws:    $(command -v aws) ($(aws --version 2>&1))"
 
 # Fail fast if credentials/session are missing or expired.
+export AWS_IDENTITY_JSON
 if ! AWS_IDENTITY_JSON="$(aws sts get-caller-identity --output json 2>/dev/null)"; then
   cat >&2 <<'EOF'
 AWS credentials are not working (sts:GetCallerIdentity failed).
@@ -107,3 +108,88 @@ fi
 echo "Deploying FleetServiceStack ..."
 
 cdk deploy FleetServiceStack --require-approval never "$@"
+
+# The instance itself only gets OS-level bootstrap (packages, system users,
+# directories) from CDK UserData at first boot -- app code, the Caddyfile,
+# and both systemd units are pushed here, on every deploy, via SSM
+# (there's no SSH access to this box; see FleetServiceSecurityGroup).
+echo
+echo "Pushing app code onto the instance ..."
+
+export STACK_OUTPUTS_JSON
+STACK_OUTPUTS_JSON="$(aws cloudformation describe-stacks \
+  --stack-name FleetServiceStack \
+  --region "$AWS_REGION_EFFECTIVE" \
+  --query "Stacks[0].Outputs" --output json)"
+
+_stack_output() {
+  STACK_OUTPUT_KEY="$1" python - <<'PY'
+import json, os, sys
+
+key = os.environ["STACK_OUTPUT_KEY"]
+outputs = json.loads(os.environ["STACK_OUTPUTS_JSON"])
+for o in outputs:
+    if o["OutputKey"] == key:
+        print(o["OutputValue"])
+        break
+else:
+    print(f"error: output {key!r} not found in FleetServiceStack", file=sys.stderr)
+    sys.exit(1)
+PY
+}
+
+INSTANCE_ID="$(_stack_output FleetServiceInstanceId)"
+ASSET_BUCKET="$(_stack_output FleetServiceAssetS3BucketName)"
+ASSET_KEY="$(_stack_output FleetServiceAssetS3ObjectKey)"
+
+export REMOTE_SCRIPT ASSET_BUCKET ASSET_KEY
+REMOTE_SCRIPT="$(cat <<REMOTE
+set -euo pipefail
+aws s3 cp "s3://${ASSET_BUCKET}/${ASSET_KEY}" /tmp/fleet-service.zip
+rm -rf /opt/krabby-fleet-service/src
+mkdir -p /opt/krabby-fleet-service/src
+unzip -o -q /tmp/fleet-service.zip -d /opt/krabby-fleet-service/src
+install -m 0644 /opt/krabby-fleet-service/src/deploy/Caddyfile /etc/caddy/Caddyfile
+install -m 0644 /opt/krabby-fleet-service/src/deploy/caddy.service /etc/systemd/system/caddy.service
+install -m 0644 /opt/krabby-fleet-service/src/systemd/krabby-fleet-service.service /etc/systemd/system/krabby-fleet-service.service
+/usr/bin/pip3.11 install --quiet --upgrade /opt/krabby-fleet-service/src
+systemctl daemon-reload
+systemctl enable caddy krabby-fleet-service
+systemctl restart caddy krabby-fleet-service
+REMOTE
+)"
+
+# JSON built with python (not CLI shorthand) so embedded newlines/quotes in
+# the multi-line script above can't be misparsed by --parameters shorthand.
+export SSM_PARAMS_JSON
+SSM_PARAMS_JSON="$(python - <<'PY'
+import json, os
+print(json.dumps({"commands": [os.environ["REMOTE_SCRIPT"]]}))
+PY
+)"
+
+COMMAND_ID="$(aws ssm send-command \
+  --instance-ids "$INSTANCE_ID" \
+  --document-name "AWS-RunShellScript" \
+  --comment "krabby-fleet-service app deploy" \
+  --region "$AWS_REGION_EFFECTIVE" \
+  --parameters "$SSM_PARAMS_JSON" \
+  --query "Command.CommandId" --output text)"
+
+echo "Waiting for SSM command $COMMAND_ID to finish on $INSTANCE_ID ..."
+aws ssm wait command-executed \
+  --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --region "$AWS_REGION_EFFECTIVE" || true
+
+SSM_STATUS="$(aws ssm get-command-invocation \
+  --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --region "$AWS_REGION_EFFECTIVE" \
+  --query "Status" --output text)"
+
+if [[ "$SSM_STATUS" != "Success" ]]; then
+  echo "App deploy failed on the instance (status: $SSM_STATUS):" >&2
+  aws ssm get-command-invocation \
+    --command-id "$COMMAND_ID" --instance-id "$INSTANCE_ID" --region "$AWS_REGION_EFFECTIVE" \
+    --query "StandardErrorContent" --output text >&2
+  exit 1
+fi
+
+echo "[ok] krabby-fleet-service deployed and restarted."

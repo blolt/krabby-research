@@ -13,6 +13,7 @@ in full here.
 
 from __future__ import annotations
 
+import os
 from typing import Any, Optional
 
 from aws_cdk import CfnOutput, Duration, Fn, RemovalPolicy, Stack
@@ -20,6 +21,7 @@ from aws_cdk import aws_cognito as cognito
 from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_route53 as route53
+from aws_cdk import aws_s3_assets as s3_assets
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
@@ -162,6 +164,33 @@ class FleetServiceStack(Stack):
             )
         )
 
+        # One-time OS-level bootstrap: installs the packages, system users,
+        # and directories that app deploys (pushed separately via SSM --
+        # see deploy-fleet-service.sh) assume already exist. This only runs
+        # on first boot, so it deliberately doesn't touch app code or
+        # config content (Caddyfile, systemd units) -- those are pushed by
+        # every deploy, not baked into the instance at creation.
+        user_data = ec2.UserData.for_linux()
+        user_data.add_commands(
+            "set -euo pipefail",
+            "dnf install -y python3.11 python3.11-pip unzip",
+            # No official Amazon Linux package for Caddy -- pull the static
+            # binary directly from Caddy's own documented download API
+            # rather than depending on a third-party yum repo's uptime.
+            "curl -fsSL 'https://caddyserver.com/api/download?os=linux&arch=amd64' -o /usr/bin/caddy",
+            "chmod 0755 /usr/bin/caddy",
+            "getent group caddy >/dev/null || groupadd --system caddy",
+            "id -u caddy >/dev/null 2>&1 || "
+            "useradd --system --no-create-home --shell /usr/sbin/nologin -g caddy caddy",
+            "id -u krabby-fleet >/dev/null 2>&1 || "
+            "useradd --system --no-create-home --shell /usr/sbin/nologin krabby-fleet",
+            "mkdir -p /etc/caddy /opt/krabby-fleet-service",
+            # Provisioning-time config (this stack's domainName), not app
+            # code -- baked in here rather than shipped as a repo artifact,
+            # since it's specific to this deployment.
+            f"echo 'FLEET_DOMAIN={domain_name}' > /etc/caddy/caddy.env",
+        )
+
         instance = ec2.Instance(
             self,
             "FleetServiceInstance",
@@ -177,6 +206,7 @@ class FleetServiceStack(Stack):
             security_group=security_group,
             role=instance_role,
             require_imdsv2=True,
+            user_data=user_data,
             # We assign a static Elastic IP explicitly below; skip the
             # subnet's auto-assigned ephemeral public IP so the instance
             # doesn't end up with two public addresses.
@@ -190,6 +220,20 @@ class FleetServiceStack(Stack):
                 )
             ],
         )
+
+        # Packages fleet/service (app code + deploy/ + systemd/) as a zip,
+        # uploaded to the CDK bootstrap bucket on every `cdk deploy`.
+        # deploy-fleet-service.sh reads the resulting bucket/key outputs
+        # below and pushes them onto the instance via SSM after this stack
+        # deploys, so an app-only change doesn't require replacing the
+        # instance.
+        service_asset = s3_assets.Asset(
+            self,
+            "FleetServiceSourceAsset",
+            path=os.path.join(os.path.dirname(__file__), "..", "service"),
+            exclude=["__pycache__", "*.egg-info", ".venv", ".pytest_cache"],
+        )
+        service_asset.grant_read(instance_role)
 
         # Static IP so the Route 53 record survives instance replacement
         # (redeploys, AZ failure recovery) without a DNS update.
@@ -297,6 +341,10 @@ class FleetServiceStack(Stack):
         CfnOutput(self, "FleetServiceInstanceId", value=instance.instance_id)
         CfnOutput(self, "FleetServicePublicIp", value=eip.attr_public_ip)
         CfnOutput(self, "FleetServiceDomainName", value=domain_name)
+        # Read by deploy-fleet-service.sh to push this deploy's app code
+        # onto the instance via SSM after `cdk deploy` finishes.
+        CfnOutput(self, "FleetServiceAssetS3BucketName", value=service_asset.s3_bucket_name)
+        CfnOutput(self, "FleetServiceAssetS3ObjectKey", value=service_asset.s3_object_key)
         CfnOutput(
             self, "FleetCognitoUserPoolId",
             value=user_pool.user_pool_id, export_name="FleetCognitoUserPoolId",
