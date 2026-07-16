@@ -1,6 +1,8 @@
 # Teleop (WebRTC remote viewing)
 
-Jetson or Isaac HAL with **`--teleop-ip HOST`** runs an **outbound** WebSocket client to **`ws://HOST:9000/ws/robot`** (built by **`build_robot_signaling_ws_url`** in **`teleop/edge/robot_settings.py`**) and answers **SDP** with **HAL-backed** video. A **second `HalClient`** (same ZMQ endpoints as inference) subscribes to **`HardwareObservations`** and samples **`rgbd_by_catalog_id`** for each viewer line. The reference **operator server** is **`krabby-teleop-portal`** (wheel root: **`teleop/portal/`**): **HTTP** UI, **`GET /api/teleop-config`**, FIFO relay **`/ws/browser`** ↔ **`/ws/robot`**. After **offer/answer**, media is **browser ↔ robot** (ICE/STUN/TURN as negotiated).
+Jetson or Isaac HAL with **`--teleop-ip HOST`** runs an **outbound** WebSocket client to **`ws://HOST:9000/ws/robot`** (built by **`build_robot_signaling_ws_url`** in **`teleop/edge/robot_settings.py`**) and answers **SDP** with **HAL-backed** video. **`hal.server.teleop_portal_signaling`** runs inside the HAL process: a **`HalClient`** poll thread samples **`rgbd_by_catalog_id`** for WebRTC video, and (when commands are enabled) **`ControlLoop` (`INPUT_CONTROLLER_WEBRTC`)** maps browser gamepad state to joint commands. The reference **operator server** is **`krabby-teleop-portal`** (wheel root: **`teleop/portal/`**): **HTTP** UI, **`GET /api/teleop-config`**, FIFO relay **`/ws/browser`** ↔ **`/ws/robot`**. After **offer/answer**, media is **browser ↔ robot** (ICE/STUN/TURN as negotiated).
+
+See also **[controller/cli/README.md](../controller/cli/README.md)** (local **`krabby-uno`** / **`krabby-uno-sim`** vs portal teleop).
 
 **Two packages:** **`krabby-teleop-edge`** (wheel root: **`teleop/edge/`**) on robots only; **`krabby-teleop-portal`** (wheel root: **`teleop/portal/`**) on the operator host. Robot code calls **`teleop.edge.robot_settings.build_teleop_edge_settings()`** and **`portal_client_loop`** / **`run_robot_signaling_loop`**. The portal calls **`teleop.portal.settings.build_portal_auth_settings()`**, **`teleop.portal.ice_config.build_browser_ice_config()`**, and **`teleop.portal.relay.create_portal_app`**. Dev helpers: **`scripts/run_teleop_portal_x86_docker.sh`** (portal in Docker) and HAL **`--teleop-ip`** on Jetson or Isaac; unit tests under **`tests/unit/teleop/`**.
 
@@ -53,7 +55,8 @@ Use **`aiortc`** for the live robot-side WebRTC path (`teleop.edge` session/sign
 | Piece | Role |
 |--------|------|
 | **`JetsonHalServer`** / **`IsaacSimHalServer`** | Cameras / sim sensors, **`get_observations()`**, publishes observations on the HAL **PUB** socket |
-| **`hal.server.teleop_portal_signaling`** | Dedicated **`HalClient`** poll thread (latest RGB for catalog ids chosen by the **portal viewer** over signaling, bootstrapped from the primary HAL catalog id until **`catalog_ids`** is sent) plus **`teleop.edge`** outbound signaling and **`HalRgbSnapshotVideoTrack`** (shared by Jetson and Isaac; not Jetson-specific) |
+| **`hal.server.teleop_portal_signaling`** | Outbound **`teleop.edge`** signaling, **`HalRgbSnapshotVideoTrack`**, and (when **`send_hal_commands`**) browser control: **`WebRTCInputController`** + **`ControlLoop` (`INPUT_CONTROLLER_WEBRTC`)** → **`GamepadToKrabbyHALMapper`** → **`HalClient.put_joint_command`**. Uses a dedicated **`HalClient`** poll thread for latest RGB (catalog ids from the portal **`catalog_ids`** offer field, bootstrapped from the primary HAL catalog id until set). Command and observation clients share the HAL **`transport_context`** (inproc on Jetson portal/inference; TCP on Isaac when **`--joystick`** is used). |
+| **`controller.control_loop.ControlLoop`** | Wired only for **browser teleop** inside **`teleop_portal_signaling`** (`INPUT_CONTROLLER_WEBRTC`). Local gamepad clients use **`krabby-uno`** / **`krabby-uno-sim`** in a separate process (`INPUT_CONTROLLER_KRABBY` / `INPUT_CONTROLLER_ISAACSIM`). |
 | **`krabby-teleop-portal`** | Remote server: UI + config + relay **`/ws/browser`** ↔ **`/ws/robot`** |
 | **Browser** (`teleop_session.js` / portal viewer) | Loads UI from the **portal** origin, **`/ws/browser`**, WebRTC **offer** / **answer**, re-offer for stream count |
 
@@ -66,6 +69,28 @@ Use **`aiortc`** for the live robot-side WebRTC path (`teleop.edge` session/sign
 ```
 
 Pass **`--teleop-ip HOST`** on Jetson or Isaac HAL entry points. The HAL builds **`ws://HOST:9000/ws/robot`** (or pass a full **`ws://`** / **`wss://`** URL). Omit **`--teleop-ip`** to disable teleop. Jetson **`--control-source portal`** requires **`--teleop-ip`**. ICE, QoS, auth token, and stream caps still come from **`teleop.edge.robot_settings`** via **`build_teleop_edge_settings(host_or_url=…)`**.
+
+There is **no `--controller webrtc` flag** on **`krabby-uno`** or **`krabby-uno-sim`**. Browser control is selected by HAL flags and the portal UI, not by a separate controller CLI.
+
+### Browser control vs local gamepad (`ControlLoop`)
+
+| Goal | Jetson | Isaac Sim | `ControlLoop` mode |
+|------|--------|-----------|-------------------|
+| **Browser gamepad → robot** | `krabby-hal-server-jetson --control-source portal --teleop-ip <portal-host>` | Isaac HAL with **`--teleop-ip <portal-host>`**; enable **operator_override** in the portal to drive | **`INPUT_CONTROLLER_WEBRTC`** (in-process in **`teleop_portal_signaling`**) |
+| **Local Pro Controller → robot** | **`krabby-uno`** with server **`--control-source gamepad`** | **`krabby-uno-sim --quad\|--hex`** with server **`--joystick`** | **`INPUT_CONTROLLER_KRABBY`** / **`INPUT_CONTROLLER_ISAACSIM`** (separate TCP client) |
+| **Portal viewer / signaling** | **`krabby-teleop-portal --host 0.0.0.0 --port 9000`** on the operator host | same | (not `ControlLoop`; HTTP + WebSocket relay only) |
+
+On Isaac with both **`--teleop-ip`** and **`--joystick`**, the portal **operator_override** checkbox gates whether browser frames reach HAL (**`ControlLoopConfig.command_send_gate`**). **`--teleop-ip`** enables WebRTC capability; override enables driving from the browser when other command sources are active.
+
+```text
+  Browser krabby-control-v1 @ 50 Hz
+      → WebRTCInputController.update_from_payload
+      → ControlLoop (INPUT_CONTROLLER_WEBRTC)
+      → GamepadToKrabbyHALMapper
+      → HalClient.put_joint_command → HAL server
+```
+
+Parallel in the same teleop thread: **`HalClient.poll`** → RGB frames → **`HalRgbSnapshotVideoTrack`** → WebRTC video.
 
 ### Typical flow
 
@@ -98,6 +123,18 @@ python -m hal.server.jetson.main --control-source portal --teleop-ip 10.0.0.130
 # Isaac sim with local portal
 ./scripts/run_isaac_hal_server.sh --teleop-ip 127.0.0.1
 ```
+
+**`ControlLoop` WEBRTC wiring** (implemented in **`hal/server/teleop_portal_signaling.py`** when **`send_hal_commands=True`**):
+
+| `ControlLoopConfig` field | Teleop usage |
+|---------------------------|--------------|
+| **`mode=INPUT_CONTROLLER_WEBRTC`** | Browser path only; uses **`GamepadToKrabbyHALMapper`** (same leg/joint mapping as local **`krabby-uno`**, default mapper scales). |
+| **`webrtc_input_controller`** | Shared **`WebRTCInputController`**; signaling calls **`update_from_payload`** on each control frame. |
+| **`hal_client_config`** | Same observation/command endpoints as the teleop poll client. |
+| **`hal_transport_context`** | Shared ZMQ context with the HAL server (required for inproc). |
+| **`krabby_gamepad_robot_definition`** | Must match HAL **`--robot`** topology. |
+| **`command_send_gate`** | Portal **`operator_override`** on Isaac; Jetson portal mode sends when override is on in the control JSON. |
+| **`input_controller_update_rate_hz`** | **50** (matches browser **`teleop_session.js`** interval). |
 
 **Module settings** in **`teleop.edge.robot_settings`** (checked into the repo; override per deployment or image layer):
 
@@ -145,7 +182,7 @@ Terminate **TLS** in front of the portal in production; preserve **WebSocket Upg
     - axes: `LX`, `LY`, `RX`, `RY` (normalized floats in `[-1, 1]`)
 - Browser sends control at **50 Hz** (`20ms` interval) from either a Gamepad API joystick or the on-page virtual joystick/buttons.
 - Robot path:
-  - data channel JSON -> `WebRTCInputController` -> `GamepadToKrabbyHALMapper` -> `HalClient.put_joint_command`.
+  - data channel JSON -> `WebRTCInputController.update_from_payload` -> **`ControlLoop` (`INPUT_CONTROLLER_WEBRTC`)** -> `GamepadToKrabbyHALMapper` -> `HalClient.put_joint_command` (gated by portal **`operator_override`** via `ControlLoopConfig.command_send_gate` on Isaac; always on when driving in Jetson portal mode).
 - Robot logs receiver-side control latency from `sent_browser_ms` every ~5s with **p50**, **p95**, **max**, and latest samples. This is a browser wall-clock to robot wall-clock delta, so keep clocks synced for meaningful one-way latency.
 - Invalid/non-JSON control payloads are rejected with warning logs; malformed fields are rejected by parser without tearing down media.
 
@@ -225,3 +262,5 @@ pytest tests/unit/teleop/test_qos.py -v
 | **403** on portal | **`teleop.portal.settings.HTTP_TOKEN`** on the portal host and same value in **`robot_settings.HTTP_AUTH_TOKEN`** (query **`?token=`** on robot WS URL). |
 | **ICE failed** | **TURN** entries in **`teleop.portal.ice_config`** (browser) and matching **`robot_settings.STUN_TURN_SERVERS`** (robot); verify in browser devtools. |
 | **too many recvonly video m-lines** | Lower stream count or raise **`robot_settings.MAX_VIDEO_M_LINES`**. |
+| **Video works but robot does not move (Isaac)** | Enable **operator_override** in the portal when **`--joystick`** or inference is also active; check HAL logs for **`teleop control latency`**. |
+| **Video works but robot does not move (Jetson portal)** | Use **`--control-source portal --teleop-ip`**; connect WebRTC; drive with portal gamepad/virtual controls and override on. |

@@ -913,7 +913,7 @@ def _run_full_parkour_eval_body(mock_isaac_env, hal_server_config, hal_client_co
     observations_published = 0
     commands_applied = 0
     stalls = 0
-    last_cycle_time = time.time()
+    stall_warmup_cycles = 50  # inference thread + first apply_command cycles can exceed 2× period
     
     start_time = time.time()
     
@@ -947,12 +947,6 @@ def _run_full_parkour_eval_body(mock_isaac_env, hal_server_config, hal_client_co
         for cycle in range(total_cycles - 1):  # -1 because we already did the first step
             loop_start_ns = time.time_ns()
             
-            # Check for stalls (cycle taking too long)
-            if cycle > 0:
-                cycle_duration = loop_start_ns / 1e9 - last_cycle_time
-                if cycle_duration > period_s * 2:  # More than 2x expected period
-                    stalls += 1
-            
             # Publish hardware observations via HAL (matching main.py)
             hal_server.set_observation()
             observations_published += 1
@@ -978,11 +972,12 @@ def _run_full_parkour_eval_body(mock_isaac_env, hal_server_config, hal_client_co
             timestep += 1
             commands_applied += 1
             cycles_completed += 1
-            last_cycle_time = loop_start_ns / 1e9
 
             # Timing control (matching main.py)
             loop_end_ns = time.time_ns()
             loop_duration_s = (loop_end_ns - loop_start_ns) / 1e9
+            if cycles_completed > stall_warmup_cycles and loop_duration_s > period_s * 2:
+                stalls += 1
             sleep_time = max(0.0, period_s - loop_duration_s)
             
             if sleep_time > 0:
@@ -997,7 +992,7 @@ def _run_full_parkour_eval_body(mock_isaac_env, hal_server_config, hal_client_co
     # Verify completion
     assert cycles_completed >= total_cycles - 10, f"Expected at least {total_cycles - 10} cycles, got {cycles_completed}"
 
-    # Allow occasional slow cycles (scheduler / CI load); threshold is 2× nominal period per iteration.
+    # Stall = loop body exceeded 2× nominal period (excludes sleep; avoids scheduler jitter on sleep wake).
     assert stalls <= 3, f"Detected {stalls} stalls during execution (allow <= 3)"
     
     # Verify observations published

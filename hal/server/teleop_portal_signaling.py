@@ -19,6 +19,7 @@ from hal.client.config import HalClientConfig
 from hal.client.data_structures.hardware import HardwareObservations
 from hal.server.robot_definition import RobotDefinition
 from hal.server.sensor_interface import SensorInterface
+from controller.control_loop import ControlLoop, ControlLoopConfig, ControlMode
 from teleop.edge.config import TeleopEdgeSettings
 from teleop.edge.depth_preview import depth_meters_to_rgb24_u8
 from teleop.edge.hal_rgb_track import HalRgbSnapshotVideoTrack
@@ -283,29 +284,23 @@ def start_hal_teleop_signaling_thread(
         poll_stop = threading.Event()
         hal_teleop = HalClient(hal_client_config, context=transport_context)
         hal_client_lock = threading.Lock()
-        hal_ready = threading.Event()
         operator_override_gate = _OperatorOverrideGate()
         webrtc_input: Optional[WebRTCInputController] = None
+        control_loop: Optional[ControlLoop] = None
         if send_hal_commands:
-            from controller.mappers.gamepad_to_krabby_hal_mapper import GamepadToKrabbyHALMapper
-
             webrtc_input = WebRTCInputController()
-            gamepad_mapper = GamepadToKrabbyHALMapper(robot_definition=robot_definition)
-
-            def _on_webrtc_state(state: Any) -> None:
-                if not hal_ready.is_set():
-                    return
-                if not operator_override_gate.get():
-                    return
-                try:
-                    cmd = gamepad_mapper.map(state, observation_timestamp_ns=None)
-                    with hal_client_lock:
-                        hal_teleop.put_joint_command(cmd)
-                except Exception:
-                    logger.warning("teleop control: failed to map/send command", exc_info=True)
-
-            webrtc_input.register_callback(_on_webrtc_state)
-            webrtc_input.start(update_rate_hz=50.0)
+            control_loop = ControlLoop(
+                ControlLoopConfig(
+                    mode=ControlMode.INPUT_CONTROLLER_WEBRTC,
+                    webrtc_input_controller=webrtc_input,
+                    hal_client_config=hal_client_config,
+                    hal_transport_context=transport_context,
+                    krabby_gamepad_robot_definition=robot_definition,
+                    input_controller_update_rate_hz=50.0,
+                    command_send_gate=operator_override_gate.get,
+                )
+            )
+            control_loop.start()
 
         def _poll_worker() -> None:
             try:
@@ -362,7 +357,6 @@ def start_hal_teleop_signaling_thread(
 
         with hal_client_lock:
             hal_teleop.initialize()
-        hal_ready.set()
         poller = threading.Thread(target=_poll_worker, name="hal-teleop-hal-poll", daemon=True)
         poller.start()
 
@@ -466,8 +460,8 @@ def start_hal_teleop_signaling_thread(
         except Exception:
             logger.exception("Teleop signaling thread exited with error")
         finally:
-            if webrtc_input is not None:
-                webrtc_input.stop()
+            if control_loop is not None:
+                control_loop.stop()
             poll_stop.set()
             poller.join(timeout=5.0)
             if poller.is_alive():

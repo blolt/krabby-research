@@ -158,17 +158,17 @@ def test_jetson_depth_gray16_nvenc_pipeline_shape():
 def test_isaac_scene_introspection_matches_jetson_side_ids():
     from types import SimpleNamespace
 
-    from hal.server.isaac.sim_rgbd_camera_cfgs import sim_rgbd_camera_cfgs_for_robot_link
-
-    fc, fr, src, srr, slc, slr = sim_rgbd_camera_cfgs_for_robot_link("base")
+    # Scene keys mirror hal.server.isaac.main attach_sim_rgbd_sensors_to_scene_cfg naming.
+    # Dummy cfg objects suffice: introspection only needs paired rgb/depth scene entries.
+    dummy_cfg = SimpleNamespace(width=640, height=480)
     iface = IsaacSensorInterface(
         scene_sensors={
-            "front_camera": SimpleNamespace(cfg=fc),
-            "front_rgb": SimpleNamespace(cfg=fr),
-            "side_right_camera": SimpleNamespace(cfg=src),
-            "side_right_rgb": SimpleNamespace(cfg=srr),
-            "side_left_camera": SimpleNamespace(cfg=slc),
-            "side_left_rgb": SimpleNamespace(cfg=slr),
+            "front_camera": SimpleNamespace(cfg=dummy_cfg),
+            "front_rgb": SimpleNamespace(cfg=dummy_cfg),
+            "side_right_camera": SimpleNamespace(cfg=dummy_cfg),
+            "side_right_rgb": SimpleNamespace(cfg=dummy_cfg),
+            "side_left_camera": SimpleNamespace(cfg=dummy_cfg),
+            "side_left_rgb": SimpleNamespace(cfg=dummy_cfg),
         }
     )
     ids = {s.id for s in iface.list_sensors()}

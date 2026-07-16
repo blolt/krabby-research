@@ -125,6 +125,9 @@ def test_qos_controller_track_fps_and_active_flags() -> None:
         TeleopDegradationPolicy(stream_count=4, kbps_budget_per_stream=2000.0)
     )
     controller.configure_streams(4)
+    # configure_streams() arms a post-renegotiation grace window; clear it for unit characterization.
+    with controller._lock:
+        controller._grace_until_mono_s = 0.0
     controller.observe_sample(outbound_kbps=4300.0, packet_loss_fraction=0.0)
 
     assert controller.get_target_fps(0) == 15.0
@@ -154,6 +157,8 @@ def test_qos_controller_logs_on_level_change(caplog) -> None:
         TeleopDegradationPolicy(stream_count=1, kbps_budget_per_stream=2000.0)
     )
     controller.configure_streams(1)
+    with controller._lock:
+        controller._grace_until_mono_s = 0.0
     with caplog.at_level(logging.INFO):
         controller.observe_sample(outbound_kbps=1500.0, packet_loss_fraction=0.0)
     assert "teleop qos: level=1" in caplog.text
