@@ -203,6 +203,12 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Where Cursor stores project-local agent/rule definitions
+.cursor
+
+# Local-only cross-tool agent guide (mirrors .cursor/.claude being gitignored)
+AGENTS.md
+
 # Where Claude Code stores project-local settings
 .claude
 
@@ -232,3 +238,9 @@ docs/m14-task1-plan.html
 .dolt/
 *.db
 .beads-credential-key
+
+# Fleet CDK (fleet/infra) — local toolkit, synth output, npm installs
+fleet/infra/.tools/
+fleet/infra/cdk.out/
+fleet/infra/.cdk.staging/
+node_modules/
