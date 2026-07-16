@@ -58,6 +58,14 @@ def main() -> None:
     p_firmware.add_argument("--image", metavar="REF", help="Image ref to use")
     p_firmware.add_argument("args", nargs=argparse.REMAINDER, help="Arguments forwarded to krabby-firmware")
 
+    # enroll
+    p_enroll = sub.add_parser("enroll", help="One-time fleet onboarding: provision IoT identity and enable krabby-agent")
+    p_enroll.add_argument("--thing-name", metavar="NAME", help="IoT thing name (default: wired MAC address)")
+    p_enroll.add_argument("--endpoint", metavar="HOST", help="IoT Core ATS endpoint (default: resolved from account)")
+
+    # agent
+    sub.add_parser("agent", help="Run the always-on IoT Core MQTT client (normally started by krabby-agent.service)")
+
     args = parser.parse_args()
 
     if args.command == "install":
@@ -75,6 +83,14 @@ def main() -> None:
     elif args.command == "firmware":
         from krabby.firmware import cmd_firmware
         cmd_firmware(firmware_args=args.args, image_ref=args.image)
+
+    elif args.command == "enroll":
+        from krabby.enroll import cmd_enroll
+        cmd_enroll(thing_name=args.thing_name, endpoint=args.endpoint)
+
+    elif args.command == "agent":
+        from krabby.agent import cmd_agent
+        cmd_agent()
 
     else:
         parser.print_help()

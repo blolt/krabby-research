@@ -30,9 +30,52 @@ krabby firmware show <branch>  # list a branch's builds newest-first, paged
 krabby firmware update         # run krabby-firmware update inside the container
 krabby firmware <args>         # any krabby-firmware subcommand/flags
 
+krabby enroll                        # one-time fleet onboarding (operator-run, needs sudo + AWS creds)
+krabby enroll --thing-name my-krab   # override the default MAC-derived thing name
+krabby enroll --endpoint xxx-ats.iot.us-east-1.amazonaws.com  # override the auto-resolved ATS endpoint
+
+krabby agent                   # run the IoT Core MQTT client in the foreground (normally systemd-managed)
+
 krabby --version
 krabby --help
 ```
+
+## Fleet onboarding (`enroll` / `agent`)
+
+`krabby enroll` and `krabby agent` are the device-side half of Krabby fleet
+management (control plane: AWS IoT Core; see `fleet/infra/`). `enroll` is run
+**once per device, by an operator**; `agent` then runs forever as a systemd
+service (`krabby-agent.service`, separate from `krabby-locomotion.service`).
+
+```bash
+sudo krabby enroll
+```
+
+Creates/finds the IoT thing — name defaults to the wired NIC's MAC address
+(no hostname fallback: Orin hostnames aren't unique across a fleet), or
+override it with `--thing-name`. Then generates a keypair + CSR **on the
+device** (private key never leaves it),
+gets it signed and attaches `KrabDevicePolicy`, writes cert/key/root CA/ATS
+endpoint to `/etc/krabby/iot/` (root-owned, key `0600`), installs
+`aws-iot-securetunneling-localproxy`, and enables `krabby-agent.service` —
+verifying a real MQTT connect before declaring success. AWS credentials are
+used only during `enroll`, never persisted; `agent` only ever does MQTT.
+
+```bash
+sudo systemctl start krabby-agent      # enroll already enabled it for boot
+journalctl -u krabby-agent -f          # service logs
+```
+
+Over its one MQTT connection, `krabby agent` publishes a minimal
+`{"state": {"reported": {...}}}` to the Classic Shadow once a minute (full
+schema defined elsewhere), and spawns/reaps the Secure Tunneling destination
+`localproxy` against `localhost:22` on `.../tunnels/notify`. Teleop signaling
+topics are left untouched (separate work). The SDK reconnects with backoff on
+drops, and `Restart=always` brings the process back if it exits.
+
+Fleet Provisioning by claim (onboarding without per-device AWS creds beyond
+this initial small fleet) is a known scale path, not implemented by `enroll`
+today.
 
 `krabby run` starts the **whole** gamepad stack in one container — the HAL server and
 the `krabby-uno` client/controller together — so a paired gamepad drives the robot with
