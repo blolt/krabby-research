@@ -52,7 +52,12 @@ Each stack has its own doc with its resource table and destroy blockers.
 | Stack | Docs | Deploy | Destroy |
 |---|---|---|---|
 | `ControlPlaneStack` | [control-plane.md](control-plane.md) | `./scripts/deploy-control-plane.sh` | `./scripts/destroy-control-plane.sh` |
-| `FleetServiceStack` | not yet built (Plan Phase 2) | -- | -- |
+| `FleetServiceStack` | [fleet-service.md](fleet-service.md) | `./scripts/deploy-fleet-service.sh` | `./scripts/destroy-fleet-service.sh` |
+
+`FleetServiceStack` depends on `ControlPlaneStack` (imports its
+`IotAtsEndpoint` export) — deploy `ControlPlaneStack` first, or run
+`cdk deploy ControlPlaneStack FleetServiceStack` and let CDK resolve the
+order.
 
 If `cdk destroy` fails partway through, resolve the blocker (see the
 stack's own doc) and re-run -- CloudFormation resumes the rollback from
