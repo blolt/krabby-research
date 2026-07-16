@@ -1,15 +1,13 @@
 # `FleetServiceStack`
 
-The EC2 host, networking, and Cognito user pool the fleet service and portal
-will run on. Application code and systemd units are a separate deliverable —
-this stack is infrastructure only. Defined in `fleet_service_stack.py`.
-Depends on `ControlPlaneStack` (imports its `IotAtsEndpoint` export).
+EC2 host, networking, and Cognito user pool for the fleet service. Defined
+in `fleet_service_stack.py`. Depends on `ControlPlaneStack` (imports its
+`IotAtsEndpoint` export).
 
 ## Required context values
 
-No domain has been registered yet, so these aren't hardcoded constants —
-they're required CDK context, passed as `-c key=value` on the command line
-rather than environment variables.
+These are required CDK context, passed as `-c key=value` on the command
+line rather than environment variables or hardcoded constants.
 
 | Context key | Placeholder | Purpose |
 |---|---|---|
@@ -42,8 +40,8 @@ same VPC/subnet/AZ/hosted-zone data instead of re-querying AWS every time.
 
 | Resource | Type | Purpose |
 |---|---|---|
-| `FleetServiceSecurityGroup` | `AWS::EC2::SecurityGroup` | Inbound 80/443 (Caddy: ACME challenge + app traffic), 3478 UDP + 5349 TCP/UDP (coturn). No inbound SSH. |
-| `FleetServiceInstanceRole` | `AWS::IAM::Role` | EC2 instance role: `AmazonSSMManagedInstanceCore` (Session Manager / Run Command, no SSH key needed) + Secure Tunneling `OpenTunnel`/`CloseTunnel`/`DescribeTunnel` + fleet listing (`iot:SearchIndex`/`GetThingShadow`/`DescribeThing`) + teleop signaling bridge (`iot:Connect`/`Publish`/`Subscribe`/`Receive` on `teleop/*/signaling/*`). Granted up front even though the code that uses SearchIndex and the signaling bridge doesn't exist yet — the permission shape is already fully specified. |
+| `FleetServiceSecurityGroup` | `AWS::EC2::SecurityGroup` | Inbound HTTP/HTTPS (80/443) and STUN/TURN (3478 UDP, 5349 TCP/UDP). No inbound SSH. |
+| `FleetServiceInstanceRole` | `AWS::IAM::Role` | EC2 instance role: `AmazonSSMManagedInstanceCore` (Session Manager / Run Command, no SSH key needed) + Secure Tunneling `OpenTunnel`/`CloseTunnel`/`DescribeTunnel` + fleet listing (`iot:SearchIndex`/`GetThingShadow`/`DescribeThing`) + teleop signaling bridge (`iot:Connect`/`Publish`/`Subscribe`/`Receive` on `teleop/*/signaling/*`). |
 | `FleetServiceInstance` | `AWS::EC2::Instance` | `c7i.large` (see rationale in `fleet_service_stack.py`), Amazon Linux 2023, IMDSv2 required, 30 GiB encrypted gp3 root volume, no auto-assigned public IP (uses the EIP below instead). |
 | `FleetServiceEip` / `FleetServiceEipAssociation` | `AWS::EC2::EIP` / `AWS::EC2::EIPAssociation` | Static public IP so the DNS record survives instance replacement. |
 | `FleetServiceDnsRecord` | `AWS::Route53::RecordSet` | A record for `domainName` in the given hosted zone, pointed at the EIP. |
@@ -51,8 +49,9 @@ same VPC/subnet/AZ/hosted-zone data instead of re-querying AWS every time.
 | `FleetOperatorPool` | `AWS::Cognito::UserPool` | Operator accounts. No self-sign-up (admin-created only). `RemovalPolicy.RETAIN`. |
 | `OperatorGroup` | `AWS::Cognito::UserPoolGroup` (`operator`) | Membership grants tunnel/telemetry access; assigned manually by an admin, not by this stack. |
 | `FleetPoolDomain` | Cognito Hosted UI domain | `cognitoDomainPrefix` (or the account-scoped default). |
-| `FleetOperatorClient` | `AWS::Cognito::UserPoolClient` | One client for both the CLI (`USER_SRP_AUTH`) and the portal (OAuth authorization-code + PKCE, no client secret). |
-| `FleetServiceInstanceId`, `FleetServicePublicIp`, `FleetServiceDomainName`, `FleetCognitoUserPoolId`, `FleetCognitoUserPoolClientId`, `FleetCognitoDomain` (outputs) | `CfnOutput` | For the fleet service/portal/CLI config and for console visibility. `FleetCognitoUserPoolId` and `FleetCognitoUserPoolClientId` are also exported for cross-stack use. |
+| `FleetOperatorClient` | `AWS::Cognito::UserPoolClient` | Supports `USER_SRP_AUTH` and OAuth authorization-code + PKCE (no client secret). |
+| `CognitoUserPoolIdParam` / `CognitoAppClientIdParam` | `AWS::SSM::Parameter` (`/krabby/fleet/cognito-user-pool-id`, `/krabby/fleet/cognito-app-client-id`) | The user pool ID and app client ID above, published to SSM Parameter Store so `krabby-fleet-service`'s JWT middleware can read them at runtime and know which pool/client to validate tokens against. Instance role has read access. |
+| `FleetServiceInstanceId`, `FleetServicePublicIp`, `FleetServiceDomainName`, `FleetCognitoUserPoolId`, `FleetCognitoUserPoolClientId`, `FleetCognitoDomain` (outputs) | `CfnOutput` | Console visibility. `FleetCognitoUserPoolId` and `FleetCognitoUserPoolClientId` are also exported for cross-stack use. |
 
 ## Remove the stack
 

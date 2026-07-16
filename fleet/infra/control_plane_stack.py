@@ -33,8 +33,8 @@ KRAB_THING_TYPE = "Krab"
 # querying CDK outputs first.
 KRAB_DEVICE_POLICY = "KrabDevicePolicy"
 
-# Fixed name, same reasoning as KRAB_DEVICE_POLICY -- the device policy
-# below references this name directly to build the rolealias ARN.
+# Fixed name so the device policy below can reference it directly to build
+# the rolealias ARN, without querying CDK outputs first.
 KRAB_IMAGE_ROLE_ALIAS = "KrabImageRoleAlias"
 
 # THING/THING_GROUP/THING_TYPE/membership/hierarchy/CERTIFICATE events feed

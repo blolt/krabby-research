@@ -7,9 +7,6 @@ get it signed by IoT Core, attach the fleet's per-thing policy, and write the
 resulting identity to disk. Then installs the Secure Tunneling local proxy,
 enables `krabby-agent.service`, and does a short-lived MQTT connect to prove
 the new identity actually works before handing off to the always-on agent.
-
-Fleet Provisioning by claim (onboarding without per-device AWS creds beyond
-this small fleet) is a documented scale path, not implemented here.
 """
 from __future__ import annotations
 

@@ -69,13 +69,9 @@ journalctl -u krabby-agent -f          # service logs
 Over its one MQTT connection, `krabby agent` publishes a minimal
 `{"state": {"reported": {...}}}` to the Classic Shadow once a minute (full
 schema defined elsewhere), and spawns/reaps the Secure Tunneling destination
-`localproxy` against `localhost:22` on `.../tunnels/notify`. Teleop signaling
-topics are left untouched (separate work). The SDK reconnects with backoff on
-drops, and `Restart=always` brings the process back if it exits.
-
-Fleet Provisioning by claim (onboarding without per-device AWS creds beyond
-this initial small fleet) is a known scale path, not implemented by `enroll`
-today.
+`localproxy` against `localhost:22` on `.../tunnels/notify`. It leaves
+`teleop/{thing}/signaling/in|out` untouched. The SDK reconnects with backoff
+on drops, and `Restart=always` brings the process back if it exits.
 
 `krabby run` starts the **whole** gamepad stack in one container — the HAL server and
 the `krabby-uno` client/controller together — so a paired gamepad drives the robot with

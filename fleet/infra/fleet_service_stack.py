@@ -1,19 +1,14 @@
 """FleetServiceStack -- EC2 host, networking, and Cognito for the fleet service.
 
-Provisions the single EC2 host that will run the fleet REST API, the Next.js
-portal, Caddy, and coturn (application code and systemd units are a separate,
-later deliverable -- this stack is infrastructure only): the instance itself,
-its Elastic IP, a Route 53 A record, a security group, the instance's IAM
-role, and the Cognito user pool operators authenticate against. Depends on
-`ControlPlaneStack` via the `IotAtsEndpoint` CFN export.
+Provisions the EC2 instance, its Elastic IP, a Route 53 A record, a security
+group, the instance's IAM role, and the Cognito user pool operators
+authenticate against. Depends on `ControlPlaneStack` via the
+`IotAtsEndpoint` CFN export.
 
-The instance IAM role grants its full known shape up front -- Secure
-Tunneling open/close, fleet listing (SearchIndex/GetThingShadow/DescribeThing),
-and the teleop signaling bridge's MQTT connect/pub/sub -- even though the
-application code that will use SearchIndex and the signaling bridge doesn't
-exist yet. That permission shape is already fully specified, so granting it
-now avoids a follow-up CDK edit later for something whose shape was never
-actually in question.
+The instance IAM role grants Secure Tunneling open/close, fleet listing
+(SearchIndex/GetThingShadow/DescribeThing), and the teleop signaling
+bridge's MQTT connect/pub/sub -- a fully specified permission shape, granted
+in full here.
 """
 
 from __future__ import annotations
@@ -28,18 +23,13 @@ from aws_cdk import aws_route53 as route53
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
-# c7i.large, not the grant's default t3.small: this one host also runs coturn
-# under TURN relay, which can hold sustained CPU/network that would throttle
-# a burstable T3's credit balance mid-session. c7i.large is 2 vCPU / 4 GiB,
-# non-burstable Intel, up to 12.5 Gbps network (~$65/mo On-Demand us-east-1).
-# x86_64 only -- no Graviton/ARM equivalent chosen here.
-FLEET_INSTANCE_TYPE = "c7i.large"
-
-# SSM Parameter Store path the not-yet-built fleet service reads at runtime
-# for the account's IoT Core ATS endpoint -- decouples this stack's "consume
-# IotAtsEndpoint" duty from guessing the future service's exact config-loading
-# mechanism (env file, secrets manager, etc).
+# SSM Parameter Store paths the fleet service reads at runtime -- decouples
+# this stack's "hand off config" duty from guessing the service's exact
+# config-loading mechanism (env file, secrets manager, etc). krabby_fleet_service
+# reads these same paths; keep the two in sync if either changes.
 IOT_ATS_ENDPOINT_PARAM_NAME = "/krabby/fleet/iot-ats-endpoint"
+COGNITO_USER_POOL_ID_PARAM_NAME = "/krabby/fleet/cognito-user-pool-id"
+COGNITO_APP_CLIENT_ID_PARAM_NAME = "/krabby/fleet/cognito-app-client-id"
 
 
 class FleetServiceStack(Stack):
@@ -57,8 +47,8 @@ class FleetServiceStack(Stack):
         domain_name: fully-qualified DNS name for the fleet host.
         hosted_zone_name: the Route 53 hosted zone that owns `domain_name`;
             its ID is resolved via a live AWS lookup at synth time (see
-            `HostedZone.from_lookup` below), same mechanism as the default
-            VPC lookup a few lines down.
+            `HostedZone.from_lookup` below), which needs real AWS credentials
+            to resolve and caches its result in `cdk.context.json`.
         cognito_domain_prefix: Hosted UI domain prefix; defaults to a
             per-account-unique value if omitted (Cognito domain prefixes must
             be globally unique across all AWS accounts).
@@ -74,27 +64,27 @@ class FleetServiceStack(Stack):
             "FleetServiceSecurityGroup",
             vpc=vpc,
             description=(
-                "Krabby fleet service host: Caddy (80/443) + coturn (3478 UDP, "
-                "5349 TCP/UDP). No inbound SSH -- admin access is via SSM Session "
-                "Manager (instance role below), not an open port 22."
+                "Krabby fleet service host: inbound HTTP/HTTPS (80/443) and "
+                "STUN/TURN (3478 UDP, 5349 TCP/UDP). No inbound SSH -- admin "
+                "access is via SSM Session Manager (instance role below), "
+                "not an open port 22."
             ),
         )
         security_group.add_ingress_rule(
             ec2.Peer.any_ipv4(), ec2.Port.tcp(80),
-            "Let's Encrypt HTTP-01 challenge + HTTP->HTTPS redirect (Caddy)",
+            "HTTP -- ACME HTTP-01 challenge and HTTP->HTTPS redirect",
         )
         security_group.add_ingress_rule(
-            ec2.Peer.any_ipv4(), ec2.Port.tcp(443),
-            "Portal + fleet API + teleop signaling, all behind Caddy (TLS)",
+            ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "HTTPS",
         )
         security_group.add_ingress_rule(
-            ec2.Peer.any_ipv4(), ec2.Port.udp(3478), "coturn STUN/TURN",
+            ec2.Peer.any_ipv4(), ec2.Port.udp(3478), "STUN/TURN",
         )
         security_group.add_ingress_rule(
-            ec2.Peer.any_ipv4(), ec2.Port.tcp(5349), "coturn TURNS (TLS)",
+            ec2.Peer.any_ipv4(), ec2.Port.tcp(5349), "TURNS (TLS)",
         )
         security_group.add_ingress_rule(
-            ec2.Peer.any_ipv4(), ec2.Port.udp(5349), "coturn TURNS (DTLS)",
+            ec2.Peer.any_ipv4(), ec2.Port.udp(5349), "TURNS (DTLS)",
         )
 
         # AmazonSSMManagedInstanceCore makes the box reachable via SSM Session
@@ -177,7 +167,12 @@ class FleetServiceStack(Stack):
             "FleetServiceInstance",
             vpc=vpc,
             vpc_subnets=ec2.SubnetSelection(subnet_type=ec2.SubnetType.PUBLIC),
-            instance_type=ec2.InstanceType(FLEET_INSTANCE_TYPE),
+            # Non-burstable: this host also runs coturn under TURN relay,
+            # which can hold sustained CPU/network load that would throttle a
+            # burstable instance's credit balance mid-session. c7i.large is
+            # 2 vCPU / 4 GiB, non-burstable Intel, up to 12.5 Gbps network,
+            # x86_64 only.
+            instance_type=ec2.InstanceType("c7i.large"),
             machine_image=ec2.MachineImage.latest_amazon_linux2023(),
             security_group=security_group,
             role=instance_role,
@@ -234,8 +229,7 @@ class FleetServiceStack(Stack):
         # Operators authenticate here; the fleet service verifies the
         # resulting JWT rather than this stack minting per-user AWS
         # credentials. RemovalPolicy.RETAIN: destroying the stack shouldn't
-        # silently delete every operator's account and lock the fleet out
-        # (same reasoning as ControlPlaneStack's reported-images bucket).
+        # silently delete every operator's account and lock the fleet out.
         user_pool = cognito.UserPool(
             self, "FleetOperatorPool",
             self_sign_up_enabled=False,
@@ -266,11 +260,10 @@ class FleetServiceStack(Stack):
             cognito_domain=cognito.CognitoDomainOptions(domain_prefix=domain_prefix),
         )
 
-        # One client for both the CLI (USER_SRP_AUTH, no browser) and the
-        # portal (OAuth authorization-code + PKCE, no client secret needed
-        # since PKCE is the confidentiality mechanism for a public client).
-        # The callback path assumes a NextAuth.js-style route; confirm/adjust
-        # once the portal's auth library is chosen.
+        # Supports USER_SRP_AUTH (no browser) and OAuth authorization-code +
+        # PKCE, no client secret needed since PKCE is the confidentiality
+        # mechanism for a public client. The callback path follows the
+        # NextAuth.js Cognito provider convention.
         user_pool_client = user_pool.add_client(
             "FleetOperatorClient",
             generate_secret=False,
@@ -282,6 +275,24 @@ class FleetServiceStack(Stack):
                 logout_urls=[f"https://{domain_name}"],
             ),
         )
+
+        # Published to SSM Parameter Store so the JWT verification middleware
+        # can read them at runtime and validate tokens against the right
+        # user pool/client, without this stack guessing its config format.
+        cognito_user_pool_id_param = ssm.StringParameter(
+            self, "CognitoUserPoolIdParam",
+            parameter_name=COGNITO_USER_POOL_ID_PARAM_NAME,
+            string_value=user_pool.user_pool_id,
+            description="Cognito user pool ID, read by krabby-fleet-service at runtime",
+        )
+        cognito_user_pool_id_param.grant_read(instance_role)
+        cognito_app_client_id_param = ssm.StringParameter(
+            self, "CognitoAppClientIdParam",
+            parameter_name=COGNITO_APP_CLIENT_ID_PARAM_NAME,
+            string_value=user_pool_client.user_pool_client_id,
+            description="Cognito app client ID, read by krabby-fleet-service at runtime",
+        )
+        cognito_app_client_id_param.grant_read(instance_role)
 
         CfnOutput(self, "FleetServiceInstanceId", value=instance.instance_id)
         CfnOutput(self, "FleetServicePublicIp", value=eip.attr_public_ip)
