@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
+import { OpenTeleopLink } from "@/components/OpenTeleopLink";
 import { listDevices, type DeviceSummary } from "@/lib/fleet";
 import { formatLastSeen } from "@/lib/format";
 
@@ -37,6 +38,7 @@ export default async function DevicesPage() {
               <th>Status</th>
               <th>Last seen</th>
               <th>Image</th>
+              <th>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -59,6 +61,9 @@ export default async function DevicesPage() {
                   </td>
                   <td className="mono muted">{formatLastSeen(device.connectivityTimestamp)}</td>
                   <td className="mono muted">{image}</td>
+                  <td>
+                    <OpenTeleopLink thingName={device.thingName} />
+                  </td>
                 </tr>
               );
             })}

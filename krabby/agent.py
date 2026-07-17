@@ -1,8 +1,7 @@
 """krabby agent — the always-on MQTT client, run by krabby-agent.service.
 
 Single outbound MQTT connection (mTLS, cert/key written by `krabby enroll`)
-carries two flows for the life of the process, each this module owns end to
-end:
+carries three flows for the life of the process:
 
 1. Classic Shadow: publishes `{"state": {"reported": {...}}}` once a minute
    via the SDK's shadow client, so `update/accepted`/`update/rejected` are
@@ -10,11 +9,9 @@ end:
 2. Secure Tunneling: subscribes to the reserved `.../tunnels/notify` topic
    and spawns the destination `localproxy` against localhost:22 on
    notification. This is intentionally a minimal spawn/track/reap loop.
-
-Teleop signaling (`teleop/{thing}/signaling/in|out` — bridging SDP/ICE to the
-WebRTC edge agent) is a different component's responsibility. The device
-policy grants access to those topics, but this module does not subscribe to
-them.
+3. Teleop signaling: `teleop/{thing}/signaling/in|out` bridged by
+   ``krabby.teleop_shim`` to a localhost WebSocket that the existing WebRTC
+   edge agent dials (``--teleop-ip 127.0.0.1``). SDP/ICE JSON shape is unchanged.
 
 No flags — everything needed (thing name, endpoint, cert paths) comes from
 what `krabby enroll` already wrote to `_iot.IOT_DIR`.
@@ -28,6 +25,7 @@ import time
 from typing import Any
 
 from krabby import _iot
+from krabby.teleop_shim import TeleopSignalingShim
 
 SHADOW_REPORT_INTERVAL_SECS = 60
 
@@ -139,9 +137,8 @@ def cmd_agent() -> None:
     )
     print(f"[ok]  subscribed to {tunnels_notify_topic}")
 
-    # teleop/{thing_name}/signaling/in|out is a different component's
-    # responsibility (bridging SDP/ICE to the WebRTC edge agent); the device
-    # policy grants access to those topics, but they're not subscribed here.
+    teleop_shim = TeleopSignalingShim()
+    teleop_shim.start(connection, thing_name)
 
     print(f"      reporting shadow state every {SHADOW_REPORT_INTERVAL_SECS}s. Ctrl-C to stop.")
     try:
@@ -152,6 +149,7 @@ def cmd_agent() -> None:
     except KeyboardInterrupt:
         print("\n[ok]  shutting down")
     finally:
+        teleop_shim.stop()
         for proc in _tunnel_procs:
             if proc.poll() is None:
                 proc.terminate()

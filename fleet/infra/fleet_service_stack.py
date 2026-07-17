@@ -38,6 +38,10 @@ COGNITO_APP_CLIENT_ID_PARAM_NAME = "/krabby/fleet/cognito-app-client-id"
 # /etc/krabby-fleet/portal.env by deploy-fleet-service.sh.
 PORTAL_AUTH_SECRET_NAME = "/krabby/fleet/portal-auth-secret"
 
+# Shared HMAC secret for coturn TURN REST API credentials; written into
+# /etc/krabby-fleet/turnserver.conf + service.env by deploy-fleet-service.sh.
+TURN_AUTH_SECRET_NAME = "/krabby/fleet/turn-auth-secret"
+
 # Node binary installed by UserData (must match ExecStart in
 # krabby-fleet-portal.service).
 _NODE_VERSION = "22.14.0"
@@ -89,13 +93,22 @@ class FleetServiceStack(Stack):
             ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "HTTPS",
         )
         security_group.add_ingress_rule(
-            ec2.Peer.any_ipv4(), ec2.Port.udp(3478), "STUN/TURN",
+            ec2.Peer.any_ipv4(), ec2.Port.udp(3478), "STUN/TURN (UDP)",
+        )
+        security_group.add_ingress_rule(
+            ec2.Peer.any_ipv4(), ec2.Port.tcp(3478), "TURN (TCP)",
         )
         security_group.add_ingress_rule(
             ec2.Peer.any_ipv4(), ec2.Port.tcp(5349), "TURNS (TLS)",
         )
         security_group.add_ingress_rule(
             ec2.Peer.any_ipv4(), ec2.Port.udp(5349), "TURNS (DTLS)",
+        )
+        # coturn relay allocations (min-port/max-port in turnserver.conf).
+        security_group.add_ingress_rule(
+            ec2.Peer.any_ipv4(),
+            ec2.Port.udp_range(49152, 65535),
+            "TURN relay media (UDP)",
         )
 
         # AmazonSSMManagedInstanceCore makes the box reachable via SSM Session
@@ -183,11 +196,18 @@ class FleetServiceStack(Stack):
         user_data.add_commands(
             "set -euo pipefail",
             "dnf install -y python3.11 python3.11-pip unzip xz tar",
+            # coturn for teleop STUN/TURN; soft-fail so a missing package doesn't
+            # brick first boot (deploy-fleet-service.sh also installs it).
+            "dnf install -y coturn || true",
             # No official Amazon Linux package for Caddy -- pull the static
             # binary directly from Caddy's own documented download API
             # rather than depending on a third-party yum repo's uptime.
             "curl -fsSL 'https://caddyserver.com/api/download?os=linux&arch=amd64' -o /usr/bin/caddy",
             "chmod 0755 /usr/bin/caddy",
+            # Disable the distro coturn unit; deploy-fleet-service.sh installs
+            # krabby-coturn.service with our conf (shared REST-API secret).
+            "systemctl disable --now coturn 2>/dev/null || true",
+            "systemctl disable --now turnserver 2>/dev/null || true",
             # Node for krabby-fleet-portal (Next.js standalone). Official
             # tarball under /usr/local so ExecStart can use /usr/local/bin/node.
             f"curl -fsSL 'https://nodejs.org/dist/v{_NODE_VERSION}/node-v{_NODE_VERSION}-linux-x64.tar.xz' "
@@ -281,6 +301,21 @@ class FleetServiceStack(Stack):
             ),
         )
         portal_auth_secret.grant_read(instance_role)
+
+        # coturn TURN REST API shared secret (HMAC key). Fleet service mints
+        # short-lived username/credential pairs; coturn verifies with the
+        # same secret (use-auth-secret / static-auth-secret).
+        turn_auth_secret = secretsmanager.Secret(
+            self,
+            "TurnAuthSecret",
+            secret_name=TURN_AUTH_SECRET_NAME,
+            description="static-auth-secret for coturn TURN REST API (krabby teleop ICE)",
+            generate_secret_string=secretsmanager.SecretStringGenerator(
+                password_length=48,
+                exclude_punctuation=True,
+            ),
+        )
+        turn_auth_secret.grant_read(instance_role)
 
         # Static IP so the Route 53 record survives instance replacement
         # (redeploys, AZ failure recovery) without a DNS update.
@@ -405,6 +440,7 @@ class FleetServiceStack(Stack):
         CfnOutput(self, "FleetPortalAssetS3BucketName", value=portal_asset.s3_bucket_name)
         CfnOutput(self, "FleetPortalAssetS3ObjectKey", value=portal_asset.s3_object_key)
         CfnOutput(self, "FleetPortalAuthSecretArn", value=portal_auth_secret.secret_arn)
+        CfnOutput(self, "FleetTurnAuthSecretArn", value=turn_auth_secret.secret_arn)
         CfnOutput(
             self, "FleetCognitoUserPoolId",
             value=user_pool.user_pool_id, export_name="FleetCognitoUserPoolId",

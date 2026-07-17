@@ -22,6 +22,9 @@ dependencies = [
     # enroll (verify-connect) + agent: mTLS MQTT connection to IoT Core and
     # the Classic Shadow client (awsiotsdk on PyPI, imported as `awscrt`/`awsiot`).
     "awsiotsdk>=1.21.0",
+    # agent teleop shim: localhost WebSocket loopback for the existing WebRTC
+    # edge agent (`--teleop-ip 127.0.0.1` → ws://127.0.0.1:9000/ws/robot).
+    "aiohttp>=3.9.0",
 ]
 
 [project.scripts]

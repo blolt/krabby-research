@@ -96,3 +96,14 @@ def test_host_or_url_overrides_module_signaling() -> None:
     assert s.mode == "agent"
     assert s.agent_enabled
     assert s.server_signaling_ws_url == "ws://10.0.0.130:9000/ws/robot"
+
+
+def test_control_echo_enabled_defaults_false() -> None:
+    s = build_teleop_edge_settings()
+    assert s.control_echo_enabled is False
+
+
+def test_control_echo_enabled_passed_through() -> None:
+    """A per-run flag (HAL --teleop-control-echo), not a robot_settings.py constant."""
+    s = build_teleop_edge_settings(control_echo_enabled=True)
+    assert s.control_echo_enabled is True

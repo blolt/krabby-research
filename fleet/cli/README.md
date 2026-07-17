@@ -9,6 +9,7 @@ Operator CLI for the Krabby fleet.
 ```toml
 [fleet]
 service_url = "https://{fleet-domain}/api"
+# optional: portal_url = "https://{fleet-domain}"  # default = service_url without /api
 
 [cognito]
 user_pool_id = "{cognito-user-pool-id}"
@@ -19,6 +20,8 @@ default_user = "operator"
 ```
 
 `[ssh].default_user` is optional (defaults to `operator`).
+`[fleet].portal_url` is optional; when omitted, the portal origin is derived by
+stripping a trailing `/api` from `service_url`.
 
 ## `krabby-fleet list`
 
@@ -32,6 +35,17 @@ short telemetry summary from the latest shadow `reported` document
 (`reported_image`, shadow timestamp, container health, red flags).
 
 `krabby-fleet devices` is an alias for the same command.
+
+## `krabby-fleet teleop <robot>`
+
+```
+krabby-fleet teleop bench-krabby-ci
+```
+
+Opens the fleet portal teleop view for that thing
+(`https://{fleet-domain}/devices/{robot}/teleop`) in your default browser.
+Sign in with Cognito if needed; the page loads the existing teleop UI against
+the fleet signaling WebSocket + ICE endpoint for that robot.
 
 ## `krabby-fleet ssh <robot>`
 
@@ -73,4 +87,5 @@ No real Cognito, AWS, or fleet-service access needed -- `test_auth.py`
 patches the two functions that actually call `pycognito` and exercises only
 the session-cache/refresh/login branching; `test_api.py` mocks `requests`;
 `test_localproxy.py` mocks `subprocess.Popen`/`shutil.which` and uses a real
-local socket to verify port readiness detection.
+local socket to verify port readiness detection; `test_teleop.py` covers
+portal URL derivation and the browser launcher.

@@ -1,5 +1,5 @@
 [Unit]
-Description=Krabby fleet service (Cognito-authenticated REST API over AWS IoT)
+Description=Krabby fleet service (REST + teleop signaling bridge over AWS IoT)
 After=network-online.target
 Wants=network-online.target
 
@@ -11,6 +11,9 @@ Type=simple
 # Provisioning must create that user first:
 #   useradd --system --no-create-home --shell /usr/sbin/nologin krabby-fleet
 User=krabby-fleet
+# TURN host/secret (and optional Cognito overrides) written by deploy-fleet-service.sh.
+# Leading '-' makes the file optional so local `krabby-fleet-service` still starts.
+EnvironmentFile=-/etc/krabby-fleet/service.env
 ExecStart=/usr/local/bin/krabby-fleet-service
 Restart=on-failure
 RestartSec=5

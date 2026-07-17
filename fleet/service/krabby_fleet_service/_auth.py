@@ -4,13 +4,16 @@
 expired, or wrong-audience token; 403 for a valid token whose user isn't in
 the "operator" group -- being authenticated isn't enough on its own to open
 a tunnel, group membership is a separate, required check.
+
+WebSocket clients (browser ``WebSocket``) often cannot set Authorization
+headers; ``require_operator_websocket`` also accepts ``?token=``.
 """
 from __future__ import annotations
 
 from typing import Any
 
 import jwt
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, WebSocket
 from jwt import PyJWKClient
 
 from krabby_fleet_service._config import Settings, get_settings
@@ -28,17 +31,8 @@ def _jwks_client(settings: Settings) -> PyJWKClient:
     return client
 
 
-def _bearer_token(request: Request) -> str:
-    scheme, _, token = request.headers.get("authorization", "").partition(" ")
-    if scheme.lower() != "bearer" or not token:
-        raise HTTPException(status_code=401, detail="missing or malformed Authorization header")
-    return token
-
-
-def require_operator(
-    request: Request, settings: Settings = Depends(get_settings)
-) -> dict[str, Any]:
-    token = _bearer_token(request)
+def verify_operator_token(token: str, settings: Settings) -> dict[str, Any]:
+    """Validate a Cognito access token and require ``operator`` group membership."""
     try:
         signing_key = _jwks_client(settings).get_signing_key_from_jwt(token)
         claims = jwt.decode(
@@ -62,3 +56,35 @@ def require_operator(
         raise HTTPException(status_code=403, detail="user is not in the operator group")
 
     return claims
+
+
+def _bearer_token(request: Request) -> str:
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=401, detail="missing or malformed Authorization header")
+    return token
+
+
+def require_operator(
+    request: Request, settings: Settings = Depends(get_settings)
+) -> dict[str, Any]:
+    return verify_operator_token(_bearer_token(request), settings)
+
+
+def _websocket_token(websocket: WebSocket) -> str:
+    scheme, _, token = websocket.headers.get("authorization", "").partition(" ")
+    if scheme.lower() == "bearer" and token:
+        return token
+    q = websocket.query_params.get("token")
+    if q:
+        return q
+    raise HTTPException(
+        status_code=401,
+        detail="missing token (Authorization: Bearer or ?token=)",
+    )
+
+
+def require_operator_websocket(
+    websocket: WebSocket, settings: Settings = Depends(get_settings)
+) -> dict[str, Any]:
+    return verify_operator_token(_websocket_token(websocket), settings)

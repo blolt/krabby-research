@@ -22,6 +22,7 @@ _SETTINGS = Settings(
     aws_region="us-east-1",
     cognito_user_pool_id="us-east-1_TESTPOOL",
     cognito_app_client_id="test-client-id",
+    iot_ats_endpoint="example-ats.iot.us-east-1.amazonaws.com",
 )
 
 

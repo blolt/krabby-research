@@ -31,17 +31,19 @@ behavior (credential checks, identity confirmation prompt).
 
 After `cdk deploy` finishes, the script pushes **both** `fleet/service` and
 `fleet/portal` onto the instance via SSM `AWS-RunShellScript` and restarts
-`krabby-fleet-service`, `krabby-fleet-portal`, and `caddy` — there's no SSH
-access to this box (see `FleetServiceSecurityGroup` below), so this replaces
-what would otherwise be an `scp` + remote install step.
+`krabby-fleet-service`, `krabby-fleet-portal`, `krabby-coturn`, and `caddy` —
+there's no SSH access to this box (see `FleetServiceSecurityGroup` below), so
+this replaces what would otherwise be an `scp` + remote install step.
 
 On the instance the portal zip is `npm ci` + `npm run build`'d into a Next.js
 standalone tree under `/opt/krabby-fleet-portal`, and
 `/etc/krabby-fleet/portal.env` is written from Cognito stack outputs + the
-`/krabby/fleet/portal-auth-secret` Secrets Manager value.
+`/krabby/fleet/portal-auth-secret` Secrets Manager value. coturn gets
+`/etc/krabby-fleet/turnserver.conf` + `/etc/krabby-fleet/service.env` from
+`/krabby/fleet/turn-auth-secret` and the stack's domain/EIP.
 
-The instance itself only gets OS-level bootstrap (Python, Node, the `caddy`
-binary, system users, directories) from CDK UserData at first boot; an
+The instance itself only gets OS-level bootstrap (Python, Node, coturn, the
+`caddy` binary, system users, directories) from CDK UserData at first boot; an
 app-only change pushes onto the existing instance rather than replacing it.
 
 This stack looks up the account's default VPC (`ec2.Vpc.from_lookup`) and the
@@ -55,13 +57,15 @@ same VPC/subnet/AZ/hosted-zone data instead of re-querying AWS every time.
 
 | Resource | Type | Purpose |
 |---|---|---|
-| `FleetServiceSecurityGroup` | `AWS::EC2::SecurityGroup` | Inbound HTTP/HTTPS (80/443) and STUN/TURN (3478 UDP, 5349 TCP/UDP). No inbound SSH. |
+| `FleetServiceSecurityGroup` | `AWS::EC2::SecurityGroup` | Inbound HTTP/HTTPS (80/443), STUN/TURN (3478 UDP+TCP, 5349 TCP/UDP), TURN relay (49152–65535/udp). No inbound SSH. |
 | `FleetServiceInstanceRole` | `AWS::IAM::Role` | EC2 instance role: `AmazonSSMManagedInstanceCore` (Session Manager / Run Command, no SSH key needed) + Secure Tunneling `OpenTunnel`/`CloseTunnel`/`DescribeTunnel` + fleet listing (`iot:SearchIndex`/`GetThingShadow`/`DescribeThing`) + teleop signaling bridge (`iot:Connect`/`Publish`/`Subscribe`/`Receive` on `teleop/*/signaling/*`). |
-| `FleetServiceInstance` | `AWS::EC2::Instance` | `c7i.large` (see rationale in `fleet_service_stack.py`), Amazon Linux 2023, IMDSv2 required, 30 GiB encrypted gp3 root volume, no auto-assigned public IP (uses the EIP below instead). UserData installs Python, Node 20, the `caddy` binary, and the `caddy`/`krabby-fleet` system users on first boot only -- app code and config are pushed separately (see Deploy above). |
+| `FleetServiceInstance` | `AWS::EC2::Instance` | `c7i.large` (see rationale in `fleet_service_stack.py`), Amazon Linux 2023, IMDSv2 required, 30 GiB encrypted gp3 root volume, no auto-assigned public IP (uses the EIP below instead). UserData installs Python, Node, `coturn`, the `caddy` binary, and the `caddy`/`krabby-fleet` system users on first boot only -- app code and config are pushed separately (see Deploy above). |
 | `FleetServiceAssetS3BucketName` / `FleetServiceAssetS3ObjectKey` (outputs) | `CfnOutput` | Location of the `fleet/service` zip CDK uploads to the bootstrap bucket on every deploy; read by `deploy-fleet-service.sh` to push it onto the instance via SSM. |
 | `FleetPortalAssetS3BucketName` / `FleetPortalAssetS3ObjectKey` (outputs) | `CfnOutput` | Location of the `fleet/portal` source zip; built to Next.js standalone on the instance during SSM deploy. |
 | `PortalAuthSecret` | `AWS::SecretsManager::Secret` (`/krabby/fleet/portal-auth-secret`) | Stable `AUTH_SECRET` for Auth.js; written into `/etc/krabby-fleet/portal.env` on each deploy. |
 | `FleetPortalAuthSecretArn` (output) | `CfnOutput` | ARN of the portal auth secret above. |
+| `TurnAuthSecret` | `AWS::SecretsManager::Secret` (`/krabby/fleet/turn-auth-secret`) | coturn TURN REST API `static-auth-secret`; written into `/etc/krabby-fleet/turnserver.conf` + `service.env` on each deploy. |
+| `FleetTurnAuthSecretArn` (output) | `CfnOutput` | ARN of the TURN auth secret above. |
 | `FleetServiceEip` / `FleetServiceEipAssociation` | `AWS::EC2::EIP` / `AWS::EC2::EIPAssociation` | Static public IP so the DNS record survives instance replacement. |
 | `FleetServiceDnsRecord` | `AWS::Route53::RecordSet` | A record for `domainName` in the given hosted zone, pointed at the EIP. |
 | `IotAtsEndpointParam` | `AWS::SSM::Parameter` (`/krabby/fleet/iot-ats-endpoint`) | `ControlPlaneStack`'s `IotAtsEndpoint` export, handed off via SSM Parameter Store for the fleet service to read at runtime. Instance role has read access. |

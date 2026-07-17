@@ -63,12 +63,21 @@ def build_robot_signaling_ws_url(host_or_url: str, *, port: int = 9000) -> str:
     return f"ws://{s}:{port}/ws/robot"
 
 
-def build_teleop_edge_settings(*, host_or_url: str | None = None) -> TeleopEdgeSettings:
-    """Assemble :class:`TeleopEdgeSettings` from the module constants above.
+def build_teleop_edge_settings(
+    *, host_or_url: str | None = None, control_echo_enabled: bool = False
+) -> TeleopEdgeSettings:
+    """Assemble :class:`TeleopEdgeSettings` from the module constants above, plus
+    per-invocation overrides passed by the caller (mirrors ``host_or_url`` /
+    HAL ``--teleop-ip``).
 
     When ``host_or_url`` is set (HAL ``--teleop-ip``), mode is forced to ``agent`` and the
     signaling URL is built from that host; module ``TELEOP_EDGE_MODE`` / ``SERVER_SIGNALING_WS_URL``
     are ignored for those fields.
+
+    ``control_echo_enabled`` is not a module constant (unlike the settings
+    above): it's a per-run instrumentation flag for the bench's E2E harness
+    (HAL ``--teleop-control-echo``), not a persistent per-robot deployment
+    setting, so it belongs on the invocation, not checked into this file.
     """
     reconnect = SERVER_RECONNECT_S
     if reconnect < 0.5:
@@ -109,4 +118,5 @@ def build_teleop_edge_settings(*, host_or_url: str | None = None) -> TeleopEdgeS
         http_auth_token=(HTTP_AUTH_TOKEN or "").strip(),
         qos_enabled=bool(QOS_ENABLED),
         qos_kbps_budget_per_stream=qos_kbps,
+        control_echo_enabled=bool(control_echo_enabled),
     )

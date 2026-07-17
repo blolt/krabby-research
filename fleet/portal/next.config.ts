@@ -16,6 +16,10 @@ const nextConfig: NextConfig = {
         source: "/api/devices/:path*",
         destination: `${fleetServiceUrl}/devices/:path*`,
       },
+      {
+        source: "/api/teleop/:path*",
+        destination: `${fleetServiceUrl}/teleop/:path*`,
+      },
     ];
   },
 };

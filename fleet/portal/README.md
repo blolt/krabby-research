@@ -1,15 +1,27 @@
 # krabby-fleet-portal
 
 Next.js operator portal for the Krabby fleet: Cognito sign-in, device list,
-device detail (1/min shadow telemetry), and Open SSH.
+device detail (1/min shadow telemetry), Open SSH, and Open teleop (existing
+teleop viewer).
 
 ## Routes
 
 | Path | Purpose |
 |------|---------|
 | `/login` | Cognito Hosted UI sign-in |
-| `/devices` | Device list (`thingName`, online/last-seen, `reported_image`) |
-| `/devices/[thingName]` | Detail: health / IMU / pose / power / red flags + Open SSH |
+| `/devices` | Device list + **Open teleop** per row |
+| `/devices/[thingName]` | Detail: health / IMU / pose / power / red flags + Open teleop + Open SSH |
+| `/devices/[thingName]/teleop` | Cognito-gated launcher → the teleop viewer |
+| `/teleop/viewer.html` | Teleop UI (signaling + ICE URLs pointed at the fleet service) |
+
+**Open teleop** opens `/devices/{thing}/teleop` in a new tab. That route injects
+the Cognito access token and loads the teleop viewer with:
+
+* Signaling: `wss://…/api/devices/{thing}/teleop/signaling?token=…`
+* ICE: `GET /api/teleop/ice-servers` (Bearer token)
+
+Video / gamepad / `krabby-control-v1` are the existing teleop stack's code,
+unchanged, under `public/teleop/` (forked only for config URL hooks).
 
 Open SSH calls `POST /api/devices/{thing}/ssh-tunnel` (fleet service via Caddy,
 or Next rewrite in local `next dev`). The button shows a `krabby-fleet ssh`

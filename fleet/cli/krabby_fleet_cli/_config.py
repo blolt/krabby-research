@@ -19,6 +19,18 @@ class Config:
     cognito_user_pool_id: str
     cognito_client_id: str
     default_ssh_user: str = "operator"
+    # Optional override; default is service_url with a trailing /api stripped.
+    portal_url: str = ""
+
+
+def portal_base_url(config: Config) -> str:
+    """Public portal origin for browser routes (teleop, devices UI)."""
+    if config.portal_url:
+        return config.portal_url.rstrip("/")
+    service = config.service_url.rstrip("/")
+    if service.endswith("/api"):
+        return service[: -len("/api")] or service
+    return service
 
 
 def load_config(path: Path = CONFIG_PATH) -> Config:
@@ -57,4 +69,5 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
         cognito_user_pool_id=user_pool_id,
         cognito_client_id=client_id,
         default_ssh_user=raw.get("ssh", {}).get("default_user", "operator"),
+        portal_url=str(fleet.get("portal_url") or "").rstrip("/"),
     )

@@ -68,9 +68,13 @@ journalctl -u krabby-agent -f          # service logs
 ```
 
 Over its one MQTT connection, `krabby agent` publishes the output of
-`krabby get telemetry` to the Classic Shadow once a minute, and spawns/reaps
+`krabby get telemetry` to the Classic Shadow once a minute, spawns/reaps
 the Secure Tunneling destination `localproxy` against `localhost:22` on
-`.../tunnels/notify`. It leaves `teleop/{thing}/signaling/in|out` untouched.
+`.../tunnels/notify`, and bridges `teleop/{thing}/signaling/in|out` to a
+localhost WebSocket at `ws://127.0.0.1:9000/ws/robot` (same JSON shape as the
+existing teleop stack). Point the existing WebRTC edge agent at the shim with
+`--teleop-ip 127.0.0.1` (fleet path); LAN `--teleop-ip <portal-host>` still
+works when the agent shim is not the target.
 The SDK reconnects with backoff on drops, and `Restart=always` brings the
 process back if it exits.
 

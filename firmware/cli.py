@@ -164,7 +164,7 @@ def cmd_show(branch: Optional[str] = None) -> None:
 
         print("Attached boards:")
         if combined:
-            # Annotate with port only when ROLE_HINT is available (firmware >= M14 step 9).
+            # Annotate with port only when ROLE_HINT is available (newer firmware builds).
             role_to_port: dict[str, str] = {}
             for port in ports:
                 _, role_hint = probe_results[port]

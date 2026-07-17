@@ -1,4 +1,4 @@
-"""Regression test for the front<->follower comms bug (M17 Task 1 §2.1).
+"""Regression test for the front<->follower serial comms bug.
 
 Root cause: the leader Mega forwards ~200-byte telemetry lines from each follower
 on Serial1/Serial2 while servicing USB + the actuator update. That needs a 256-byte

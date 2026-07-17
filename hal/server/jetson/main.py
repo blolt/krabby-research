@@ -1,7 +1,7 @@
 """Entry point for the Jetson HAL server.
 
 Runs the HAL server with one main control loop shared across all control sources
-(inference, portal, gamepad, and — in M14 task 4 — bench). The loop publishes
+(inference, portal, gamepad, and bench). The loop publishes
 observations and applies whatever joint commands arrive on the HAL command socket;
 the differences between modes are config-level only:
 
@@ -91,6 +91,16 @@ def main():
             "Teleop portal host (IP or hostname). Enables outbound WebRTC signaling to "
             "ws://HOST:9000/ws/robot using HAL RGB-D cameras. Required for --control-source portal. "
             "Optional for inference (video alongside policy). Ignored for gamepad."
+        ),
+    )
+    parser.add_argument(
+        "--teleop-control-echo",
+        action="store_true",
+        help=(
+            "Echo the input controller's current state onto the telemetry channel as "
+            "`last_control`, so a test harness can confirm a control message was actually "
+            "applied. Off by default -- no operator-facing feature reads it; only set this "
+            "on a bench used for automated teleop control round-trip verification."
         ),
     )
     parser.add_argument(
@@ -234,7 +244,9 @@ def main():
 
             # Bootstrap HAL poll until the browser sends ``catalog_ids`` on hello/offer (portal viewer).
             teleop_sensor_ids = [hal_server._primary_catalog_id]
-            _teleop_st = build_teleop_edge_settings(host_or_url=args.teleop_ip)
+            _teleop_st = build_teleop_edge_settings(
+                host_or_url=args.teleop_ip, control_echo_enabled=args.teleop_control_echo
+            )
             if not hal_server._hal_rgbd_cameras:
                 logger.warning(
                     "--teleop-ip: no HAL RGB-D cameras opened after initialize_cameras(); "

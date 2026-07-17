@@ -6,7 +6,8 @@
 		reverse_proxy 127.0.0.1:3000
 	}
 
-	# Fleet REST API (devices, tunnels, later teleop signaling).
+	# Fleet REST API + teleop signaling WebSocket (devices, tunnels, signaling).
+	# Caddy upgrades WebSockets on reverse_proxy by default.
 	handle /api/* {
 		uri strip_prefix /api
 		reverse_proxy 127.0.0.1:8080

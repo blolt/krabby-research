@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { OpenSshButton } from "@/components/OpenSshButton";
+import { OpenTeleopLink } from "@/components/OpenTeleopLink";
 import { getDevice } from "@/lib/fleet";
 import { asRecord, asStringList, formatLastSeen } from "@/lib/format";
 
@@ -58,6 +59,10 @@ export default async function DeviceDetailPage({
           last seen {formatLastSeen(device.connectivityTimestamp)}
         </span>
       </p>
+
+      <div className="actions" style={{ marginBottom: "1rem" }}>
+        <OpenTeleopLink thingName={device.thingName} />
+      </div>
 
       <OpenSshButton thingName={device.thingName} />
 

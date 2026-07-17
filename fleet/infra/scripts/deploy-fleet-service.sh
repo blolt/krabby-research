@@ -144,13 +144,23 @@ SERVICE_ASSET_KEY="$(_stack_output FleetServiceAssetS3ObjectKey)"
 PORTAL_ASSET_BUCKET="$(_stack_output FleetPortalAssetS3BucketName)"
 PORTAL_ASSET_KEY="$(_stack_output FleetPortalAssetS3ObjectKey)"
 PORTAL_AUTH_SECRET_ARN="$(_stack_output FleetPortalAuthSecretArn)"
+TURN_AUTH_SECRET_ARN="$(_stack_output FleetTurnAuthSecretArn)"
 DOMAIN_NAME="$(_stack_output FleetServiceDomainName)"
+PUBLIC_IP="$(_stack_output FleetServicePublicIp)"
 COGNITO_POOL_ID="$(_stack_output FleetCognitoUserPoolId)"
 COGNITO_CLIENT_ID="$(_stack_output FleetCognitoUserPoolClientId)"
 
 export REMOTE_SCRIPT
 REMOTE_SCRIPT="$(cat <<REMOTE
 set -euo pipefail
+
+# coturn may already be present from UserData; install on older instances too.
+dnf install -y coturn
+getent group turnserver >/dev/null || groupadd --system turnserver
+id -u turnserver >/dev/null 2>&1 || \
+  useradd --system --no-create-home --shell /usr/sbin/nologin -g turnserver turnserver
+systemctl disable --now coturn 2>/dev/null || true
+systemctl disable --now turnserver 2>/dev/null || true
 
 # --- fleet service ---
 aws s3 cp "s3://${SERVICE_ASSET_BUCKET}/${SERVICE_ASSET_KEY}" /tmp/fleet-service.zip
@@ -160,7 +170,36 @@ unzip -o -q /tmp/fleet-service.zip -d /opt/krabby-fleet-service/src
 install -m 0644 /opt/krabby-fleet-service/src/deploy/Caddyfile /etc/caddy/Caddyfile
 install -m 0644 /opt/krabby-fleet-service/src/deploy/caddy.service /etc/systemd/system/caddy.service
 install -m 0644 /opt/krabby-fleet-service/src/systemd/krabby-fleet-service.service /etc/systemd/system/krabby-fleet-service.service
+install -m 0644 /opt/krabby-fleet-service/src/deploy/coturn.service /etc/systemd/system/krabby-coturn.service
 /usr/bin/pip3.11 install --quiet --upgrade /opt/krabby-fleet-service/src
+
+TURN_AUTH_SECRET_VALUE="\$(aws secretsmanager get-secret-value \\
+  --secret-id '${TURN_AUTH_SECRET_ARN}' \\
+  --region '${AWS_REGION_EFFECTIVE}' \\
+  --query SecretString --output text)"
+
+# Render coturn conf (shared HMAC secret + public EIP for relay candidates).
+umask 027
+sed -e "s|__TURN_AUTH_SECRET__|\${TURN_AUTH_SECRET_VALUE}|g" \\
+    -e "s|__TURN_REALM__|${DOMAIN_NAME}|g" \\
+    -e "s|__TURN_EXTERNAL_IP__|${PUBLIC_IP}|g" \\
+    /opt/krabby-fleet-service/src/deploy/turnserver.conf.in \\
+    > /etc/krabby-fleet/turnserver.conf
+chmod 0640 /etc/krabby-fleet/turnserver.conf
+# turnserver package user needs read access to the conf.
+if id turnserver >/dev/null 2>&1; then
+  chown root:turnserver /etc/krabby-fleet/turnserver.conf
+else
+  chown root:root /etc/krabby-fleet/turnserver.conf
+fi
+
+# Fleet service env: TURN host (DNS) + same auth secret for minting credentials.
+cat > /etc/krabby-fleet/service.env <<ENV
+KRABBY_FLEET_TURN_AUTH_SECRET=\${TURN_AUTH_SECRET_VALUE}
+KRABBY_FLEET_TURN_HOST=${DOMAIN_NAME}
+ENV
+chown root:krabby-fleet /etc/krabby-fleet/service.env
+chmod 0640 /etc/krabby-fleet/service.env
 
 # --- portal (Next.js standalone) ---
 aws s3 cp "s3://${PORTAL_ASSET_BUCKET}/${PORTAL_ASSET_KEY}" /tmp/fleet-portal.zip
@@ -198,8 +237,8 @@ chown root:krabby-fleet /etc/krabby-fleet/portal.env
 chmod 0640 /etc/krabby-fleet/portal.env
 
 systemctl daemon-reload
-systemctl enable caddy krabby-fleet-service krabby-fleet-portal
-systemctl restart krabby-fleet-service krabby-fleet-portal caddy
+systemctl enable caddy krabby-fleet-service krabby-fleet-portal krabby-coturn
+systemctl restart krabby-coturn krabby-fleet-service krabby-fleet-portal caddy
 REMOTE
 )"
 
@@ -219,7 +258,7 @@ PY
 COMMAND_ID="$(aws ssm send-command \
   --instance-ids "$INSTANCE_ID" \
   --document-name "AWS-RunShellScript" \
-  --comment "krabby-fleet service+portal app deploy" \
+  --comment "krabby-fleet service+portal+coturn app deploy" \
   --region "$AWS_REGION_EFFECTIVE" \
   --parameters "$SSM_PARAMS_JSON" \
   --query "Command.CommandId" --output text)"
@@ -240,5 +279,6 @@ if [[ "$SSM_STATUS" != "Success" ]]; then
   exit 1
 fi
 
-echo "[ok] krabby-fleet-service + krabby-fleet-portal deployed and restarted."
+echo "[ok] krabby-fleet-service + krabby-fleet-portal + krabby-coturn deployed and restarted."
 echo "     Caddy: /api/auth* + UI -> portal:3000; other /api/* -> service:8080"
+echo "     TURN:  UDP/TCP 3478 + relay 49152-65535/udp (ICE via GET /api/teleop/ice-servers)"

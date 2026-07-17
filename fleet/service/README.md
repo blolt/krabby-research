@@ -15,11 +15,14 @@ service.
 | `GET` | `/devices/{thingName}` | operator group | Device detail: `DescribeThing` metadata + connectivity from SearchIndex + full `state.reported` from `GetThingShadow`. Returns `{thingName, thingTypeName, attributes, connected, connectivityTimestamp, reported}`. |
 | `POST` | `/devices/{thingName}/ssh-tunnel` | operator group | Opens a Secure Tunnel (`OpenTunnel`, `services=SSH`) to the device. Returns `{tunnelId, sourceAccessToken, region}` -- the *destination* token goes straight to the device over MQTT (`krabby agent`, not through this service). |
 | `DELETE` | `/devices/{thingName}/ssh-tunnel/{tunnelId}` | operator group | Force-closes the tunnel (`CloseTunnel`, `delete=True`). |
+| `GET` | `/teleop/ice-servers` | operator group | Returns `{"version":1,"iceServers":[...],"ttlSeconds":N}` — Google STUN plus short-lived coturn TURN credentials (HMAC REST API). Same `iceServers` shape as the existing teleop stack's `GET /api/teleop-config`. |
+| `WS` | `/devices/{thingName}/teleop/signaling` | operator group | Bidirectional WebRTC signaling bridge: browser JSON ↔ IoT MQTT `teleop/{thingName}/signaling/in` and `.../out`. Message shape is unchanged from the existing teleop stack. |
 
 `deploy/Caddyfile` reverse-proxies `/api/auth*` to the Next.js portal
 (`:3000`), other `/api/*` to this service (stripping the `/api` prefix), and
 everything else to the portal. The routes above are what this app itself
-serves, on `127.0.0.1:8080`.
+serves, on `127.0.0.1:8080`. Externally the signaling socket is
+`wss://<fleet-host>/api/devices/{thingName}/teleop/signaling`.
 
 ## Auth
 
@@ -31,21 +34,52 @@ include `operator` (403 otherwise). Group membership is granted manually by
 an admin in the Cognito console/CLI -- `FleetServiceStack` creates the empty
 `operator` group but doesn't populate it.
 
+The teleop WebSocket also accepts `?token=<access-token>` (browsers often
+cannot set an Authorization header on `WebSocket`).
+
 ## Configuration
 
-Reads two values from SSM Parameter Store at startup (published by
+Reads values from SSM Parameter Store at startup (published by
 `FleetServiceStack`; the instance role has read access):
 
 | SSM parameter | Purpose |
 |---|---|
 | `/krabby/fleet/cognito-user-pool-id` | Which Cognito user pool to validate tokens against |
 | `/krabby/fleet/cognito-app-client-id` | Expected `client_id` claim |
+| `/krabby/fleet/iot-ats-endpoint` | IoT Core ATS data endpoint for the signaling MQTT client |
+
+TURN settings come from `/etc/krabby-fleet/service.env` (written by deploy from
+Secrets Manager `/krabby/fleet/turn-auth-secret` + the fleet DNS name):
+
+| Env var | Purpose |
+|---|---|
+| `KRABBY_FLEET_TURN_AUTH_SECRET` | coturn `static-auth-secret` (HMAC key) |
+| `KRABBY_FLEET_TURN_HOST` | Hostname in `turn:` URLs (fleet domain) |
+| `KRABBY_FLEET_TURN_TTL_SECS` | Credential lifetime (default 3600) |
 
 For local dev/tests, set `KRABBY_FLEET_COGNITO_USER_POOL_ID` /
-`KRABBY_FLEET_COGNITO_APP_CLIENT_ID` env vars instead -- no SSM/AWS access
-needed. `AWS_REGION` (or `AWS_DEFAULT_REGION`) controls both the Cognito
-issuer URL and the `iotsecuretunneling` client's region; defaults to
-`us-east-1`.
+`KRABBY_FLEET_COGNITO_APP_CLIENT_ID` / `KRABBY_FLEET_IOT_ATS_ENDPOINT` /
+`KRABBY_FLEET_TURN_AUTH_SECRET` / `KRABBY_FLEET_TURN_HOST` env vars instead.
+`AWS_REGION` (or `AWS_DEFAULT_REGION`) controls Cognito issuer, Secure
+Tunneling, and MQTT SigV4 signing; defaults to `us-east-1`.
+
+## Teleop signaling bridge
+
+On startup the service opens **one** persistent MQTT connection to IoT Core
+(SigV4 over websockets, instance-role credentials) and subscribes to
+`teleop/+/signaling/out`. Each authenticated browser session:
+
+* publishes WS text frames to `teleop/{thing}/signaling/in` (cloud → robot)
+* receives MQTT frames from `teleop/{thing}/signaling/out` as WS text (robot → cloud)
+
+The robot side is `krabby agent`'s localhost shim (`--teleop-ip 127.0.0.1`).
+
+## ICE / TURN
+
+`GET /teleop/ice-servers` returns Google STUN plus coturn TURN URLs on the
+fleet host (`turn:<domain>:3478` UDP and TCP) with short-lived REST-API
+credentials. coturn runs as `krabby-coturn.service` on the same EC2 (see
+`deploy/coturn.service` and `deploy/turnserver.conf.in`).
 
 ## Run locally
 
@@ -55,14 +89,18 @@ python3 -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 export KRABBY_FLEET_COGNITO_USER_POOL_ID={cognito-user-pool-id}
 export KRABBY_FLEET_COGNITO_APP_CLIENT_ID={cognito-app-client-id}
+export KRABBY_FLEET_IOT_ATS_ENDPOINT={iot-ats-endpoint}
+export KRABBY_FLEET_TURN_AUTH_SECRET={turn-shared-secret}
+export KRABBY_FLEET_TURN_HOST={fleet-domain}
 export AWS_REGION={aws-region}
 krabby-fleet-service   # binds 127.0.0.1:8080
 ```
 
-Opening a real tunnel still needs real AWS credentials with
-`iotsecuretunneling:OpenTunnel`/`CloseTunnel`/`DescribeTunnel` (the instance
-role provides this in deployment; for local testing, whatever `boto3`
-resolves from your environment).
+Opening a real tunnel or signaling MQTT still needs real AWS credentials
+with the FleetServiceStack instance-role permissions (`iotsecuretunneling:*`
+plus `iot:Connect`/`Publish`/`Subscribe`/`Receive` on `teleop/*/signaling/*`).
+For local testing, whatever `boto3` / the CRT default credential chain
+resolves from your environment.
 
 ## Tests
 
@@ -74,9 +112,8 @@ pytest tests/
 
 No real AWS or Cognito access needed -- `test_auth.py` signs test JWTs with
 a locally generated RSA keypair and mocks JWKS resolution; `test_tunnels.py`
-mocks the `iotsecuretunneling` boto3 client and overrides the auth
-dependency directly, bypassing real JWT verification to stay focused on the
-tunnel logic and the AWS calls it makes.
+and `test_devices.py` mock boto3 clients; `test_signaling.py` uses a fake
+MQTT client; `test_ice.py` checks TURN HMAC minting and the ICE endpoint.
 
 ## Deploy artifacts
 

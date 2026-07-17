@@ -53,6 +53,16 @@ Per-thing isolation is enforced by `KrabDevicePolicy` using
 `${iot:Connection.Thing.ThingName}` — a device cert cannot publish or
 subscribe on another device's topics.
 
+On the robot, `krabby agent` bridges those teleop topics to
+`ws://127.0.0.1:9000/ws/robot`. Run the HAL edge with
+`--teleop-ip 127.0.0.1` so it dials the shim (message shape unchanged).
+
+On the fleet host, `krabby-fleet-service` holds one persistent SigV4 MQTT
+connection and bridges browser WebSockets at
+`/api/devices/{thingName}/teleop/signaling` (Cognito operator token via
+`Authorization: Bearer` or `?token=`) to the same topics. JSON signaling
+shape is unchanged from the existing teleop stack.
+
 ## Bench control-plane E2E
 
 Automated control-plane checks against the permanently enrolled bench Orin
@@ -70,14 +80,15 @@ pytest tests_e2e/ -q
 
 ## Runtime (EC2)
 
-One host runs three systemd units (plus coturn for teleop TURN), all logging to
-journald:
+One host runs four systemd units (fleet service, portal, Caddy, coturn), all
+logging to journald:
 
 | Unit | Bind | Role |
 |------|------|------|
-| `krabby-fleet-service` | `127.0.0.1:8080` | Fleet REST API |
+| `krabby-fleet-service` | `127.0.0.1:8080` | Fleet REST API + teleop signaling / ICE |
 | `krabby-fleet-portal` | `127.0.0.1:3000` | Next.js operator UI + NextAuth |
 | `caddy` | `:443` / `:80` | TLS + reverse proxy |
+| `krabby-coturn` | `:3478` UDP/TCP + relay `49152-65535/udp` | STUN/TURN for WebRTC |
 
 Caddy routing (`fleet/service/deploy/Caddyfile`):
 
@@ -89,9 +100,10 @@ Caddy routing (`fleet/service/deploy/Caddyfile`):
 journalctl -u krabby-fleet-service -f
 journalctl -u krabby-fleet-portal -f
 journalctl -u caddy -f
+journalctl -u krabby-coturn -f
 ```
 
-Deploy both apps with `fleet/infra/scripts/deploy-fleet-service.sh` (CDK + SSM).
+Deploy apps + coturn with `fleet/infra/scripts/deploy-fleet-service.sh` (CDK + SSM).
 
 ## Fleet service API
 
@@ -106,12 +118,108 @@ for a user in the `operator` group.
 | `GET` | `/devices/{thingName}` | `iot:DescribeThing` + `iot:GetThingShadow` + SearchIndex connectivity |
 | `POST` | `/devices/{thingName}/ssh-tunnel` | `iotsecuretunneling:OpenTunnel` |
 | `DELETE` | `/devices/{thingName}/ssh-tunnel/{tunnelId}` | `iotsecuretunneling:CloseTunnel` |
+| `GET` | `/teleop/ice-servers` | STUN + short-lived coturn TURN credentials (`iceServers`) |
+| `WS` | `/devices/{thingName}/teleop/signaling` | MQTT bridge to `teleop/{thing}/signaling/in` and `.../out` |
+
+## coturn (STUN/TURN)
+
+`FleetServiceStack` opens:
+
+| Port | Proto | Purpose |
+|------|-------|---------|
+| 3478 | UDP + TCP | STUN/TURN |
+| 5349 | UDP + TCP | Reserved for TURNS (TLS/DTLS; not enabled in the default conf) |
+| 49152–65535 | UDP | TURN relay allocations |
+
+coturn uses the TURN REST API shared secret (`/krabby/fleet/turn-auth-secret` in
+Secrets Manager). The fleet service mints per-session credentials
+(`username = expiry:sub`, `credential = base64(hmac-sha1(secret, username))`,
+default TTL 1h) and returns them from `GET /api/teleop/ice-servers` together
+with Google public STUN.
+
+### Force-relay verification
+
+To confirm TURN works when direct ICE fails:
+
+1. Open teleop for a robot and fetch ICE servers (portal/CLI will call
+   `GET /api/teleop/ice-servers`).
+2. In the browser console, create the peer connection with relay-only policy:
+
+```js
+const cfg = await (await fetch('/api/teleop/ice-servers', {
+  headers: { Authorization: 'Bearer ' + accessToken }
+})).json();
+const pc = new RTCPeerConnection({
+  iceServers: cfg.iceServers,
+  iceTransportPolicy: 'relay',
+});
+```
+
+3. Complete signaling as usual. The session should still connect; `chrome://webrtc-internals`
+   (or Firefox `about:webrtc`) should show selected candidate type `relay`.
+
+## Dual-robot teleop (public internet)
+
+Acceptance robots: **`bench-krabby-ci`** (Bruce's bench) and **Rabby v0.2**
+(garage). Both must work concurrently from an operator laptop on the public
+internet — no VPN, no per-robot signaling servers.
+
+### One-time per robot (Orin)
+
+```bash
+# Enroll once (device cert + krabby-agent.service)
+sudo krabby enroll --thing-name <thingName> ...
+
+# Locomotion + WebRTC edge pointed at the local agent teleop shim
+# (agent already bridges MQTT ↔ ws://127.0.0.1:9000/ws/robot)
+python -m hal.server.jetson.main --control-source portal --teleop-ip 127.0.0.1
+```
+
+No extra fleet registration steps: enroll attaches the thing; the portal
+lists it via Fleet Indexing.
+
+### Operator laptop
+
+```bash
+# ~/.config/krabby-fleet/config.toml → service_url = https://{fleet-domain}/api
+krabby-fleet list
+krabby-fleet teleop bench-krabby-ci   # browser tab 1
+krabby-fleet teleop <rabby-thing>    # browser tab 2 (concurrent)
+```
+
+Or use **Open teleop** on the portal device list for each robot (new tab).
+Signaling is per-thing MQTT (`teleop/{thing}/signaling/*`); media is WebRTC
+(P2P / coturn). Two sessions = two browser tabs, one fleet MQTT bridge.
+
+### Playwright E2E (bench only)
+
+Automated teleop checks against `bench-krabby-ci` (manual until CI is wired):
+see [`service/tests_e2e/README.md`](service/tests_e2e/README.md).
+
+```bash
+export BENCH_E2E=1
+export FLEET_PORTAL_URL=https://{fleet-domain}
+export FLEET_SERVICE_URL=https://{fleet-domain}/api
+# + Cognito IDs + AWS creds
+cd fleet/service && pip install -e ".[e2e]" && playwright install chromium
+pytest tests_e2e/test_teleop_e2e.py -q
+```
+
+The bench's HAL server also needs `--teleop-control-echo` added to its launch
+command (alongside `--teleop-ip 127.0.0.1` above) -- it echoes the last
+applied control state onto the telemetry channel so the test can confirm a
+motion-safe control message was actually received by the real HAL, not just
+sent by the browser. Off by default everywhere else (not a checked-in
+`robot_settings.py` constant, since it's a per-run instrumentation flag, not
+persistent per-robot deployment config); no operator-facing feature reads it.
 
 ## Portal + CLI
 
-- Portal: [`portal/`](portal/README.md) — Cognito sign-in, device list/detail, Open SSH.
-- CLI: `krabby-fleet list` prints online/last-seen + telemetry summary (same `GET /devices` data).
-
+- Portal: [`portal/`](portal/README.md) — Cognito sign-in, device list/detail,
+  **Open teleop** (existing teleop viewer via fleet signaling + ICE), Open SSH.
+- CLI: `krabby-fleet list` prints online/last-seen + telemetry summary;
+  `krabby-fleet teleop <robot>` opens the same teleop URL in a browser;
+  `krabby-fleet ssh <robot>` opens Secure Tunneling SSH.
 ## Telemetry
 
 ### Topic and rate
@@ -193,7 +301,7 @@ inline image bytes (shadow documents must stay small).
 | Unit | Started by | Role |
 |------|------------|------|
 | `krabby-locomotion.service` | `krabby install` | Runs `krabby run` (HAL + controller container) |
-| `krabby-agent.service` | `krabby enroll` | Runs `krabby agent` (MQTT shadow + tunnel notify) |
+| `krabby-agent.service` | `krabby enroll` | Runs `krabby agent` (MQTT shadow + tunnel notify + teleop shim) |
 
 Logs:
 
