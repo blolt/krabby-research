@@ -1,5 +1,5 @@
 [Unit]
-Description=Caddy (reverse proxy + TLS termination for krabby-fleet-service)
+Description=Caddy (TLS reverse proxy for krabby-fleet-service + krabby-fleet-portal)
 Documentation=https://caddyserver.com/docs/
 After=network-online.target
 Wants=network-online.target

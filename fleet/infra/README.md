@@ -49,6 +49,8 @@ yourself to skip that second prompt for non-interactive/CI use.
 
 Each stack has its own doc with its resource table and destroy blockers.
 
+Operator setup (onboarding, telemetry, troubleshooting): [SETUP-FLEET.md](../SETUP-FLEET.md).
+
 | Stack | Docs | Deploy | Destroy |
 |---|---|---|---|
 | `ControlPlaneStack` | [control-plane.md](control-plane.md) | `./scripts/deploy-control-plane.sh` | `./scripts/destroy-control-plane.sh` |

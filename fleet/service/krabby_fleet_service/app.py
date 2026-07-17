@@ -1,7 +1,8 @@
 """krabby-fleet-service -- Cognito-authenticated REST proxy over AWS IoT.
 
 Bound to 127.0.0.1:8080 (see `__main__.py`); Caddy terminates TLS and
-reverse-proxies `/api/*` here. Covers Secure Tunneling open/close.
+reverse-proxies `/api/*` here. Device list/detail via Fleet Indexing and
+Classic Shadow; Secure Tunneling open/close for SSH.
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 
 from krabby_fleet_service._auth import require_operator
-from krabby_fleet_service._devices import list_devices
+from krabby_fleet_service._devices import get_device, list_devices
 from krabby_fleet_service._tunnels import close_ssh_tunnel, open_ssh_tunnel
 
 app = FastAPI(title="krabby-fleet-service")
@@ -27,6 +28,16 @@ class DeviceSummary(BaseModel):
     thingName: str
     connected: bool
     connectivityTimestamp: int | None = None
+    reported: dict[str, Any] = {}
+
+
+class DeviceDetail(BaseModel):
+    thingName: str
+    thingTypeName: str | None = None
+    attributes: dict[str, str] = {}
+    connected: bool
+    connectivityTimestamp: int | None = None
+    reported: dict[str, Any] = {}
 
 
 @app.get("/healthz")
@@ -37,6 +48,13 @@ def healthz() -> dict[str, str]:
 @app.get("/devices", response_model=list[DeviceSummary])
 def get_devices(_claims: dict[str, Any] = Depends(require_operator)) -> list[dict[str, Any]]:
     return list_devices()
+
+
+@app.get("/devices/{thing_name}", response_model=DeviceDetail)
+def get_device_detail(
+    thing_name: str, _claims: dict[str, Any] = Depends(require_operator)
+) -> dict[str, Any]:
+    return get_device(thing_name)
 
 
 @app.post("/devices/{thing_name}/ssh-tunnel", response_model=SshTunnelResponse)

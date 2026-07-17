@@ -66,6 +66,14 @@ def main() -> None:
     # agent
     sub.add_parser("agent", help="Run the always-on IoT Core MQTT client (normally started by krabby-agent.service)")
 
+    # get telemetry
+    p_get = sub.add_parser("get", help="Read local device state")
+    p_get_sub = p_get.add_subparsers(dest="get_command", metavar="<resource>")
+    p_get_sub.add_parser(
+        "telemetry",
+        help="Print the fleet telemetry snapshot (same JSON `krabby agent` publishes to the shadow)",
+    )
+
     args = parser.parse_args()
 
     if args.command == "install":
@@ -91,6 +99,14 @@ def main() -> None:
     elif args.command == "agent":
         from krabby.agent import cmd_agent
         cmd_agent()
+
+    elif args.command == "get":
+        if args.get_command == "telemetry":
+            from krabby.telemetry import cmd_get_telemetry
+            cmd_get_telemetry()
+        else:
+            parser.print_help()
+            sys.exit(1)
 
     else:
         parser.print_help()

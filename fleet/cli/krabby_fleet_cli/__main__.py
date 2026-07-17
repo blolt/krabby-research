@@ -16,16 +16,17 @@ def main() -> None:
     p_ssh.add_argument("robot", metavar="ROBOT", help="Thing name of the robot to SSH into")
     p_ssh.add_argument("--user", "-u", metavar="USER", help="SSH user (default: from config)")
 
-    sub.add_parser("devices", help="List enrolled robots and their connectivity")
+    sub.add_parser("list", help="List enrolled robots with online/last-seen + telemetry summary")
+    sub.add_parser("devices", help="Alias for `list`")
 
     args = parser.parse_args()
 
     if args.command == "ssh":
         from krabby_fleet_cli.ssh import cmd_ssh
         cmd_ssh(args.robot, user=args.user)
-    elif args.command == "devices":
-        from krabby_fleet_cli.devices import cmd_devices
-        cmd_devices()
+    elif args.command in ("list", "devices"):
+        from krabby_fleet_cli.list import cmd_list
+        cmd_list()
     else:
         parser.print_help()
         sys.exit(1)

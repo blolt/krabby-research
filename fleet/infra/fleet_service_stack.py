@@ -22,6 +22,7 @@ from aws_cdk import aws_ec2 as ec2
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_route53 as route53
 from aws_cdk import aws_s3_assets as s3_assets
+from aws_cdk import aws_secretsmanager as secretsmanager
 from aws_cdk import aws_ssm as ssm
 from constructs import Construct
 
@@ -32,6 +33,14 @@ from constructs import Construct
 IOT_ATS_ENDPOINT_PARAM_NAME = "/krabby/fleet/iot-ats-endpoint"
 COGNITO_USER_POOL_ID_PARAM_NAME = "/krabby/fleet/cognito-user-pool-id"
 COGNITO_APP_CLIENT_ID_PARAM_NAME = "/krabby/fleet/cognito-app-client-id"
+
+# Auth.js cookie-signing secret for the portal; written into
+# /etc/krabby-fleet/portal.env by deploy-fleet-service.sh.
+PORTAL_AUTH_SECRET_NAME = "/krabby/fleet/portal-auth-secret"
+
+# Node binary installed by UserData (must match ExecStart in
+# krabby-fleet-portal.service).
+_NODE_VERSION = "22.14.0"
 
 
 class FleetServiceStack(Stack):
@@ -173,18 +182,26 @@ class FleetServiceStack(Stack):
         user_data = ec2.UserData.for_linux()
         user_data.add_commands(
             "set -euo pipefail",
-            "dnf install -y python3.11 python3.11-pip unzip",
+            "dnf install -y python3.11 python3.11-pip unzip xz tar",
             # No official Amazon Linux package for Caddy -- pull the static
             # binary directly from Caddy's own documented download API
             # rather than depending on a third-party yum repo's uptime.
             "curl -fsSL 'https://caddyserver.com/api/download?os=linux&arch=amd64' -o /usr/bin/caddy",
             "chmod 0755 /usr/bin/caddy",
+            # Node for krabby-fleet-portal (Next.js standalone). Official
+            # tarball under /usr/local so ExecStart can use /usr/local/bin/node.
+            f"curl -fsSL 'https://nodejs.org/dist/v{_NODE_VERSION}/node-v{_NODE_VERSION}-linux-x64.tar.xz' "
+            "-o /tmp/node.tar.xz",
+            "tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1",
+            "rm -f /tmp/node.tar.xz",
             "getent group caddy >/dev/null || groupadd --system caddy",
             "id -u caddy >/dev/null 2>&1 || "
             "useradd --system --no-create-home --shell /usr/sbin/nologin -g caddy caddy",
             "id -u krabby-fleet >/dev/null 2>&1 || "
             "useradd --system --no-create-home --shell /usr/sbin/nologin krabby-fleet",
-            "mkdir -p /etc/caddy /opt/krabby-fleet-service",
+            "mkdir -p /etc/caddy /etc/krabby-fleet /opt/krabby-fleet-service "
+            "/opt/krabby-fleet-portal /opt/krabby-fleet-portal-src",
+            "chown root:krabby-fleet /etc/krabby-fleet && chmod 0750 /etc/krabby-fleet",
             # Provisioning-time config (this stack's domainName), not app
             # code -- baked in here rather than shipped as a repo artifact,
             # since it's specific to this deployment.
@@ -234,6 +251,36 @@ class FleetServiceStack(Stack):
             exclude=["__pycache__", "*.egg-info", ".venv", ".pytest_cache"],
         )
         service_asset.grant_read(instance_role)
+
+        # Portal source (built on the instance during SSM deploy). Excludes
+        # local node_modules/.next so the zip stays small; `npm ci` runs remotely.
+        portal_asset = s3_assets.Asset(
+            self,
+            "FleetPortalSourceAsset",
+            path=os.path.join(os.path.dirname(__file__), "..", "portal"),
+            exclude=[
+                "node_modules",
+                ".next",
+                ".venv",
+                ".env",
+                ".env.local",
+                "*.tsbuildinfo",
+            ],
+        )
+        portal_asset.grant_read(instance_role)
+
+        # Stable Auth.js signing secret across portal redeploys.
+        portal_auth_secret = secretsmanager.Secret(
+            self,
+            "PortalAuthSecret",
+            secret_name=PORTAL_AUTH_SECRET_NAME,
+            description="AUTH_SECRET for krabby-fleet-portal (Auth.js)",
+            generate_secret_string=secretsmanager.SecretStringGenerator(
+                password_length=48,
+                exclude_punctuation=True,
+            ),
+        )
+        portal_auth_secret.grant_read(instance_role)
 
         # Static IP so the Route 53 record survives instance replacement
         # (redeploys, AZ failure recovery) without a DNS update.
@@ -314,9 +361,19 @@ class FleetServiceStack(Stack):
             auth_flows=cognito.AuthFlow(user_srp=True),
             o_auth=cognito.OAuthSettings(
                 flows=cognito.OAuthFlows(authorization_code_grant=True),
-                scopes=[cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL],
-                callback_urls=[f"https://{domain_name}/api/auth/callback/cognito"],
-                logout_urls=[f"https://{domain_name}"],
+                scopes=[
+                    cognito.OAuthScope.OPENID,
+                    cognito.OAuthScope.EMAIL,
+                    cognito.OAuthScope.PROFILE,
+                ],
+                callback_urls=[
+                    f"https://{domain_name}/api/auth/callback/cognito",
+                    "http://localhost:3000/api/auth/callback/cognito",
+                ],
+                logout_urls=[
+                    f"https://{domain_name}",
+                    "http://localhost:3000",
+                ],
             ),
         )
 
@@ -345,6 +402,9 @@ class FleetServiceStack(Stack):
         # onto the instance via SSM after `cdk deploy` finishes.
         CfnOutput(self, "FleetServiceAssetS3BucketName", value=service_asset.s3_bucket_name)
         CfnOutput(self, "FleetServiceAssetS3ObjectKey", value=service_asset.s3_object_key)
+        CfnOutput(self, "FleetPortalAssetS3BucketName", value=portal_asset.s3_bucket_name)
+        CfnOutput(self, "FleetPortalAssetS3ObjectKey", value=portal_asset.s3_object_key)
+        CfnOutput(self, "FleetPortalAuthSecretArn", value=portal_auth_secret.secret_arn)
         CfnOutput(
             self, "FleetCognitoUserPoolId",
             value=user_pool.user_pool_id, export_name="FleetCognitoUserPoolId",

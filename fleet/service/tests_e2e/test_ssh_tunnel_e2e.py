@@ -38,6 +38,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Iterator
 
@@ -177,6 +178,29 @@ def test_get_devices_lists_bench_robot(operator_token):
 
 def test_get_devices_without_token_is_401():
     resp = requests.get(f"{FLEET_SERVICE_URL}/devices", timeout=30)
+    assert resp.status_code == 401
+
+
+def test_get_device_returns_bench_shadow(operator_token):
+    resp = requests.get(
+        f"{FLEET_SERVICE_URL}/devices/{BENCH_THING_NAME}",
+        headers={"Authorization": f"Bearer {operator_token}"},
+        timeout=30,
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["thingName"] == BENCH_THING_NAME
+    assert "connected" in body
+    assert isinstance(body.get("reported"), dict)
+    reported = body["reported"]
+    assert reported.get("timestamp"), "expected recent shadow reported.timestamp from bench agent"
+    assert time.time() - int(reported["timestamp"]) < 300, (
+        "shadow reported.timestamp should be within the last 5 minutes"
+    )
+
+
+def test_get_device_without_token_is_401():
+    resp = requests.get(f"{FLEET_SERVICE_URL}/devices/{BENCH_THING_NAME}", timeout=30)
     assert resp.status_code == 401
 
 

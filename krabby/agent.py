@@ -97,17 +97,11 @@ def _publish_shadow_report(shadow_client: Any, thing_name: str) -> None:
     from awscrt import mqtt
     from awsiot import iotshadow
 
-    # Minimal placeholder payload — the full reported-state schema (health,
-    # reported_image, ...) is defined elsewhere; this just proves the 1/min
-    # publish path works end to end.
+    from krabby.telemetry import collect_telemetry
+
     request = iotshadow.UpdateShadowRequest(
         thing_name=thing_name,
-        state=iotshadow.ShadowState(
-            reported={
-                "timestamp": int(time.time()),
-                "reported_image": None,
-            }
-        ),
+        state=iotshadow.ShadowState(reported=collect_telemetry()),
     )
     shadow_client.publish_update_shadow(request, mqtt.QoS.AT_LEAST_ONCE)
 

@@ -35,6 +35,7 @@ krabby enroll --thing-name my-krab   # override the default MAC-derived thing na
 krabby enroll --endpoint xxx-ats.iot.us-east-1.amazonaws.com  # override the auto-resolved ATS endpoint
 
 krabby agent                   # run the IoT Core MQTT client in the foreground (normally systemd-managed)
+krabby get telemetry           # print the fleet telemetry snapshot (same JSON the agent publishes)
 
 krabby --version
 krabby --help
@@ -66,12 +67,12 @@ sudo systemctl start krabby-agent      # enroll already enabled it for boot
 journalctl -u krabby-agent -f          # service logs
 ```
 
-Over its one MQTT connection, `krabby agent` publishes a minimal
-`{"state": {"reported": {...}}}` to the Classic Shadow once a minute (full
-schema defined elsewhere), and spawns/reaps the Secure Tunneling destination
-`localproxy` against `localhost:22` on `.../tunnels/notify`. It leaves
-`teleop/{thing}/signaling/in|out` untouched. The SDK reconnects with backoff
-on drops, and `Restart=always` brings the process back if it exits.
+Over its one MQTT connection, `krabby agent` publishes the output of
+`krabby get telemetry` to the Classic Shadow once a minute, and spawns/reaps
+the Secure Tunneling destination `localproxy` against `localhost:22` on
+`.../tunnels/notify`. It leaves `teleop/{thing}/signaling/in|out` untouched.
+The SDK reconnects with backoff on drops, and `Restart=always` brings the
+process back if it exits.
 
 `krabby run` starts the **whole** gamepad stack in one container — the HAL server and
 the `krabby-uno` client/controller together — so a paired gamepad drives the robot with

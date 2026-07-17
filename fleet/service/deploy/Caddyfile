@@ -1,12 +1,19 @@
 {$FLEET_DOMAIN} {
 	encode zstd gzip
 
+	# NextAuth (Auth.js) routes must hit the portal, not the fleet REST API.
+	handle /api/auth* {
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# Fleet REST API (devices, tunnels, later teleop signaling).
 	handle /api/* {
 		uri strip_prefix /api
 		reverse_proxy 127.0.0.1:8080
 	}
 
+	# Everything else: Next.js portal (device list/detail, static assets).
 	handle {
-		respond 404
+		reverse_proxy 127.0.0.1:3000
 	}
 }

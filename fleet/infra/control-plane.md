@@ -31,6 +31,12 @@ See [README.md](README.md) for the shared deploy-script behavior
 | `IotAtsEndpoint`, `IotCredentialProviderEndpoint`, `KrabReportedImagesBucketName` (outputs) | `CfnOutput`, exported | For `krabby enroll`/`agent` and `FleetServiceStack` to import. |
 | `KrabThingTypeName`, `KrabDevicePolicyName`, `KrabImageRoleAliasName` (outputs) | `CfnOutput`, not exported | Console visibility only -- the actual values are fixed constants enroll/agent import directly in code. |
 
+## Bench E2E
+
+Live pytest suite in [`tests_e2e/`](tests_e2e/README.md). Set `BENCH_E2E=1`
+and run against the enrolled bench thing; skipped by default so local synth /
+unit workflows stay offline.
+
 ## Remove the stack
 
 ```

@@ -110,11 +110,11 @@ echo "Deploying FleetServiceStack ..."
 cdk deploy FleetServiceStack --require-approval never "$@"
 
 # The instance itself only gets OS-level bootstrap (packages, system users,
-# directories) from CDK UserData at first boot -- app code, the Caddyfile,
-# and both systemd units are pushed here, on every deploy, via SSM
+# directories, Node, Caddy binary) from CDK UserData at first boot -- app code,
+# the Caddyfile, and systemd units are pushed here, on every deploy, via SSM
 # (there's no SSH access to this box; see FleetServiceSecurityGroup).
 echo
-echo "Pushing app code onto the instance ..."
+echo "Pushing fleet service + portal onto the instance ..."
 
 export STACK_OUTPUTS_JSON
 STACK_OUTPUTS_JSON="$(aws cloudformation describe-stacks \
@@ -139,13 +139,21 @@ PY
 }
 
 INSTANCE_ID="$(_stack_output FleetServiceInstanceId)"
-ASSET_BUCKET="$(_stack_output FleetServiceAssetS3BucketName)"
-ASSET_KEY="$(_stack_output FleetServiceAssetS3ObjectKey)"
+SERVICE_ASSET_BUCKET="$(_stack_output FleetServiceAssetS3BucketName)"
+SERVICE_ASSET_KEY="$(_stack_output FleetServiceAssetS3ObjectKey)"
+PORTAL_ASSET_BUCKET="$(_stack_output FleetPortalAssetS3BucketName)"
+PORTAL_ASSET_KEY="$(_stack_output FleetPortalAssetS3ObjectKey)"
+PORTAL_AUTH_SECRET_ARN="$(_stack_output FleetPortalAuthSecretArn)"
+DOMAIN_NAME="$(_stack_output FleetServiceDomainName)"
+COGNITO_POOL_ID="$(_stack_output FleetCognitoUserPoolId)"
+COGNITO_CLIENT_ID="$(_stack_output FleetCognitoUserPoolClientId)"
 
-export REMOTE_SCRIPT ASSET_BUCKET ASSET_KEY
+export REMOTE_SCRIPT
 REMOTE_SCRIPT="$(cat <<REMOTE
 set -euo pipefail
-aws s3 cp "s3://${ASSET_BUCKET}/${ASSET_KEY}" /tmp/fleet-service.zip
+
+# --- fleet service ---
+aws s3 cp "s3://${SERVICE_ASSET_BUCKET}/${SERVICE_ASSET_KEY}" /tmp/fleet-service.zip
 rm -rf /opt/krabby-fleet-service/src
 mkdir -p /opt/krabby-fleet-service/src
 unzip -o -q /tmp/fleet-service.zip -d /opt/krabby-fleet-service/src
@@ -153,25 +161,65 @@ install -m 0644 /opt/krabby-fleet-service/src/deploy/Caddyfile /etc/caddy/Caddyf
 install -m 0644 /opt/krabby-fleet-service/src/deploy/caddy.service /etc/systemd/system/caddy.service
 install -m 0644 /opt/krabby-fleet-service/src/systemd/krabby-fleet-service.service /etc/systemd/system/krabby-fleet-service.service
 /usr/bin/pip3.11 install --quiet --upgrade /opt/krabby-fleet-service/src
+
+# --- portal (Next.js standalone) ---
+aws s3 cp "s3://${PORTAL_ASSET_BUCKET}/${PORTAL_ASSET_KEY}" /tmp/fleet-portal.zip
+rm -rf /opt/krabby-fleet-portal-src
+mkdir -p /opt/krabby-fleet-portal-src
+unzip -o -q /tmp/fleet-portal.zip -d /opt/krabby-fleet-portal-src
+cd /opt/krabby-fleet-portal-src
+# Build-time placeholders; runtime values come from /etc/krabby-fleet/portal.env.
+# DevDependencies (typescript) are required for \`next build\`.
+export AUTH_SECRET=build-placeholder
+export AUTH_URL="https://${DOMAIN_NAME}"
+export AUTH_COGNITO_ID="${COGNITO_CLIENT_ID}"
+export AUTH_COGNITO_ISSUER="https://cognito-idp.${AWS_REGION_EFFECTIVE}.amazonaws.com/${COGNITO_POOL_ID}"
+export FLEET_SERVICE_URL="http://127.0.0.1:8080"
+/usr/local/bin/npm ci
+/usr/local/bin/npm run build
+bash scripts/assemble-standalone.sh /opt/krabby-fleet-portal-src /opt/krabby-fleet-portal
+install -m 0644 /opt/krabby-fleet-portal-src/systemd/krabby-fleet-portal.service \\
+  /etc/systemd/system/krabby-fleet-portal.service
+chown -R krabby-fleet:krabby-fleet /opt/krabby-fleet-portal
+
+AUTH_SECRET_VALUE="\$(aws secretsmanager get-secret-value \\
+  --secret-id '${PORTAL_AUTH_SECRET_ARN}' \\
+  --region '${AWS_REGION_EFFECTIVE}' \\
+  --query SecretString --output text)"
+umask 027
+cat > /etc/krabby-fleet/portal.env <<ENV
+AUTH_SECRET=\${AUTH_SECRET_VALUE}
+AUTH_URL=https://${DOMAIN_NAME}
+AUTH_COGNITO_ID=${COGNITO_CLIENT_ID}
+AUTH_COGNITO_ISSUER=https://cognito-idp.${AWS_REGION_EFFECTIVE}.amazonaws.com/${COGNITO_POOL_ID}
+FLEET_SERVICE_URL=http://127.0.0.1:8080
+ENV
+chown root:krabby-fleet /etc/krabby-fleet/portal.env
+chmod 0640 /etc/krabby-fleet/portal.env
+
 systemctl daemon-reload
-systemctl enable caddy krabby-fleet-service
-systemctl restart caddy krabby-fleet-service
+systemctl enable caddy krabby-fleet-service krabby-fleet-portal
+systemctl restart krabby-fleet-service krabby-fleet-portal caddy
 REMOTE
 )"
 
 # JSON built with python (not CLI shorthand) so embedded newlines/quotes in
 # the multi-line script above can't be misparsed by --parameters shorthand.
+# executionTimeout covers npm ci + next build on a cold instance.
 export SSM_PARAMS_JSON
 SSM_PARAMS_JSON="$(python - <<'PY'
 import json, os
-print(json.dumps({"commands": [os.environ["REMOTE_SCRIPT"]]}))
+print(json.dumps({
+    "commands": [os.environ["REMOTE_SCRIPT"]],
+    "executionTimeout": ["3600"],
+}))
 PY
 )"
 
 COMMAND_ID="$(aws ssm send-command \
   --instance-ids "$INSTANCE_ID" \
   --document-name "AWS-RunShellScript" \
-  --comment "krabby-fleet-service app deploy" \
+  --comment "krabby-fleet service+portal app deploy" \
   --region "$AWS_REGION_EFFECTIVE" \
   --parameters "$SSM_PARAMS_JSON" \
   --query "Command.CommandId" --output text)"
@@ -192,4 +240,5 @@ if [[ "$SSM_STATUS" != "Success" ]]; then
   exit 1
 fi
 
-echo "[ok] krabby-fleet-service deployed and restarted."
+echo "[ok] krabby-fleet-service + krabby-fleet-portal deployed and restarted."
+echo "     Caddy: /api/auth* + UI -> portal:3000; other /api/* -> service:8080"

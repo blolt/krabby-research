@@ -20,6 +20,19 @@ default_user = "operator"
 
 `[ssh].default_user` is optional (defaults to `operator`).
 
+## `krabby-fleet list`
+
+```
+krabby-fleet list
+```
+
+Hits `GET /devices` with a Cognito access token and prints one line per robot:
+thing name, online/offline, last-seen (from Fleet Indexing connectivity), and a
+short telemetry summary from the latest shadow `reported` document
+(`reported_image`, shadow timestamp, container health, red flags).
+
+`krabby-fleet devices` is an alias for the same command.
+
 ## `krabby-fleet ssh <robot>`
 
 ```

@@ -1,11 +1,7 @@
-"""GET /devices: mocked iot client, no real AWS calls.
-
-Overrides the require_operator dependency directly, same as test_tunnels.py,
-to stay focused on the fleet-listing logic rather than re-deriving auth
-coverage.
-"""
+"""GET /devices and GET /devices/{thingName}: mocked IoT clients, no real AWS."""
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,25 +34,129 @@ def anon_client():
     app.dependency_overrides.clear()
 
 
-def test_get_devices_calls_search_index(authed_client):
-    fake_client = MagicMock()
-    fake_client.search_index.return_value = {
-        "things": [
-            {"thingName": "bench-krabby-ci", "connectivity": {"connected": True, "timestamp": 123}},
-            {"thingName": "krabby-002", "connectivity": {"connected": False}},
-        ],
-    }
-    with patch("krabby_fleet_service._devices._client", return_value=fake_client):
+def _fake_search_page(things: list[dict]) -> MagicMock:
+    paginator = MagicMock()
+    paginator.paginate.return_value = [{"things": things}]
+    return paginator
+
+
+def test_list_devices_uses_search_index(authed_client):
+    shadow = json.dumps({"reported": {"timestamp": 1710000000, "reported_image": "img:tag"}})
+    fake_iot = MagicMock()
+    fake_iot.get_paginator.return_value = _fake_search_page(
+        [
+            {
+                "thingName": "bench-krabby-ci",
+                "connectivity": {"connected": True, "timestamp": 1710000123000},
+                "shadow": shadow,
+            }
+        ]
+    )
+
+    with patch("krabby_fleet_service._devices._iot_client", return_value=fake_iot):
         resp = authed_client.get("/devices")
 
     assert resp.status_code == 200
-    assert resp.json() == [
-        {"thingName": "bench-krabby-ci", "connected": True, "connectivityTimestamp": 123},
-        {"thingName": "krabby-002", "connected": False, "connectivityTimestamp": None},
+    body = resp.json()
+    assert body == [
+        {
+            "thingName": "bench-krabby-ci",
+            "connected": True,
+            "connectivityTimestamp": 1710000123000,
+            "reported": {"timestamp": 1710000000, "reported_image": "img:tag"},
+        }
     ]
-    fake_client.search_index.assert_called_once_with(queryString="thingTypeName:Krab")
+    fake_iot.get_paginator.assert_called_once_with("search_index")
+    fake_iot.get_paginator.return_value.paginate.assert_called_once_with(
+        queryString="thingTypeName:Krab"
+    )
 
 
-def test_get_devices_without_auth_is_401(anon_client):
+def test_get_device_uses_describe_shadow_and_search(authed_client):
+    fake_iot = MagicMock()
+    fake_iot.describe_thing.return_value = {
+        "thingName": "bench-krabby-ci",
+        "thingTypeName": "Krab",
+        "attributes": {"site": "bench"},
+    }
+    fake_iot.search_index.return_value = {
+        "things": [
+            {
+                "thingName": "bench-krabby-ci",
+                "connectivity": {"connected": False, "timestamp": 1710000456000},
+            }
+        ]
+    }
+    fake_iot.describe_endpoint.return_value = {"endpointAddress": "abc-ats.iot.us-east-1.amazonaws.com"}
+
+    fake_iot_data = MagicMock()
+    fake_iot_data.get_thing_shadow.return_value = {
+        "payload": MagicMock(
+            read=lambda: json.dumps(
+                {
+                    "state": {
+                        "reported": {
+                            "timestamp": 1710000000,
+                            "health": {"krabby_agent": "active"},
+                        }
+                    }
+                }
+            ).encode()
+        )
+    }
+
+    with patch("krabby_fleet_service._devices._iot_client", return_value=fake_iot), patch(
+        "krabby_fleet_service._devices._iot_data_client", return_value=fake_iot_data
+    ):
+        resp = authed_client.get("/devices/bench-krabby-ci")
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "thingName": "bench-krabby-ci",
+        "thingTypeName": "Krab",
+        "attributes": {"site": "bench"},
+        "connected": False,
+        "connectivityTimestamp": 1710000456000,
+        "reported": {"timestamp": 1710000000, "health": {"krabby_agent": "active"}},
+    }
+    fake_iot.describe_thing.assert_called_once_with(thingName="bench-krabby-ci")
+    fake_iot_data.get_thing_shadow.assert_called_once_with(thingName="bench-krabby-ci")
+
+
+def test_get_device_missing_thing_is_404(authed_client):
+    fake_iot = MagicMock()
+
+    class _NotFound(Exception):
+        pass
+
+    fake_iot.exceptions.ResourceNotFoundException = _NotFound
+    fake_iot.describe_thing.side_effect = _NotFound()
+
+    with patch("krabby_fleet_service._devices._iot_client", return_value=fake_iot):
+        resp = authed_client.get("/devices/missing-krab")
+
+    assert resp.status_code == 404
+
+
+def test_get_device_wrong_thing_type_is_404(authed_client):
+    fake_iot = MagicMock()
+    fake_iot.describe_thing.return_value = {
+        "thingName": "other-thing",
+        "thingTypeName": "NotKrab",
+        "attributes": {},
+    }
+
+    with patch("krabby_fleet_service._devices._iot_client", return_value=fake_iot):
+        resp = authed_client.get("/devices/other-thing")
+
+    assert resp.status_code == 404
+
+
+def test_list_devices_without_auth_is_401(anon_client):
     resp = anon_client.get("/devices")
+    assert resp.status_code == 401
+
+
+def test_get_device_without_auth_is_401(anon_client):
+    resp = anon_client.get("/devices/bench-krabby-ci")
     assert resp.status_code == 401
