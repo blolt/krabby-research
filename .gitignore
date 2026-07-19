@@ -239,8 +239,9 @@ docs/m14-task1-plan.html
 *.db
 .beads-credential-key
 
-# Fleet CDK (fleet/infra) — local toolkit, synth output, npm installs
+# Fleet CDK (fleet/infra) — local toolkit, synth output, npm installs, account lookups
 fleet/infra/.tools/
 fleet/infra/cdk.out/
 fleet/infra/.cdk.staging/
+fleet/infra/cdk.context.json
 node_modules/

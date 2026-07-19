@@ -150,11 +150,38 @@ PUBLIC_IP="$(_stack_output FleetServicePublicIp)"
 COGNITO_POOL_ID="$(_stack_output FleetCognitoUserPoolId)"
 COGNITO_CLIENT_ID="$(_stack_output FleetCognitoUserPoolClientId)"
 
+# First boot: UserData installs packages + SSM agent registers. send-command
+# fails with InvalidInstanceId until the instance is Online in SSM.
+echo "Waiting for $INSTANCE_ID to appear Online in SSM ..."
+SSM_WAIT_SECONDS=0
+SSM_WAIT_LIMIT=600
+while true; do
+  PING_STATUS="$(aws ssm describe-instance-information \
+    --filters "Key=InstanceIds,Values=${INSTANCE_ID}" \
+    --region "$AWS_REGION_EFFECTIVE" \
+    --query 'InstanceInformationList[0].PingStatus' \
+    --output text 2>/dev/null || true)"
+  if [[ "$PING_STATUS" == "Online" ]]; then
+    echo "SSM Online after ${SSM_WAIT_SECONDS}s."
+    break
+  fi
+  if (( SSM_WAIT_SECONDS >= SSM_WAIT_LIMIT )); then
+    echo "Timed out after ${SSM_WAIT_LIMIT}s waiting for SSM Online (last status: ${PING_STATUS:-none})." >&2
+    echo "Re-run this script once the instance is Online in Systems Manager." >&2
+    exit 1
+  fi
+  sleep 15
+  SSM_WAIT_SECONDS=$((SSM_WAIT_SECONDS + 15))
+  echo "  ... not Online yet (${PING_STATUS:-none}), ${SSM_WAIT_SECONDS}s elapsed"
+done
+
 export REMOTE_SCRIPT
 REMOTE_SCRIPT="$(cat <<REMOTE
 set -euo pipefail
 
 # coturn may already be present from UserData; install on older instances too.
+# Package lives in AL2023 SPAL (Supplementary Packages), not the base repos.
+dnf install -y spal-release
 dnf install -y coturn
 getent group turnserver >/dev/null || groupadd --system turnserver
 id -u turnserver >/dev/null 2>&1 || \
@@ -169,6 +196,8 @@ mkdir -p /opt/krabby-fleet-service/src
 unzip -o -q /tmp/fleet-service.zip -d /opt/krabby-fleet-service/src
 install -m 0644 /opt/krabby-fleet-service/src/deploy/Caddyfile /etc/caddy/Caddyfile
 install -m 0644 /opt/krabby-fleet-service/src/deploy/caddy.service /etc/systemd/system/caddy.service
+mkdir -p /var/lib/caddy
+chown caddy:caddy /var/lib/caddy
 install -m 0644 /opt/krabby-fleet-service/src/systemd/krabby-fleet-service.service /etc/systemd/system/krabby-fleet-service.service
 install -m 0644 /opt/krabby-fleet-service/src/deploy/coturn.service /etc/systemd/system/krabby-coturn.service
 /usr/bin/pip3.11 install --quiet --upgrade /opt/krabby-fleet-service/src
@@ -193,8 +222,14 @@ else
   chown root:root /etc/krabby-fleet/turnserver.conf
 fi
 
-# Fleet service env: TURN host (DNS) + same auth secret for minting credentials.
+# Fleet service env: region (SSM/Cognito lookups), Cognito IDs, TURN.
+# Without AWS_REGION the app defaults to us-east-1 and GetParameter misses
+# /krabby/fleet/* params that live in the stack region.
 cat > /etc/krabby-fleet/service.env <<ENV
+AWS_REGION=${AWS_REGION_EFFECTIVE}
+AWS_DEFAULT_REGION=${AWS_REGION_EFFECTIVE}
+KRABBY_FLEET_COGNITO_USER_POOL_ID=${COGNITO_POOL_ID}
+KRABBY_FLEET_COGNITO_APP_CLIENT_ID=${COGNITO_CLIENT_ID}
 KRABBY_FLEET_TURN_AUTH_SECRET=\${TURN_AUTH_SECRET_VALUE}
 KRABBY_FLEET_TURN_HOST=${DOMAIN_NAME}
 ENV

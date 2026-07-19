@@ -48,10 +48,7 @@ app-only change pushes onto the existing instance rather than replacing it.
 
 This stack looks up the account's default VPC (`ec2.Vpc.from_lookup`) and the
 hosted zone's ID (`route53.HostedZone.from_lookup`), both of which need real
-AWS credentials to resolve — the first `cdk synth`/`diff`/`deploy` against a
-real account writes the results to `fleet/infra/cdk.context.json`. Commit
-that file once it has real values, so later synths (and CI) resolve to the
-same VPC/subnet/AZ/hosted-zone data instead of re-querying AWS every time.
+AWS credentials to resolve at synth time.
 
 ## Resources
 
@@ -59,7 +56,7 @@ same VPC/subnet/AZ/hosted-zone data instead of re-querying AWS every time.
 |---|---|---|
 | `FleetServiceSecurityGroup` | `AWS::EC2::SecurityGroup` | Inbound HTTP/HTTPS (80/443), STUN/TURN (3478 UDP+TCP, 5349 TCP/UDP), TURN relay (49152–65535/udp). No inbound SSH. |
 | `FleetServiceInstanceRole` | `AWS::IAM::Role` | EC2 instance role: `AmazonSSMManagedInstanceCore` (Session Manager / Run Command, no SSH key needed) + Secure Tunneling `OpenTunnel`/`CloseTunnel`/`DescribeTunnel` + fleet listing (`iot:SearchIndex`/`GetThingShadow`/`DescribeThing`) + teleop signaling bridge (`iot:Connect`/`Publish`/`Subscribe`/`Receive` on `teleop/*/signaling/*`). |
-| `FleetServiceInstance` | `AWS::EC2::Instance` | `c7i.large` (see rationale in `fleet_service_stack.py`), Amazon Linux 2023, IMDSv2 required, 30 GiB encrypted gp3 root volume, no auto-assigned public IP (uses the EIP below instead). UserData installs Python, Node, `coturn`, the `caddy` binary, and the `caddy`/`krabby-fleet` system users on first boot only -- app code and config are pushed separately (see Deploy above). |
+| `FleetServiceInstance` | `AWS::EC2::Instance` | `c7i.large` (see rationale in `fleet_service_stack.py`), Amazon Linux 2023, IMDSv2 required, 30 GiB encrypted gp3 root volume, no auto-assigned public IP (uses the EIP below instead). UserData installs Python, Node, `spal-release` + `coturn` (SPAL), the `caddy` binary, and the `caddy`/`krabby-fleet` system users on first boot only -- app code and config are pushed separately (see Deploy above). |
 | `FleetServiceAssetS3BucketName` / `FleetServiceAssetS3ObjectKey` (outputs) | `CfnOutput` | Location of the `fleet/service` zip CDK uploads to the bootstrap bucket on every deploy; read by `deploy-fleet-service.sh` to push it onto the instance via SSM. |
 | `FleetPortalAssetS3BucketName` / `FleetPortalAssetS3ObjectKey` (outputs) | `CfnOutput` | Location of the `fleet/portal` source zip; built to Next.js standalone on the instance during SSM deploy. |
 | `PortalAuthSecret` | `AWS::SecretsManager::Secret` (`/krabby/fleet/portal-auth-secret`) | Stable `AUTH_SECRET` for Auth.js; written into `/etc/krabby-fleet/portal.env` on each deploy. |
@@ -69,10 +66,10 @@ same VPC/subnet/AZ/hosted-zone data instead of re-querying AWS every time.
 | `FleetServiceEip` / `FleetServiceEipAssociation` | `AWS::EC2::EIP` / `AWS::EC2::EIPAssociation` | Static public IP so the DNS record survives instance replacement. |
 | `FleetServiceDnsRecord` | `AWS::Route53::RecordSet` | A record for `domainName` in the given hosted zone, pointed at the EIP. |
 | `IotAtsEndpointParam` | `AWS::SSM::Parameter` (`/krabby/fleet/iot-ats-endpoint`) | `ControlPlaneStack`'s `IotAtsEndpoint` export, handed off via SSM Parameter Store for the fleet service to read at runtime. Instance role has read access. |
-| `FleetOperatorPool` | `AWS::Cognito::UserPool` | Operator accounts. No self-sign-up (admin-created only). `RemovalPolicy.RETAIN`. |
-| `OperatorGroup` | `AWS::Cognito::UserPoolGroup` (`operator`) | Membership grants tunnel/telemetry access; assigned manually by an admin, not by this stack. |
+| `FleetOperatorPool` | `AWS::Cognito::UserPool` | Operator accounts (`user_pool_name=krabby-fleet-operators`). No self-sign-up (admin-created only). `RemovalPolicy.RETAIN`. |
+| `OperatorGroup` | `AWS::Cognito::UserPoolGroup` (`operator`) | Membership grants tunnel/telemetry access; assigned manually by an admin, not by this stack. See [`OPERATORS.md`](../OPERATORS.md) (CLI + Console). |
 | `FleetPoolDomain` | Cognito Hosted UI domain | `cognitoDomainPrefix` (or the account-scoped default). |
-| `FleetOperatorClient` | `AWS::Cognito::UserPoolClient` | Supports `USER_SRP_AUTH` and OAuth authorization-code + PKCE (no client secret). |
+| `FleetOperatorClient` | `AWS::Cognito::UserPoolClient` | App client name `krabby-fleet`. Supports `USER_SRP_AUTH` and OAuth authorization-code + PKCE (no client secret). |
 | `CognitoUserPoolIdParam` / `CognitoAppClientIdParam` | `AWS::SSM::Parameter` (`/krabby/fleet/cognito-user-pool-id`, `/krabby/fleet/cognito-app-client-id`) | The user pool ID and app client ID above, published to SSM Parameter Store so `krabby-fleet-service`'s JWT middleware can read them at runtime and know which pool/client to validate tokens against. Instance role has read access. |
 | `FleetServiceInstanceId`, `FleetServicePublicIp`, `FleetServiceDomainName`, `FleetCognitoUserPoolId`, `FleetCognitoUserPoolClientId`, `FleetCognitoDomain` (outputs) | `CfnOutput` | Console visibility. `FleetCognitoUserPoolId` and `FleetCognitoUserPoolClientId` are also exported for cross-stack use. |
 

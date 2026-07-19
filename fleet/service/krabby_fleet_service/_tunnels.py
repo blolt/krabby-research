@@ -12,7 +12,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from krabby_fleet_service._config import AWS_REGION
+from krabby_fleet_service._config import aws_region
 
 # Matches the plan's documented default max tunnel lifetime.
 _MAX_LIFETIME_MINUTES = 720
@@ -21,7 +21,7 @@ _MAX_LIFETIME_MINUTES = 720
 def _client() -> Any:
     import boto3
 
-    return boto3.client("iotsecuretunneling", region_name=AWS_REGION)
+    return boto3.client("iotsecuretunneling", region_name=aws_region())
 
 
 def open_ssh_tunnel(thing_name: str) -> dict[str, Any]:
@@ -33,7 +33,7 @@ def open_ssh_tunnel(thing_name: str) -> dict[str, Any]:
     return {
         "tunnelId": response["tunnelId"],
         "sourceAccessToken": response["sourceAccessToken"],
-        "region": AWS_REGION,
+        "region": aws_region(),
     }
 
 

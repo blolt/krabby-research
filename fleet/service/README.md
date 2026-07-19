@@ -31,8 +31,8 @@ token>`. The token is verified against the Cognito user pool's JWKS
 (`_auth.py`): signature, issuer, `token_use=access`, and `client_id` must
 all check out (401 otherwise), and the token's `cognito:groups` claim must
 include `operator` (403 otherwise). Group membership is granted manually by
-an admin in the Cognito console/CLI -- `FleetServiceStack` creates the empty
-`operator` group but doesn't populate it.
+an admin -- see [`../OPERATORS.md`](../OPERATORS.md) (CLI + Console).
+`FleetServiceStack` creates the empty `operator` group but doesn't populate it.
 
 The teleop WebSocket also accepts `?token=<access-token>` (browsers often
 cannot set an Authorization header on `WebSocket`).
@@ -97,8 +97,9 @@ krabby-fleet-service   # binds 127.0.0.1:8080
 ```
 
 Opening a real tunnel or signaling MQTT still needs real AWS credentials
-with the FleetServiceStack instance-role permissions (`iotsecuretunneling:*`
-plus `iot:Connect`/`Publish`/`Subscribe`/`Receive` on `teleop/*/signaling/*`).
+with the FleetServiceStack instance-role permissions (`iot:OpenTunnel` /
+`CloseTunnel` / `DescribeTunnel` plus `iot:Connect`/`Publish`/`Subscribe`/
+`Receive` on `teleop/*/signaling/*`).
 For local testing, whatever `boto3` / the CRT default credential chain
 resolves from your environment.
 

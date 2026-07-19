@@ -1,7 +1,8 @@
 """Fleet device listing and detail -- thin proxy over IoT Fleet Indexing + shadows.
 
-`list_devices` uses a single paginated `iot:SearchIndex` query for all Krabs
-(connectivity + indexed classic-shadow `reported` in one round trip).
+`list_devices` uses `iot:SearchIndex` (manual ``nextToken`` paging — the
+operation is not botocore-pageable) for all Krabs (connectivity + indexed
+classic-shadow ``reported``).
 `get_device` uses `iot:DescribeThing` + `iot:GetThingShadow` for the
 authoritative detail view, with connectivity filled from SearchIndex when
 available.
@@ -13,7 +14,8 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from krabby_fleet_service._config import AWS_REGION
+from krabby_fleet_service._config import aws_region
+
 
 # Must match ControlPlaneStack / krabby enroll.
 KRAB_THING_TYPE = "Krab"
@@ -22,15 +24,22 @@ KRAB_THING_TYPE = "Krab"
 def _iot_client() -> Any:
     import boto3
 
-    return boto3.client("iot", region_name=AWS_REGION)
+    return boto3.client("iot", region_name=aws_region())
 
 
 def _iot_data_client() -> Any:
     import boto3
 
-    iot = _iot_client()
-    endpoint = iot.describe_endpoint(endpointType="iot:Data-ATS")["endpointAddress"]
-    return boto3.client("iot-data", endpoint_url=f"https://{endpoint}", region_name=AWS_REGION)
+    from krabby_fleet_service._config import get_settings
+
+    # Prefer the stack-published ATS hostname (SSM / env) over iot:DescribeEndpoint
+    # so the instance role does not need that IAM action.
+    endpoint = get_settings().iot_ats_endpoint
+    return boto3.client(
+        "iot-data",
+        endpoint_url=f"https://{endpoint}",
+        region_name=aws_region(),
+    )
 
 
 def _parse_shadow_reported(shadow: Any) -> dict[str, Any]:
@@ -60,13 +69,21 @@ def _thing_summary(thing: dict[str, Any]) -> dict[str, Any]:
 def list_devices() -> list[dict[str, Any]]:
     client = _iot_client()
     devices: list[dict[str, Any]] = []
-    paginator = client.get_paginator("search_index")
-    for page in paginator.paginate(queryString=f"thingTypeName:{KRAB_THING_TYPE}"):
+    # search_index is not botocore-pageable; page with nextToken.
+    next_token: str | None = None
+    while True:
+        kwargs: dict[str, Any] = {"queryString": f"thingTypeName:{KRAB_THING_TYPE}"}
+        if next_token:
+            kwargs["nextToken"] = next_token
+        page = client.search_index(**kwargs)
         for thing in page.get("things", []):
             thing_name = thing.get("thingName")
             if not thing_name:
                 continue
             devices.append(_thing_summary(thing))
+        next_token = page.get("nextToken")
+        if not next_token:
+            break
     devices.sort(key=lambda item: item["thingName"])
     return devices
 

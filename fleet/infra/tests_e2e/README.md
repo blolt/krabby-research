@@ -16,7 +16,7 @@ export SHADOW_MAX_AGE_SECS=180       # agent publishes 1/min; indexing lag
 
 AWS credentials must allow: `iot:SearchIndex`, `iot:GetThingShadow`,
 `iot:DescribeThing` / `CreateThing` / `DeleteThing`, cert lifecycle,
-`iot:AttachPolicy` / `DetachPolicy`, `iotsecuretunneling:OpenTunnel` /
+`iot:AttachPolicy` / `DetachPolicy`, `iot:OpenTunnel` /
 `CloseTunnel`, plus MQTT data-plane via device certs created in-test.
 
 ## Run

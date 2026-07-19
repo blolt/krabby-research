@@ -89,8 +89,8 @@ export function OpenSshButton({ thingName }: { thingName: string }) {
         <div className="panel">
           <h2>SSH session</h2>
           <p className="muted">
-            Preferred: run the CLI on your laptop (handles localproxy + cleanup). The browser never
-            receives AWS credentials — only a short-lived source tunnel token.
+            Preferred: run the CLI on your local computer (handles localproxy + cleanup). The browser
+            never receives AWS credentials — only a short-lived source tunnel token.
           </p>
           <p className="mono">krabby-fleet ssh {thingName}</p>
           <p className="muted" style={{ marginTop: "1rem" }}>

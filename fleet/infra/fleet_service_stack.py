@@ -62,8 +62,7 @@ class FleetServiceStack(Stack):
         domain_name: fully-qualified DNS name for the fleet host.
         hosted_zone_name: the Route 53 hosted zone that owns `domain_name`;
             its ID is resolved via a live AWS lookup at synth time (see
-            `HostedZone.from_lookup` below), which needs real AWS credentials
-            to resolve and caches its result in `cdk.context.json`.
+            `HostedZone.from_lookup` below), which needs real AWS credentials.
         cognito_domain_prefix: Hosted UI domain prefix; defaults to a
             per-account-unique value if omitted (Cognito domain prefixes must
             be globally unique across all AWS accounts).
@@ -87,7 +86,7 @@ class FleetServiceStack(Stack):
         )
         security_group.add_ingress_rule(
             ec2.Peer.any_ipv4(), ec2.Port.tcp(80),
-            "HTTP -- ACME HTTP-01 challenge and HTTP->HTTPS redirect",
+            "HTTP -- ACME HTTP-01 challenge and HTTP-to-HTTPS redirect",
         )
         security_group.add_ingress_rule(
             ec2.Peer.any_ipv4(), ec2.Port.tcp(443), "HTTPS",
@@ -126,15 +125,15 @@ class FleetServiceStack(Stack):
         instance_role.add_to_policy(
             iam.PolicyStatement(
                 sid="SecureTunnelingOpenClose",
+                # IAM action prefix is `iot:` (not `iotsecuretunneling:`) —
+                # see https://docs.aws.amazon.com/iot/latest/developerguide/tunnel-access.html
                 actions=[
-                    "iotsecuretunneling:OpenTunnel",
-                    "iotsecuretunneling:CloseTunnel",
-                    "iotsecuretunneling:DescribeTunnel",
+                    "iot:OpenTunnel",
+                    "iot:CloseTunnel",
+                    "iot:DescribeTunnel",
                 ],
-                # Secure Tunneling doesn't support resource-level permissions
-                # for these actions (OpenTunnel in particular creates a tunnel
-                # that has no ARN yet at call time) -- Resource: "*" is the
-                # AWS-documented shape for this policy, not an over-grant.
+                # OpenTunnel authorizes against tunnel/* (and optionally thing/*);
+                # Resource: "*" matches the AWS-documented broad form.
                 resources=["*"],
             )
         )
@@ -196,9 +195,9 @@ class FleetServiceStack(Stack):
         user_data.add_commands(
             "set -euo pipefail",
             "dnf install -y python3.11 python3.11-pip unzip xz tar",
-            # coturn for teleop STUN/TURN; soft-fail so a missing package doesn't
-            # brick first boot (deploy-fleet-service.sh also installs it).
-            "dnf install -y coturn || true",
+            # coturn is in AL2023 SPAL (not the base repos).
+            "dnf install -y spal-release",
+            "dnf install -y coturn",
             # No official Amazon Linux package for Caddy -- pull the static
             # binary directly from Caddy's own documented download API
             # rather than depending on a third-party yum repo's uptime.
@@ -220,7 +219,8 @@ class FleetServiceStack(Stack):
             "id -u krabby-fleet >/dev/null 2>&1 || "
             "useradd --system --no-create-home --shell /usr/sbin/nologin krabby-fleet",
             "mkdir -p /etc/caddy /etc/krabby-fleet /opt/krabby-fleet-service "
-            "/opt/krabby-fleet-portal /opt/krabby-fleet-portal-src",
+            "/opt/krabby-fleet-portal /opt/krabby-fleet-portal-src /var/lib/caddy",
+            "chown caddy:caddy /var/lib/caddy",
             "chown root:krabby-fleet /etc/krabby-fleet && chmod 0750 /etc/krabby-fleet",
             # Provisioning-time config (this stack's domainName), not app
             # code -- baked in here rather than shipped as a repo artifact,
@@ -356,8 +356,11 @@ class FleetServiceStack(Stack):
         # resulting JWT rather than this stack minting per-user AWS
         # credentials. RemovalPolicy.RETAIN: destroying the stack shouldn't
         # silently delete every operator's account and lock the fleet out.
+        # Stable user_pool_name so the Cognito console shows a readable name
+        # (otherwise CFN generates FleetOperatorPool…-<hash>).
         user_pool = cognito.UserPool(
             self, "FleetOperatorPool",
+            user_pool_name="krabby-fleet-operators",
             self_sign_up_enabled=False,
             sign_in_aliases=cognito.SignInAliases(email=True),
             standard_attributes=cognito.StandardAttributes(
@@ -392,6 +395,7 @@ class FleetServiceStack(Stack):
         # NextAuth.js Cognito provider convention.
         user_pool_client = user_pool.add_client(
             "FleetOperatorClient",
+            user_pool_client_name="krabby-fleet",
             generate_secret=False,
             auth_flows=cognito.AuthFlow(user_srp=True),
             o_auth=cognito.OAuthSettings(

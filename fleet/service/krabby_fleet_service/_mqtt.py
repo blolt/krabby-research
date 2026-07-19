@@ -104,16 +104,23 @@ class FleetMqttClient:
                 return
             self._subscribers[topic] = [callback]
 
-        def _on_message(topic_name: str, payload: bytes, **kwargs: Any) -> None:
+        # Closed over for fan-out; callbacks are keyed by the filter we
+        # subscribed with, not the concrete matched topic name.
+        filter_topic = topic
+
+        # awscrt detects "old" callbacks by binding topic=/payload=; the first
+        # parameter must be named ``topic`` (not ``topic_name``) or subscribe
+        # raises TypeError at registration time.
+        def _on_message(topic: str, payload: bytes, **kwargs: Any) -> None:
             with self._lock:
-                cbs = list(self._subscribers.get(topic, ()))
+                cbs = list(self._subscribers.get(filter_topic, ()))
             for cb in cbs:
                 try:
-                    cb(topic_name, payload)
+                    cb(topic, payload)
                 except Exception:
-                    logger.exception("fleet MQTT subscriber callback failed topic=%s", topic_name)
+                    logger.exception("fleet MQTT subscriber callback failed topic=%s", topic)
 
-        conn.subscribe(topic=topic, qos=_QOS_AT_LEAST_ONCE, callback=_on_message)
+        conn.subscribe(topic=filter_topic, qos=_QOS_AT_LEAST_ONCE, callback=_on_message)
 
     def unsubscribe(self, topic: str, callback: MqttMessageCallback) -> None:
         with self._lock:

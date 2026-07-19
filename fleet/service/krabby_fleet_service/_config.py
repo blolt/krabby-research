@@ -6,6 +6,9 @@ credentials needed. Env var overrides exist for local dev/tests so nothing
 here requires real AWS access to run. TURN auth secret is written into
 `/etc/krabby-fleet/service.env` by deploy-fleet-service.sh (from Secrets
 Manager), loaded via systemd EnvironmentFile.
+
+Region must be set explicitly via ``AWS_REGION`` or ``AWS_DEFAULT_REGION``
+(deploy writes both into ``service.env``). No silent default region.
 """
 from __future__ import annotations
 
@@ -13,14 +16,31 @@ import os
 from dataclasses import dataclass
 from functools import lru_cache
 
-AWS_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
-
 # Must match fleet/infra/fleet_service_stack.py parameter names -- keep in sync.
 COGNITO_USER_POOL_ID_PARAM = "/krabby/fleet/cognito-user-pool-id"
 COGNITO_APP_CLIENT_ID_PARAM = "/krabby/fleet/cognito-app-client-id"
 IOT_ATS_ENDPOINT_PARAM = "/krabby/fleet/iot-ats-endpoint"
 
 DEFAULT_TURN_TTL_SECS = 3600
+
+
+def aws_region() -> str:
+    """Return the configured AWS region, or raise if unset."""
+    region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION")
+    if not region:
+        raise RuntimeError(
+            "AWS region is not set; export AWS_REGION or AWS_DEFAULT_REGION "
+            "(deploy-fleet-service.sh writes both into /etc/krabby-fleet/service.env)"
+        )
+    return region
+
+
+# Back-compat: ``from krabby_fleet_service._config import AWS_REGION`` still
+# works (resolves via aws_region() on access).
+def __getattr__(name: str):
+    if name == "AWS_REGION":
+        return aws_region()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 @dataclass(frozen=True)
@@ -45,7 +65,7 @@ class Settings:
 def _ssm_parameter(name: str) -> str:
     import boto3
 
-    client = boto3.client("ssm", region_name=AWS_REGION)
+    client = boto3.client("ssm", region_name=aws_region())
     return client.get_parameter(Name=name)["Parameter"]["Value"]
 
 
@@ -58,6 +78,7 @@ def _env_int(name: str, default: int) -> int:
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
+    region = aws_region()
     user_pool_id = os.environ.get("KRABBY_FLEET_COGNITO_USER_POOL_ID") or _ssm_parameter(
         COGNITO_USER_POOL_ID_PARAM
     )
@@ -68,7 +89,7 @@ def get_settings() -> Settings:
         IOT_ATS_ENDPOINT_PARAM
     )
     return Settings(
-        aws_region=AWS_REGION,
+        aws_region=region,
         cognito_user_pool_id=user_pool_id,
         cognito_app_client_id=app_client_id,
         iot_ats_endpoint=iot_ats,

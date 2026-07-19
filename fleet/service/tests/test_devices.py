@@ -35,24 +35,18 @@ def anon_client():
     app.dependency_overrides.clear()
 
 
-def _fake_search_page(things: list[dict]) -> MagicMock:
-    paginator = MagicMock()
-    paginator.paginate.return_value = [{"things": things}]
-    return paginator
-
-
 def test_list_devices_uses_search_index(authed_client):
     shadow = json.dumps({"reported": {"timestamp": 1710000000, "reported_image": "img:tag"}})
     fake_iot = MagicMock()
-    fake_iot.get_paginator.return_value = _fake_search_page(
-        [
+    fake_iot.search_index.return_value = {
+        "things": [
             {
                 "thingName": "bench-krabby-ci",
                 "connectivity": {"connected": True, "timestamp": 1710000123000},
                 "shadow": shadow,
             }
         ]
-    )
+    }
 
     with patch("krabby_fleet_service._devices._iot_client", return_value=fake_iot):
         resp = authed_client.get("/devices")
@@ -67,10 +61,7 @@ def test_list_devices_uses_search_index(authed_client):
             "reported": {"timestamp": 1710000000, "reported_image": "img:tag"},
         }
     ]
-    fake_iot.get_paginator.assert_called_once_with("search_index")
-    fake_iot.get_paginator.return_value.paginate.assert_called_once_with(
-        queryString="thingTypeName:Krab"
-    )
+    fake_iot.search_index.assert_called_once_with(queryString="thingTypeName:Krab")
 
 
 def test_get_device_uses_describe_shadow_and_search(authed_client):
@@ -88,7 +79,6 @@ def test_get_device_uses_describe_shadow_and_search(authed_client):
             }
         ]
     }
-    fake_iot.describe_endpoint.return_value = {"endpointAddress": "abc-ats.iot.us-east-1.amazonaws.com"}
 
     fake_iot_data = MagicMock()
     fake_iot_data.get_thing_shadow.return_value = {

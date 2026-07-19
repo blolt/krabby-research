@@ -7,6 +7,7 @@ portal, and CLI.
 |-----|---------|
 | [`ENROLL.md`](ENROLL.md) | Enroll one Orin |
 | [`SSH-TUNNEL.md`](SSH-TUNNEL.md) | One SSH source → one Orin |
+| [`OPERATORS.md`](OPERATORS.md) | Add Cognito operator users (CLI + Console) |
 | [`SETUP-FLEET.md`](SETUP-FLEET.md) | Deploy sequence, MQTT, telemetry, ops |
 | [`infra/`](infra/README.md) | CDK stacks |
 | [`cli/`](cli/README.md) | `krabby-fleet` |

@@ -37,6 +37,7 @@ Index: [`README.md`](README.md).
 
 - Enroll one Orin: [`ENROLL.md`](ENROLL.md)
 - One SSH source → one Orin: [`SSH-TUNNEL.md`](SSH-TUNNEL.md)
+- Cognito operators (CLI + Console): [`OPERATORS.md`](OPERATORS.md)
 
 Later, with the fleet service up: `krabby-fleet ssh` / portal Open SSH
 ([`cli/README.md`](cli/README.md)).
@@ -117,8 +118,8 @@ for a user in the `operator` group.
 |--------|------|---------|
 | `GET` | `/devices` | `iot:SearchIndex` (`thingTypeName:Krab`) — connectivity + shadow `reported` |
 | `GET` | `/devices/{thingName}` | `iot:DescribeThing` + `iot:GetThingShadow` + SearchIndex connectivity |
-| `POST` | `/devices/{thingName}/ssh-tunnel` | `iotsecuretunneling:OpenTunnel` |
-| `DELETE` | `/devices/{thingName}/ssh-tunnel/{tunnelId}` | `iotsecuretunneling:CloseTunnel` |
+| `POST` | `/devices/{thingName}/ssh-tunnel` | `iot:OpenTunnel` |
+| `DELETE` | `/devices/{thingName}/ssh-tunnel/{tunnelId}` | `iot:CloseTunnel` |
 | `GET` | `/teleop/ice-servers` | STUN + short-lived coturn TURN credentials (`iceServers`) |
 | `WS` | `/devices/{thingName}/teleop/signaling` | MQTT bridge to `teleop/{thing}/signaling/in` and `.../out` |
 
