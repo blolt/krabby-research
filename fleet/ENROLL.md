@@ -83,7 +83,8 @@ shim. Details: [`krabby/README.md`](../krabby/README.md).
 
 ## Next
 
-SSH from one source: [`SSH-TUNNEL.md`](SSH-TUNNEL.md).
+SSH from one source: [`SSH-TUNNEL.md`](SSH-TUNNEL.md). Console / SearchIndex:
+[`README.md`](README.md).
 
 ## Troubleshooting
 

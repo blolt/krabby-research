@@ -1,0 +1,28 @@
+# Fleet
+
+AWS IoT control plane, device enroll, Secure Tunneling SSH, fleet service,
+portal, and CLI.
+
+| Doc | Purpose |
+|-----|---------|
+| [`ENROLL.md`](ENROLL.md) | Enroll one Orin |
+| [`SSH-TUNNEL.md`](SSH-TUNNEL.md) | One SSH source → one Orin |
+| [`SETUP-FLEET.md`](SETUP-FLEET.md) | Deploy sequence, MQTT, telemetry, ops |
+| [`infra/`](infra/README.md) | CDK stacks |
+| [`cli/`](cli/README.md) | `krabby-fleet` |
+| [`portal/`](portal/README.md) | Operator UI |
+| [`service/`](service/README.md) | Fleet REST API |
+
+## See enrolled Orins (AWS Console)
+
+Same region as the control plane. Enrolled robots are IoT things of type
+**`Krab`** (there is no separate “Orins” page).
+
+- **IoT Core → Manage → All devices → Things** — open a thing for certs,
+  shadow, connectivity.
+- **IoT Core → Manage → Fleet indexing** (or Things search) — query
+  `thingTypeName:Krab` or `thingName:<thing-name>` for connectivity /
+  last seen.
+
+CLI: `aws iot search-index --query-string 'thingTypeName:Krab'`. Portal /
+`krabby-fleet list` once the fleet service is up.

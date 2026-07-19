@@ -4,6 +4,7 @@ Operator guide for the Krabby fleet: AWS IoT control plane, device
 onboarding, Secure Tunneling SSH, telemetry, and the fleet service stack.
 
 Infra deploy scripts: [`infra/`](infra/README.md). Device CLI: [`krabby/README.md`](../krabby/README.md).
+Index: [`README.md`](README.md).
 
 ## Deploy sequence (fresh account)
 
