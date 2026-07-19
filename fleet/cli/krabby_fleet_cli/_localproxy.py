@@ -25,7 +25,17 @@ def spawn_source_proxy(source_access_token: str, region: str, local_port: int) -
         )
         sys.exit(1)
     return subprocess.Popen(
-        [_LOCALPROXY_BIN, "-s", str(local_port), "-t", source_access_token, "-r", region]
+        [
+            _LOCALPROXY_BIN,
+            "-s",
+            str(local_port),
+            "-t",
+            source_access_token,
+            "-r",
+            region,
+            "-c",
+            "/etc/ssl/certs",
+        ]
     )
 
 

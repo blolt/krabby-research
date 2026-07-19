@@ -44,35 +44,43 @@ krabby --help
 ## Fleet onboarding (`enroll` / `agent`)
 
 `krabby enroll` and `krabby agent` are the device-side half of Krabby fleet
-management (control plane: AWS IoT Core; see `fleet/infra/`). `enroll` is run
-**once per device, by an operator**; `agent` then runs forever as a systemd
-service (`krabby-agent.service`, separate from `krabby-locomotion.service`).
+management (control plane: AWS IoT Core; see `fleet/infra/`). Step-by-step
+enroll: [`fleet/ENROLL.md`](../fleet/ENROLL.md). One-source SSH:
+[`fleet/SSH-TUNNEL.md`](../fleet/SSH-TUNNEL.md).
+
+`enroll` is run **once per device, by an operator**; `agent` then runs forever
+as a systemd service (`krabby-agent.service`, separate from
+`krabby-locomotion.service`).
 
 ```bash
-sudo krabby enroll
+# Prefer: pip install ./krabby from a clone (includes enroll/agent + boto3)
+export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=<region>  # krabby-enroll keys
+sudo -E env PATH="$PATH" krabby enroll --thing-name <thing-name>
 ```
 
 Creates/finds the IoT thing — name defaults to the wired NIC's MAC address
 (no hostname fallback: Orin hostnames aren't unique across a fleet), or
-override it with `--thing-name`. Then generates a keypair + CSR **on the
-device** (private key never leaves it),
-gets it signed and attaches `KrabDevicePolicy`, writes cert/key/root CA/ATS
-endpoint to `/etc/krabby/iot/` (root-owned, key `0600`), installs
-`aws-iot-securetunneling-localproxy`, and enables `krabby-agent.service` —
+override with `--thing-name`. Then generates a keypair + CSR **on the
+device** (private key never leaves it), gets it signed and attaches
+`KrabDevicePolicy`, writes cert/key/root CA/ATS endpoint to `/etc/krabby/iot/`
+(root-owned, key `0600`), tries apt-install of
+`aws-iot-securetunneling-localproxy` (if apt has no package, see
+[`ENROLL.md`](../fleet/ENROLL.md)), and enables `krabby-agent.service` —
 verifying a real MQTT connect before declaring success. AWS credentials are
 used only during `enroll`, never persisted; `agent` only ever does MQTT.
 
 ```bash
-sudo systemctl start krabby-agent      # enroll already enabled it for boot
-journalctl -u krabby-agent -f          # service logs
+sudo systemctl start krabby-agent
+journalctl -u krabby-agent -f
 ```
 
 Over its one MQTT connection, `krabby agent` publishes the output of
 `krabby get telemetry` to the Classic Shadow once a minute, spawns/reaps
 the Secure Tunneling destination `localproxy` against `localhost:22` on
-`.../tunnels/notify`, and bridges `teleop/{thing}/signaling/in|out` to a
-localhost WebSocket at `ws://127.0.0.1:9000/ws/robot` (same JSON shape as the
-existing teleop stack). Point the existing WebRTC edge agent at the shim with
+`.../tunnels/notify` (with `-c /etc/ssl/certs`), and bridges
+`teleop/{thing}/signaling/in|out` to a localhost WebSocket at
+`ws://127.0.0.1:9000/ws/robot` (same JSON shape as the existing teleop stack).
+Point the existing WebRTC edge agent at the shim with
 `--teleop-ip 127.0.0.1` (fleet path); LAN `--teleop-ip <portal-host>` still
 works when the agent shim is not the target.
 The SDK reconnects with backoff on drops, and `Restart=always` brings the

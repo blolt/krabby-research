@@ -1,8 +1,9 @@
 # `ControlPlaneStack`
 
 Shared IoT resources every enrolled robot uses: thing type, per-thing
-device policy, Fleet Indexing, lifecycle events, and the S3/IAM/RoleAlias
-path for agent-reported camera frames. Defined in `control_plane_stack.py`.
+device policy, Fleet Indexing, lifecycle events, the S3/IAM/RoleAlias
+path for agent-reported camera frames, and the `krabby-enroll` IAM user
+for Orin enroll. Defined in `control_plane_stack.py`.
 
 ## Deploy
 
@@ -12,8 +13,9 @@ source .venv/bin/activate
 ./scripts/deploy-control-plane.sh
 ```
 
-See [README.md](README.md) for the shared deploy-script behavior
-(credential checks, identity confirmation prompt).
+See [README.md](README.md) for credentials, bootstrap (if needed), and the
+`krabby-enroll` access-key one-liner. Enroll: [ENROLL.md](../ENROLL.md).
+One-source SSH: [SSH-TUNNEL.md](../SSH-TUNNEL.md).
 
 ## Resources
 
@@ -28,8 +30,9 @@ See [README.md](README.md) for the shared deploy-script behavior
 | `KrabReportedImages` | `AWS::S3::Bucket` | Destination for agent-reported camera frames (`reported_image` is an S3 reference, not inline shadow bytes). 30-day expiration lifecycle rule; `RemovalPolicy.RETAIN`. |
 | `KrabImageUploadRole` | `AWS::IAM::Role` | Trusted by `credentials.iot.amazonaws.com`; grants `s3:PutObject` on `KrabReportedImages`. |
 | `KrabImageRoleAlias` | `AWS::IoT::RoleAlias` | Lets a device swap its cert for temporary credentials scoped to `KrabImageUploadRole`, via `AssumeRoleWithCertificate`. |
+| `KrabEnrollUser` (`krabby-enroll`) | `AWS::IAM::User` | Least-privilege IAM user for `krabby enroll` on the Orin (GetPolicy / DescribeThing / CreateThing / DescribeEndpoint / CreateCertificateFromCsr / AttachPolicy / AttachThingPrincipal). No access key in CDK -- create the key once out-of-band after deploy. |
 | `IotAtsEndpoint`, `IotCredentialProviderEndpoint`, `KrabReportedImagesBucketName` (outputs) | `CfnOutput`, exported | For `krabby enroll`/`agent` and `FleetServiceStack` to import. |
-| `KrabThingTypeName`, `KrabDevicePolicyName`, `KrabImageRoleAliasName` (outputs) | `CfnOutput`, not exported | Console visibility only -- the actual values are fixed constants enroll/agent import directly in code. |
+| `KrabThingTypeName`, `KrabDevicePolicyName`, `KrabImageRoleAliasName`, `KrabEnrollUserName`, `KrabEnrollUserArn` (outputs) | `CfnOutput`, not exported | Console visibility only -- enroll user name is the fixed constant `krabby-enroll`; thing type / policy / role alias are fixed constants enroll/agent import directly in code. |
 
 ## Bench E2E
 
@@ -80,6 +83,11 @@ source .venv/bin/activate
   means destroy doesn't fail here, but the bucket and every uploaded image
   are left behind, orphaned from the stack. Delete manually if you want a
   full cleanup: empty the bucket, then `aws s3 rb s3://<bucket-name>`.
+- **`krabby-enroll` IAM user still has access keys.** CloudFormation cannot
+  delete an IAM user while any access key exists. List and delete keys
+  first: `aws iam list-access-keys --user-name krabby-enroll`, then
+  `aws iam delete-access-key --user-name krabby-enroll --access-key-id <id>`
+  for each key.
 
 If `cdk destroy` fails partway through, resolve the blocker and re-run --
 CloudFormation resumes the rollback from where it stopped.

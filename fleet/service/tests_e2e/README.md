@@ -1,7 +1,7 @@
 # Fleet service live E2E (SSH + teleop)
 
-Tests against a **deployed** fleet host and Bruce's enrolled bench Orin
-(`bench-krabby-ci`). Skipped unless the env below is set — unit `pytest tests/`
+Tests against a **deployed** fleet host and an enrolled bench Orin
+(default thing name `bench-krabby-ci`). Skipped unless the env below is set — unit `pytest tests/`
 without a live environment stays green.
 
 ## Env

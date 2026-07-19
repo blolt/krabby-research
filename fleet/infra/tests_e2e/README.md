@@ -1,6 +1,6 @@
 # Bench control-plane E2E
 
-Live integration tests against Bruce's enrolled bench Orin and a real
+Live integration tests against an enrolled bench Orin and a real
 dev-account IoT Core (`ControlPlaneStack`). Skipped unless explicitly
 enabled — local `pytest` without AWS/bench stays green.
 

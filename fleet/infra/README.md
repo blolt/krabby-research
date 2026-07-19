@@ -22,12 +22,17 @@ Creates `.venv/` (Python CDK deps) and downloads a project-local Node +
 
 The deploy/destroy scripts below check that you're already authenticated
 (`aws sts get-caller-identity`) but never create credentials -- set these up
-yourself first:
+yourself first.
+
+Use a short-lived access key **exported in this shell only** so closing the
+terminal drops the creds (do not use `aws login` / `aws configure` here;
+those cache on disk and survive a new shell):
 
 1. IAM Console -> Users -> your user -> Security credentials -> Create
    access key.
 2. Export it for this shell session only:
    `export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=...`
+   Optional: `export AWS_PAGER=""` so CLI tables do not open `less`.
 
 Nothing was written to disk, so removing it after deploying is just
 closing the terminal.
@@ -45,11 +50,24 @@ Destroy scripts additionally don't pass `--force` to `cdk destroy` itself,
 so CDK prompts a *second* time for its own confirmation. Pass `--force`
 yourself to skip that second prompt for non-interactive/CI use.
 
+If deploy fails with `SSM parameter /cdk-bootstrap/.../version not found`,
+bootstrap once (project-local `cdk` is under `.tools/`, not on the system
+PATH):
+
+```bash
+export PATH="$PWD/.tools/node/bin:$PWD/.tools/npm-global/node_modules/.bin:$PATH"
+cdk bootstrap aws://<account-id>/<region>
+```
+
+`ControlPlaneStack` creates IAM user `krabby-enroll` but not its access key —
+create one once after deploy: `aws iam create-access-key --user-name krabby-enroll`.
+
 ## Stacks
 
 Each stack has its own doc with its resource table and destroy blockers.
 
-Operator setup (onboarding, telemetry, troubleshooting): [SETUP-FLEET.md](../SETUP-FLEET.md).
+Operator setup: [SETUP-FLEET.md](../SETUP-FLEET.md). Enroll:
+[ENROLL.md](../ENROLL.md). One-source SSH: [SSH-TUNNEL.md](../SSH-TUNNEL.md).
 
 | Stack | Docs | Deploy | Destroy |
 |---|---|---|---|

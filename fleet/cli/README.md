@@ -39,7 +39,7 @@ short telemetry summary from the latest shadow `reported` document
 ## `krabby-fleet teleop <robot>`
 
 ```
-krabby-fleet teleop bench-krabby-ci
+krabby-fleet teleop <thing-name>
 ```
 
 Opens the fleet portal teleop view for that thing
@@ -50,8 +50,8 @@ the fleet signaling WebSocket + ICE endpoint for that robot.
 ## `krabby-fleet ssh <robot>`
 
 ```
-krabby-fleet ssh bench-krabby-ci
-krabby-fleet ssh bench-krabby-ci --user someoneelse
+krabby-fleet ssh <thing-name>
+krabby-fleet ssh <thing-name> --user <ssh-user>
 ```
 
 1. Authenticates against Cognito via SRP (`USER_SRP_AUTH`, no browser) using

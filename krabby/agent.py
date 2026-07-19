@@ -74,11 +74,15 @@ def _on_tunnel_notify(topic: str, payload: bytes, **kwargs: Any) -> None:
         return
 
     print(f"[+]   tunnel notify received (services={services}) — spawning destination localproxy")
+    # -c /etc/ssl/certs: arm64/Jetson OpenSSL often fails TLS to the tunneling
+    # endpoint with "unregistered scheme (STORE routines)" without an explicit CA path
+    # (https://github.com/aws-samples/aws-iot-securetunneling-localproxy/issues/151).
     proc = subprocess.Popen([
         _LOCALPROXY_BIN,
         "-d", _SSH_DEST,
         "-t", token,
         "-r", region,
+        "-c", "/etc/ssl/certs",
     ])
     _tunnel_procs.append(proc)
 

@@ -1,14 +1,14 @@
 # Fleet setup and operations
 
 Operator guide for the Krabby fleet: AWS IoT control plane, device
-onboarding, telemetry, and the fleet service stack.
+onboarding, Secure Tunneling SSH, telemetry, and the fleet service stack.
 
-Infra deploy scripts live under [`infra/`](infra/README.md).
+Infra deploy scripts: [`infra/`](infra/README.md). Device CLI: [`krabby/README.md`](../krabby/README.md).
 
 ## Deploy sequence (fresh account)
 
 1. Deploy the control plane (IoT thing type, per-thing policy, Fleet Indexing,
-   reported-images bucket):
+   reported-images bucket, `krabby-enroll` IAM user):
 
    ```bash
    cd fleet/infra
@@ -17,6 +17,9 @@ Infra deploy scripts live under [`infra/`](infra/README.md).
    ./scripts/deploy-control-plane.sh
    ```
 
+   Then create an enroll access key once (CDK does not create keys):
+   `aws iam create-access-key --user-name krabby-enroll --output json`
+
 2. Deploy the fleet service stack (EC2, Cognito, tunnel API — see
    [`infra/fleet-service.md`](infra/fleet-service.md)):
 
@@ -24,21 +27,18 @@ Infra deploy scripts live under [`infra/`](infra/README.md).
    ./scripts/deploy-fleet-service.sh
    ```
 
-3. On each robot Orin, enroll the device (operator-run, needs sudo + AWS creds):
+3. On each robot Orin, enroll and start the agent
+   ([`ENROLL.md`](ENROLL.md)).
 
-   ```bash
-   sudo krabby enroll --thing-name <name>
-   sudo systemctl start krabby-agent
-   ```
+4. Verify shadow telemetry / portal / CLI as needed.
 
-4. Verify shadow telemetry:
+## Enroll and SSH
 
-   ```bash
-   krabby get telemetry
-   aws iot-data get-thing-shadow --thing-name <name> /dev/stdout | jq '.state.reported'
-   curl -H "Authorization: Bearer <token>" https://<fleet-host>/api/devices
-   curl -H "Authorization: Bearer <token>" https://<fleet-host>/api/devices/<name>
-   ```
+- Enroll one Orin: [`ENROLL.md`](ENROLL.md)
+- One SSH source → one Orin: [`SSH-TUNNEL.md`](SSH-TUNNEL.md)
+
+Later, with the fleet service up: `krabby-fleet ssh` / portal Open SSH
+([`cli/README.md`](cli/README.md)).
 
 ## MQTT topic scheme
 
@@ -65,10 +65,10 @@ shape is unchanged from the existing teleop stack.
 
 ## Bench control-plane E2E
 
-Automated control-plane checks against the permanently enrolled bench Orin
-(`bench-krabby-ci` by default): connectivity + shadow via Fleet Indexing /
-`GetThingShadow`, per-thing isolation with a scratch cert, and Secure
-Tunneling TCP through source `localproxy`. See
+Automated control-plane checks against a permanently enrolled bench Orin
+(default thing name is configurable; see the e2e README): connectivity +
+shadow via Fleet Indexing / `GetThingShadow`, per-thing isolation with a
+scratch cert, and Secure Tunneling TCP through source `localproxy`. See
 [`infra/tests_e2e/README.md`](infra/tests_e2e/README.md).
 
 ```bash
@@ -160,15 +160,14 @@ const pc = new RTCPeerConnection({
 
 ## Dual-robot teleop (public internet)
 
-Acceptance robots: **`bench-krabby-ci`** (Bruce's bench) and **Rabby v0.2**
-(garage). Both must work concurrently from an operator laptop on the public
-internet — no VPN, no per-robot signaling servers.
+Two enrolled Orins must work concurrently from an operator SSH source on the
+public internet — no VPN, no per-robot signaling servers.
 
 ### One-time per robot (Orin)
 
 ```bash
-# Enroll once (device cert + krabby-agent.service)
-sudo krabby enroll --thing-name <thingName> ...
+# Enroll once (device cert + krabby-agent.service) — see sections 3–6
+sudo -E env PATH="$PATH" krabby enroll --thing-name <thing-name>
 
 # Locomotion + WebRTC edge pointed at the local agent teleop shim
 # (agent already bridges MQTT ↔ ws://127.0.0.1:9000/ws/robot)
@@ -178,13 +177,13 @@ python -m hal.server.jetson.main --control-source portal --teleop-ip 127.0.0.1
 No extra fleet registration steps: enroll attaches the thing; the portal
 lists it via Fleet Indexing.
 
-### Operator laptop
+### Operator SSH source
 
 ```bash
-# ~/.config/krabby-fleet/config.toml → service_url = https://{fleet-domain}/api
+# ~/.config/krabby-fleet/config.toml → service_url = https://<fleet-domain>/api
 krabby-fleet list
-krabby-fleet teleop bench-krabby-ci   # browser tab 1
-krabby-fleet teleop <rabby-thing>    # browser tab 2 (concurrent)
+krabby-fleet teleop <thing-name-a>   # browser tab 1
+krabby-fleet teleop <thing-name-b>   # browser tab 2 (concurrent)
 ```
 
 Or use **Open teleop** on the portal device list for each robot (new tab).
@@ -193,13 +192,13 @@ Signaling is per-thing MQTT (`teleop/{thing}/signaling/*`); media is WebRTC
 
 ### Playwright E2E (bench only)
 
-Automated teleop checks against `bench-krabby-ci` (manual until CI is wired):
+Automated teleop checks against a bench Orin (manual until CI is wired):
 see [`service/tests_e2e/README.md`](service/tests_e2e/README.md).
 
 ```bash
 export BENCH_E2E=1
-export FLEET_PORTAL_URL=https://{fleet-domain}
-export FLEET_SERVICE_URL=https://{fleet-domain}/api
+export FLEET_PORTAL_URL=https://<fleet-domain>
+export FLEET_SERVICE_URL=https://<fleet-domain>/api
 # + Cognito IDs + AWS creds
 cd fleet/service && pip install -e ".[e2e]" && playwright install chromium
 pytest tests_e2e/test_teleop_e2e.py -q
@@ -315,10 +314,11 @@ journalctl -u krabby-locomotion -f
 | Symptom | Check |
 |---------|-------|
 | Shadow `timestamp` stale | `systemctl status krabby-agent`; `journalctl -u krabby-agent` |
-| Empty `imu` / `pose` | `docker ps` shows `krabby` running; HAL publishing on `:6001` |
+| Empty `imu` / `pose` | `docker ps` shows locomotion running; HAL publishing on `:6001` |
 | `red_flags` includes `mcu_missing` | USB hub + `/dev/ttyACM0` present |
-| Enroll fails on policy | Deploy `ControlPlaneStack` first |
-| Tunnel SSH fails | `localproxy` installed (`krabby enroll`); agent subscribed to `tunnels/notify` |
+| Enroll fails on policy | Deploy `ControlPlaneStack` first; use `krabby-enroll` keys |
+| Apt missing `localproxy` / enroll issues | See [`ENROLL.md`](ENROLL.md) |
+| Tunnel / SSH issues | See [`SSH-TUNNEL.md`](SSH-TUNNEL.md) |
 
 ## Rollback
 

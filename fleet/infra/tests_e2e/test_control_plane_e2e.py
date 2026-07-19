@@ -255,7 +255,7 @@ def test_secure_tunnel_source_proxy_reaches_ssh():
             local_port = s.getsockname()[1]
 
         proc = subprocess.Popen(
-            [_LOCALPROXY_BIN, "-s", str(local_port), "-t", source_token, "-r", AWS_REGION],
+            [_LOCALPROXY_BIN, "-s", str(local_port), "-t", source_token, "-r", AWS_REGION, "-c", "/etc/ssl/certs"],
         )
         deadline = time.monotonic() + 30
         banner = b""

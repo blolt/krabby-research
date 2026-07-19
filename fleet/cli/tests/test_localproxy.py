@@ -29,7 +29,17 @@ def test_spawn_source_proxy_invokes_with_source_flag():
 
     assert result is fake_proc
     args, _ = popen.call_args
-    assert args[0] == ["localproxy", "-s", "54321", "-t", "src-token", "-r", "us-east-1"]
+    assert args[0] == [
+        "localproxy",
+        "-s",
+        "54321",
+        "-t",
+        "src-token",
+        "-r",
+        "us-east-1",
+        "-c",
+        "/etc/ssl/certs",
+    ]
 
 
 def test_wait_until_ready_succeeds_once_port_is_listening():

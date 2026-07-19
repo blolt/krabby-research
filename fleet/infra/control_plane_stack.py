@@ -8,6 +8,8 @@ Creates the shared IoT resources that every enrolled krab uses:
 - Lifecycle/presence event configurations (feeds connectivity indexing)
 - S3 bucket + IAM role + RoleAlias for agent-reported camera frames --
   ``reported_image`` is an S3 reference, not inline shadow bytes
+- Least-privilege IAM user ``krabby-enroll`` for Orin ``krabby enroll``
+  (no access key in CDK -- create the key once out-of-band)
 - CFN exports ``IotAtsEndpoint`` / ``IotCredentialProviderEndpoint`` /
   ``KrabReportedImagesBucketName`` for enroll / agent / FleetServiceStack
 
@@ -36,6 +38,10 @@ KRAB_DEVICE_POLICY = "KrabDevicePolicy"
 # Fixed name so the device policy below can reference it directly to build
 # the rolealias ARN, without querying CDK outputs first.
 KRAB_IMAGE_ROLE_ALIAS = "KrabImageRoleAlias"
+
+# Fixed name so operators create access keys against a stable IAM user
+# without querying CDK outputs first.
+KRAB_ENROLL_USER = "krabby-enroll"
 
 # THING/THING_GROUP/THING_TYPE/membership/hierarchy/CERTIFICATE events feed
 # Fleet Indexing's connectivity + registry fields; JOB/POLICY/CA_CERTIFICATE
@@ -299,6 +305,83 @@ class ControlPlaneStack(Stack):
             role_arn=image_upload_role.role_arn,
         )
 
+        # Least-privilege IAM user for `krabby enroll` on the Orin -- operator
+        # AWS access key is enroll-time only (shell export, never persisted).
+        # Access keys are NOT created here: keys must not live in CloudFormation.
+        enroll_user = iam.User(
+            self,
+            "KrabEnrollUser",
+            user_name=KRAB_ENROLL_USER,
+        )
+        enroll_user.add_to_policy(
+            iam.PolicyStatement(
+                sid="EnrollGetDevicePolicy",
+                actions=["iot:GetPolicy"],
+                resources=[
+                    f"arn:aws:iot:{self.region}:{self.account}:policy/{KRAB_DEVICE_POLICY}",
+                ],
+            )
+        )
+        enroll_user.add_to_policy(
+            iam.PolicyStatement(
+                sid="EnrollThing",
+                actions=["iot:DescribeThing", "iot:CreateThing"],
+                # Thing names are chosen at enroll time (MAC / --thing-name).
+                # Include thingtype/Krab so CreateThing with thingTypeName=Krab
+                # stays scoped to this fleet's type in this account/region.
+                resources=[
+                    f"arn:aws:iot:{self.region}:{self.account}:thing/*",
+                    f"arn:aws:iot:{self.region}:{self.account}:thingtype/{KRAB_THING_TYPE}",
+                ],
+            )
+        )
+        enroll_user.add_to_policy(
+            iam.PolicyStatement(
+                sid="EnrollDescribeEndpoint",
+                actions=["iot:DescribeEndpoint"],
+                # Account endpoint lookup -- no resource-level ARN exists.
+                resources=["*"],
+            )
+        )
+        enroll_user.add_to_policy(
+            iam.PolicyStatement(
+                sid="EnrollCreateCertificate",
+                actions=["iot:CreateCertificateFromCsr"],
+                # Creates a new cert -- no ARN exists yet at call time.
+                resources=["*"],
+            )
+        )
+        enroll_user.add_to_policy(
+            iam.PolicyStatement(
+                sid="EnrollAttachPolicy",
+                actions=["iot:AttachPolicy"],
+                # Target is a device cert; include KrabDevicePolicy so attach
+                # is limited to that policy name in this account/region.
+                resources=[
+                    f"arn:aws:iot:{self.region}:{self.account}:cert/*",
+                    f"arn:aws:iot:{self.region}:{self.account}:policy/{KRAB_DEVICE_POLICY}",
+                ],
+            )
+        )
+        enroll_user.add_to_policy(
+            iam.PolicyStatement(
+                sid="EnrollAttachThingPrincipal",
+                actions=["iot:AttachThingPrincipal"],
+                # Resource type for this action is cert; restrict the thing
+                # side with iot:ThingArn to this account's things.
+                resources=[
+                    f"arn:aws:iot:{self.region}:{self.account}:cert/*",
+                ],
+                conditions={
+                    "ArnLike": {
+                        "iot:ThingArn": (
+                            f"arn:aws:iot:{self.region}:{self.account}:thing/*"
+                        ),
+                    },
+                },
+            )
+        )
+
         # Exported so krabby enroll and FleetServiceStack can Fn::ImportValue
         # it instead of re-querying describeEndpoint themselves.
         CfnOutput(
@@ -341,4 +424,16 @@ class ControlPlaneStack(Stack):
             "KrabImageRoleAliasName",
             value=KRAB_IMAGE_ROLE_ALIAS,
             description="IoT role alias name for agent image uploads",
+        )
+        CfnOutput(
+            self,
+            "KrabEnrollUserName",
+            value=enroll_user.user_name,
+            description="IAM user for krabby enroll; create access key once out-of-band",
+        )
+        CfnOutput(
+            self,
+            "KrabEnrollUserArn",
+            value=enroll_user.user_arn,
+            description="IAM user ARN for krabby enroll",
         )
