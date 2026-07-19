@@ -36,6 +36,7 @@
 #include "telemetry_poll.h"
 #include "voltage_calibration.h"
 #include "telemetry_protocol.h"
+#include "power_fsm.h"
 #include "version.h"
 
 // --- Serial: left follower = Serial1 (TX1/RX1 on Krabby-Uno v0.1 shield), right follower = Serial2 ---
@@ -246,6 +247,14 @@ bool midValid = false;  // Midpoint (0x41) init succeeded
 Qwiic1in3OLED oled;
 bool oledValid = false;
 unsigned long lastOledDraw = 0;
+
+// --- M16 Task 4: battery-protective state machine (leader board only) ---
+// Owns the FSM state + debounce counters + the SOFT/HARD/OVER/SLEEP side-effects
+// (park actuators, emit PWR to the Orin, 60 s ack-wait / force-off, dead-battery
+// blink). Advanced once per telemetry tick from loop() via powerController.update();
+// battAppendTelemetry ships powerController.state as the BATT frame's power_state.
+// PowerController::update() is defined below (needs actuatorManager/oled/inaPack).
+PowerController powerController;
 // Latest body-frame accel (m/s^2) cached by imuAppendTelemetry for the OLED's
 // roll/pitch — avoids a second getSensorData() on the render tick.
 float oledAccel[3] = {0, 0, 0};
@@ -716,23 +725,18 @@ static void handleCalibrationCommand(const String& line)
 // battery voltages. The wire frame is atomic (the parser needs all six values
 // finite), so a down monitor omits the whole segment rather than fabricating a
 // balanced split. Keep in sync with joint_telemetry.py.
-static void battAppendTelemetry(Print& out)
+static void battAppendTelemetry(Print& out, float packV, bool packOk)
 {
-    // Pack is the essential monitor: no pack read -> no frame. Read + range-check;
-    // an implausible read marks the Pack down for a quiet per-device re-begin.
+    // Reuse the one corrected pack reading consumed by the FSM this tick.
     // Library units are mixed (verified in the ina228_read bench sketch):
     // readBusVoltage() V, readCurrent() mA, readPower() mW, readCharge() C.
-    const float packV = packValid
-        ? readCorrectedInaBusVoltage(
-            inaPack, Volts(inaCal.packVoltageOffset)).value()
-        : NAN;
-    if (!packValid || !batteryPackVoltageIsValid(packV))
+    if (!packOk || !batteryPackVoltageIsValid(packV))
     {
         packValid = false;
         inaRecoverPack();
-        return;                         // nothing trustworthy to ship
+        return;                          // nothing trustworthy to ship
     }
-    inaPackBadTicks = 0;                 // a good pack read clears its counter
+    inaPackBadTicks = 0;                  // a good pack read clears its counter
 
     // A complete BATT frame claims two measured battery voltages. If the
     // Midpoint monitor is missing or the pack/midpoint pair cannot describe two
@@ -759,7 +763,7 @@ static void battAppendTelemetry(Print& out)
         toWatts(MilliWatts(inaPack.readPower())), inaCal.packShuntCal);
     const Coulombs packQ = applyShuntTrim(
         Coulombs(inaPack.readCharge()), inaCal.packShuntCal);
-    uint8_t powerState = BATTERY_POWER_NORMAL;
+    uint8_t powerState = powerController.state;
 
     const BatteryTelemetryFrame frame = {
         Volts(packV),
@@ -838,7 +842,9 @@ static void oledRenderKrab(const OledKrabState &s) {
   int roll = s.roll < -99 ? -99 : (s.roll > 99 ? 99 : s.roll);
   int pitch = s.pitch < -99 ? -99 : (s.pitch > 99 ? 99 : s.pitch);
   char top[24];
-  snprintf(top, sizeof(top), "%s %+03d/%+03d %d.%dV", s.role, roll, pitch, dv / 10, dv % 10);
+  // Format string kept in flash (snprintf_P/PSTR) to save SRAM on the AVR; %s
+  // still reads s.role from RAM, which is where it lives.
+  snprintf_P(top, sizeof(top), PSTR("%s %+03d/%+03d %d.%dV"), s.role, roll, pitch, dv / 10, dv % 10);
   oled.text(0, 0, top);
   oled.line(0, 9, 127, 9);
 
@@ -960,8 +966,13 @@ static void oledRenderLive() {
     s.roll = 0; s.pitch = 0;
   }
 
+  // Reuse the FSM tick's cached Pack VBUS (<=50 ms stale, display-only) instead of a
+  // second I2C read per redraw — mirrors battAppendTelemetry's no-re-read rule (D17).
+  // The boot splash runs before the first tick, so fall back to a live read there.
   float packV = 0.0f;
-  if (packValid)
+  if (powerController.lastPackValid)
+    packV = powerController.lastPackV;
+  else if (packValid)
     packV = readCorrectedInaBusVoltage(
         inaPack, Volts(inaCal.packVoltageOffset)).value();
   s.packVoltage = packV;
@@ -1166,7 +1177,13 @@ void setup()
 
     if (isI2CClusterBoard())
     {
-        // AC-2g: dedicated disconnect-status LED, driven each tick from loop().
+        // M16 Task 4: protective-FSM GPIO (leader only). Orin rail starts powered
+        // (HIGH); STATUS LED off. The physical MOSFET/optocoupler on ORIN_PWR_PIN is
+        // deferred (board_pins.h) — the timer + toggle logic is live now.
+        pinMode(ORIN_PWR_PIN, OUTPUT);
+        digitalWrite(ORIN_PWR_PIN, HIGH);
+        // AC-2g (Task 2) also uses STATUS_LED_PIN as the disconnect indicator,
+        // driven each tick in loop(); one pinMode covers both users.
         pinMode(STATUS_LED_PIN, OUTPUT);
         digitalWrite(STATUS_LED_PIN, LOW);
 
@@ -1227,8 +1244,334 @@ static void parseVerToken(const String& reply, String& ver, String& branch, Stri
     commit.trim();
 }
 
+// ===========================================================================
+// M16 Task 4 — PowerController side-effects (the Arduino half of power_fsm.h).
+// The pure FSM (powerFsmStep) picks the state; everything below runs the effects
+// it implies — parking the joints, the PWR handshake with the Orin, the 60 s
+// ack-wait / force-off GPIO, and the SLEEP dead-battery blink/splash.
+// ===========================================================================
+
+// Pack-voltage read for the FSM. Reads ONLY the Pack INA228 (the low-power loop
+// must survive with the Midpoint monitor down), and reports the reading as valid
+// only when the Pack monitor is up AND the value is finite and in-window.
+static float powerReadPackV(bool* valid)
+{
+    if (!packValid) { *valid = false; return NAN; }
+    float v = inaPack.readBusVoltage() * inaCal.packVGain + inaCal.packVOffset;
+    *valid = isfinite(v) && v >= PACK_V_MIN && v <= PACK_V_MAX;
+    return v;
+}
+
+// Drive the Orin supply rail. HIGH = powered. The physical MOSFET/optocoupler on
+// ORIN_PWR_PIN is deferred (board_pins.h); the timer + toggle logic is live now.
+static void powerDriveOrin(bool on)
+{
+    digitalWrite(ORIN_PWR_PIN, on ? HIGH : LOW);
+}
+
+// D13: minimal serial drain for the low-power loop. The dedicated SLEEP/OVER_VOLT
+// path skips the full command parser (and follower forwarding), but MUST keep two
+// things live: the Orin's PWR SHUTDOWN_ACK (so a force-off window can shorten, D19)
+// and SYNC (so a restarted leader/peer can still discover this board). Everything
+// else on the wire is drained and dropped — no motion, no forwarding.
+static void powerLowPowerSerial()
+{
+    if (!mainSerial) return;
+    while (mainSerial->available())
+    {
+        String s = mainSerial->readStringUntil('\n');
+        if (s.startsWith(POWER_MSG_PREFIX) && s.indexOf("SHUTDOWN_ACK") >= 0)
+            powerController.onShutdownAck();
+        else if (s.indexOf(SYNC_TOKEN) >= 0)
+            mainSerial->println(SYNC_TOKEN);
+    }
+}
+
+// SLEEP-state OLED: a minimal dead-battery splash (empty battery outline + "LOW
+// BATTERY" + integer.tenths pack voltage). Deliberately NOT oledRenderKrab and
+// under no krab.py parity contract — it is a standalone low-power screen.
+static void oledDeadBatterySplash(float packV)
+{
+    if (!isfinite(packV)) packV = 0.0f;  // a wedged Pack read caches NaN; (int)NaN is UB on AVR
+    oled.erase();
+    oled.setFont(QW_FONT_5X7);
+    oled.text(6, 2, "LOW BATTERY");
+    oled.rectangle(34, 24, 52, 18);            // empty battery body
+    oled.rectangleFill(86, 29, 3, 8);          // + nub
+    int whole  = (int)packV;                   // no %f on AVR: format by hand
+    int tenths = (int)((packV - (float)whole) * 10.0f);  // truncate (avoids .10 rollover)
+    if (tenths < 0) tenths = 0;
+    char buf[10];
+    snprintf(buf, sizeof(buf), "%d.%dV", whole, tenths);
+    oled.text(44, 46, buf);
+    oled.display();
+}
+
+// OVER_VOLT-state OLED (D13): a standalone over-voltage fault splash. Over-voltage
+// is a charger/BMS fault, not a dead pack, so there is plenty of power to keep the
+// panel lit — this warns the operator the cutout latched. Not under krab.py parity.
+static void oledOverVoltSplash(float packV)
+{
+    if (!isfinite(packV)) packV = 0.0f;  // a wedged Pack read caches NaN; (int)NaN is UB on AVR
+    oled.erase();
+    oled.setFont(QW_FONT_5X7);
+    oled.text(6, 2, "OVER VOLTAGE");
+    oled.text(0, 20, "CHARGER/BMS FAULT");
+    int whole  = (int)packV;
+    int tenths = (int)((packV - (float)whole) * 10.0f);
+    if (tenths < 0) tenths = 0;
+    char buf[10];
+    snprintf(buf, sizeof(buf), "%d.%dV", whole, tenths);
+    oled.text(44, 40, buf);
+    oled.display();
+}
+
+// D14: de-energize the leader's own joints AND both follower boards. Followers drop
+// EN + PWM via the existing single-letter "H" (hold) command — the SAME de-energize
+// path the host 'H' key uses (see loop()'s 'H' handler, which forwards "H" and calls
+// holdAll). Investigated the leader->follower protocol: the leader commands followers
+// with single-letter lines over leftSerial/rightSerial (T/B/J/C/H); "H" is the
+// de-energize one (ActuatorManager::holdAll drops EN + PWM on every actuator). No new
+// protocol was needed. Called on every SOFT_CUT/HARD_CUT/OVER_VOLT entry and in
+// enterSleep so the whole robot drops power, not just the leader's six joints.
+static void holdAllAndFollowers()
+{
+    if (actuatorManager) actuatorManager->holdAll();
+    if (leftSerial)  leftSerial->println("H");
+    if (rightSerial) rightSerial->println("H");
+}
+
+void PowerController::enterSleep(unsigned long now)
+{
+    state          = PWR_SLEEP;
+    belowSoftTicks = 0;
+    belowHardTicks = 0;
+    overVoltTicks  = 0;
+    holdAllAndFollowers();                              // D14: leader + followers stay de-energized
+    lastRecoveryPollMs = now;                           // first recovery poll ~POWER_RECOVERY_POLL_MS out
+    lastBlinkMs  = now;
+    lastSplashMs = 0;                                   // force an immediate splash
+    statusLedOn  = true;
+    digitalWrite(STATUS_LED_PIN, HIGH);                 // LED on the moment we sleep
+    panelCleared = false;                               // re-arm the clear-once-below-HARD latch
+}
+
+// Low-power indicators (4f/4g), run every low-power loop iteration; the actual
+// Pack INA228 read is throttled separately (POWER_RECOVERY_POLL_MS), so packV here
+// is the cached last reading. OVER_VOLT shows its own fault splash; SLEEP shows the
+// dead-battery splash above the HARD_CUT floor and clears the panel ONCE below it.
+void PowerController::lowPowerServices(float packV, bool valid, unsigned long now)
+{
+    // STATUS-LED blink (~10 s), the one indicator that runs even under the HARD_CUT
+    // floor (4g: rely on the LED once the OLED goes dark).
+    if (now - lastBlinkMs >= POWER_LOW_BATT_BLINK_MS)
+    {
+        lastBlinkMs = now;
+        statusLedOn = !statusLedOn;
+        digitalWrite(STATUS_LED_PIN, statusLedOn ? HIGH : LOW);
+    }
+    // OLED splash on the same ~10 s cadence (4g), NOT the 250 ms krab-UI rate.
+    if (oledValid && now - lastSplashMs >= POWER_LOW_BATT_BLINK_MS)
+    {
+        lastSplashMs = now;
+        if (state == PWR_OVER_VOLT)
+        {
+            oledOverVoltSplash(valid ? packV : lastPackV);  // charger fault: keep it lit
+            panelCleared = false;
+        }
+        else if (valid && packV > PACK_HARD_CUT_V)
+        {
+            oledDeadBatterySplash(packV);
+            panelCleared = false;
+        }
+        else if (!panelCleared)
+        {
+            // 4g: at/below the HARD_CUT floor clear the panel ONCE, then leave the
+            // OLED alone — don't spend an already-critical pack redrawing a dark screen.
+            oled.erase();
+            oled.display();
+            panelCleared = true;
+        }
+    }
+}
+
+// Advance the FSM one tick and run the transition's side-effects + timers. Called
+// once per telemetry tick from loop(), right after lastTelemetry=millis() and
+// BEFORE the telemetry line is assembled (fix 3), so a PWR message lands on its
+// own line ahead of the telemetry line.
+// F5/D19: cut the Orin rail once the force-off window (opened on a SOFT_CUT or
+// HARD_CUT entry) elapses. The deadline is the full no-response window, shortened to
+// ORIN_ACKED_OFF_MS once the Orin has ACKed (it is already running `poweroff`). Runs
+// every tick — normal loop AND the low-power loop — so a window opened by a HARD_CUT
+// still fires after the controller has dropped to SLEEP.
+void PowerController::serviceOrinForceOff(unsigned long now)
+{
+    if (!orinCutArmed || !orinPowered) return;
+    unsigned long grace = shutdownAcked ? ORIN_ACKED_OFF_MS : ORIN_FORCE_OFF_MS;
+    if (now - softCutEnteredMs >= grace)
+    {
+        powerDriveOrin(false);
+        orinPowered  = false;
+        orinCutArmed = false;
+    }
+}
+
+// D13: FSM step run from the dedicated low-power loop. Advances the pure FSM and
+// runs ONLY the RESUMING edge (re-power the Orin, emit RESUMING). OVER_VOLT is
+// terminal so the step is a no-op there; SLEEP either holds or steps to RESUMING.
+void PowerController::lowPowerStep(float packV, bool valid)
+{
+    lastPackV     = packV;
+    lastPackValid = valid;
+    uint8_t prev  = state;
+    step(packV, valid);
+    if (state != prev && state == PWR_RESUMING)
+    {
+        // Pack recovered past RECOVERY: re-power the Orin, close the force-off window,
+        // tell the Orin, drop the sleep LED. The next NORMAL loop settles RESUMING.
+        powerDriveOrin(true); orinPowered = true;
+        orinCutArmed = false;
+        if (mainSerial) powerEmitResuming(*mainSerial);
+        shutdownAcked = false;      // rebooted Orin: no ack pending for a later cut window
+        statusLedOn = false;
+        digitalWrite(STATUS_LED_PIN, LOW);
+        panelCleared = false;
+        oledInvalidateKrabCache();  // the splash owned the panel — force a full krab redraw
+    }
+}
+
+void PowerController::update(float packV, bool valid)
+{
+    lastPackV     = packV;              // D17/D13: cache the tick's reading for the
+    lastPackValid = valid;              // low-power indicators
+    uint8_t prev = state;
+    step(packV, valid);                 // pure FSM advance (updates state + counters)
+    unsigned long now = millis();
+
+    // --- Edge-triggered entry actions (fire once, on the transition) ---
+    if (state != prev)
+    {
+        switch (state)
+        {
+            case PWR_SOFT_CUT:
+                // Graceful shutdown (4c): tell the Orin, park the leader + followers
+                // (D14), open the force-off window.
+                // TODO (F4): 4c step 2 asks to "lower the body to its belly, THEN
+                // de-energize". There is no belly-down posture primitive yet, so this
+                // parks with holdAll only (immediate de-energize, no lowering). Add a
+                // posture move here (or a follower-broadcast park pose) before the hold
+                // once the gait layer exposes one — the joints then settle gently
+                // instead of dropping under gravity.
+                if (mainSerial) powerEmitPoweringDown(*mainSerial);
+                holdAllAndFollowers();
+                shutdownAcked    = false;
+                softCutEnteredMs = now;
+                orinCutArmed     = true;
+                break;
+            case PWR_HARD_CUT:
+                // 4d: immediate motor EN drop, leader + followers (D14). F5: do NOT
+                // instant-yank the Orin rail — route the cut through the SAME force-off
+                // window so a HARD_CUT still gives the Orin its grace (shortened once it
+                // acks) to flush/poweroff. If we escalated from SOFT_CUT the window is
+                // already open — keep its (earlier) deadline rather than reset it.
+                holdAllAndFollowers();
+                // Fresh window: clear any stale ack from a PRIOR (recovered) cut cycle
+                // so a direct HARD_CUT gives the freshly-booted Orin the full no-response
+                // grace, not the ack-shortened one (shutdownAcked is only cleared on
+                // SOFT_CUT entry otherwise, so it survives SLEEP->RESUMING->NORMAL).
+                if (!orinCutArmed) { shutdownAcked = false; softCutEnteredMs = now; orinCutArmed = true; }
+                break;
+            case PWR_OVER_VOLT:
+                // One-way protective cutout (4e): a charger/BMS over-charge fault — the
+                // pack has ample power, so cut the Orin rail now (not through the window)
+                // and latch. Park leader + followers (D14); arm the low-power indicators
+                // (OVER_VOLT never routes through enterSleep) so loop()'s low-power branch
+                // shows the over-volt splash.
+                if (mainSerial) powerEmitOverVoltage(*mainSerial);
+                holdAllAndFollowers();
+                powerDriveOrin(false); orinPowered = false;
+                orinCutArmed = false;
+                lastRecoveryPollMs = now;
+                lastBlinkMs = now; lastSplashMs = 0;
+                statusLedOn = true; digitalWrite(STATUS_LED_PIN, HIGH);
+                panelCleared = false;
+                break;
+            case PWR_RESUMING:
+                // Pack recovered past RECOVERY: re-power the Orin, close the force-off
+                // window, tell it, clear the sleep blink so the next tick settles NORMAL.
+                powerDriveOrin(true); orinPowered = true;
+                orinCutArmed = false;
+                if (mainSerial) powerEmitResuming(*mainSerial);
+                shutdownAcked = false;      // rebooted Orin: no ack pending for a later window
+                statusLedOn = false;
+                digitalWrite(STATUS_LED_PIN, LOW);
+                oledInvalidateKrabCache();  // splash owned the panel — force a full krab redraw
+                break;
+            default:
+                break;
+        }
+    }
+
+    // Force-off window (F5/D19/4i): cut the rail at the (ack-shortened) deadline. Runs
+    // before the ongoing switch so the SOFT_CUT->SLEEP handoff below sees a cut rail.
+    serviceOrinForceOff(now);
+
+    // --- State-driven ongoing actions (timers / routing) ---
+    switch (state)
+    {
+        case PWR_SOFT_CUT:
+            // D15: the undebounced single-tick SOFT->HARD (->SLEEP) shortcut is gone —
+            // the FSM's debounced SOFT_CUT->HARD_CUT escalation (power_fsm.h) is the
+            // single source of truth. Here we only settle into the SLEEP low-power loop
+            // once the force-off window elapses (the rail was cut by serviceOrinForceOff
+            // above). Deadline shortened once the Orin acks (D19).
+            if (now - softCutEnteredMs >= (shutdownAcked ? ORIN_ACKED_OFF_MS : ORIN_FORCE_OFF_MS))
+                enterSleep(now);
+            break;
+        case PWR_HARD_CUT:
+            // Report one tick of HARD_CUT (host observability), then settle into the
+            // SLEEP low-power loop. The force-off window opened on entry keeps counting
+            // across the drop to SLEEP (serviceOrinForceOff runs there too).
+            if (prev == PWR_HARD_CUT) enterSleep(now);
+            break;
+        default:
+            break;
+    }
+}
+
 void loop()
 {
+    // D13: dedicated low-power loop. In SLEEP / OVER_VOLT the leader runs a MINIMAL
+    // path — a throttled Pack-INA228 recovery poll (~30 s), the FSM step, the Orin
+    // force-off window, and the LED/OLED indicators — and nothing else. It SKIPS the
+    // IMU poll, the BATT frame, the full telemetry line, and follower forwarding
+    // (§3/4f). SHUTDOWN_ACK + SYNC recognition stay live (powerLowPowerSerial). This
+    // is leader-only (followers never run the FSM, so never reach these states).
+    if (isI2CClusterBoard() &&
+        (powerController.state == PWR_SLEEP || powerController.state == PWR_OVER_VOLT))
+    {
+        unsigned long now = millis();
+        powerLowPowerSerial();                                   // keep ACK + SYNC live
+        if (now - powerController.lastRecoveryPollMs >= POWER_RECOVERY_POLL_MS)
+        {
+            powerController.lastRecoveryPollMs = now;
+            bool packOk = false;
+            float packV = powerReadPackV(&packOk);              // Pack INA228 ONLY (4f)
+            // 4f: if the Pack INA228 wedged (implausible read -> packOk false), re-begin it
+            // here, or SLEEP never sees a trusted voltage again and can't reach RESUMING even
+            // after the pack recovers. Throttled by the ~30 s recovery-poll cadence itself.
+            if (!packOk) inaRecoverPack();
+            powerController.lowPowerStep(packV, packOk);        // recovery decision (SLEEP only)
+        }
+        powerController.serviceOrinForceOff(now);               // HARD-opened window persists here
+        // A recovery step may have moved us to RESUMING; only run the low-power
+        // indicators while still in a low-power state.
+        if (powerController.state == PWR_SLEEP || powerController.state == PWR_OVER_VOLT)
+            powerController.lowPowerServices(powerController.lastPackV,
+                                             powerController.lastPackValid, now);
+        return;
+    }
+
     while (mainSerial->available())
     {
         char cmdType = mainSerial->peek();
@@ -1236,50 +1579,65 @@ void loop()
         {
             mainSerial->read();
             String payload = mainSerial->readStringUntil('\n');
-            size_t cmdCount = parseCommands(payload, cmdBuf, CMD_BUF_SIZE);
-            // Keeping it simple, we send all commands to all actuator managers, and let each actuator manager ignore any commands that aren't for them
-            actuatorManager->applyCommands(cmdBuf, cmdCount);
-            if (leftSerial)  { leftSerial->print("T ");  leftSerial->println(payload); }
-            if (rightSerial) { rightSerial->print("T "); rightSerial->println(payload); }
+            // Fix 5: once the protective FSM has parked the joints (SOFT_CUT/SLEEP/
+            // HARD_CUT/OVER_VOLT) motion is a no-op — still drain the line, but don't
+            // drive or forward it, so a low battery can't be re-energized.
+            if (!powerController.actuatorsParked())
+            {
+                size_t cmdCount = parseCommands(payload, cmdBuf, CMD_BUF_SIZE);
+                // Keeping it simple, we send all commands to all actuator managers, and let each actuator manager ignore any commands that aren't for them
+                actuatorManager->applyCommands(cmdBuf, cmdCount);
+                if (leftSerial)  { leftSerial->print("T ");  leftSerial->println(payload); }
+                if (rightSerial) { rightSerial->print("T "); rightSerial->println(payload); }
+            }
         }
         else if (cmdType == 'B')
         {
             mainSerial->read();
             while (mainSerial->available() && mainSerial->peek() == ' ')
                 mainSerial->read();
-            if(leftSerial) leftSerial->print("B ");
-            if(rightSerial) rightSerial->print("B ");
+            // Fix 5: gate motion when parked — still fully drain the line to '\n'
+            // (keep the serial parser in sync), but neither jog nor forward.
+            bool gated = powerController.actuatorsParked();
+            if (!gated && leftSerial) leftSerial->print("B ");
+            if (!gated && rightSerial) rightSerial->print("B ");
             while (true)
             {
                 String name = mainSerial->readStringUntil(' ');
                 int pwm = mainSerial->readStringUntil(' ').toInt();
 
-                actuatorManager->handleJog(name, pwm);
-                if (leftSerial)  { 
-                    leftSerial->print(name);
-                    leftSerial->print(" ");
-                    leftSerial->print(pwm);
-                    leftSerial->print(" ");
-                }
-                if (rightSerial) { 
-                    rightSerial->print(name);
-                    rightSerial->print(" ");
-                    rightSerial->print(pwm);
-                    rightSerial->print(" ");
+                if (!gated)
+                {
+                    actuatorManager->handleJog(name, pwm);
+                    if (leftSerial)  {
+                        leftSerial->print(name);
+                        leftSerial->print(" ");
+                        leftSerial->print(pwm);
+                        leftSerial->print(" ");
+                    }
+                    if (rightSerial) {
+                        rightSerial->print(name);
+                        rightSerial->print(" ");
+                        rightSerial->print(pwm);
+                        rightSerial->print(" ");
+                    }
                 }
                 if(mainSerial->peek() == '\n') { mainSerial->readStringUntil('\n'); break; }
             }
-            if (leftSerial)  { leftSerial->println(); }
-            if (rightSerial) { rightSerial->println(); }
+            if (!gated && leftSerial)  { leftSerial->println(); }
+            if (!gated && rightSerial) { rightSerial->println(); }
         }
         else if (cmdType == 'J')
         {
             mainSerial->read();
             String name = mainSerial->readStringUntil(' ');
             int pwm = mainSerial->readStringUntil('\n').toInt();
-            actuatorManager->handleJog(name, pwm);
-            if (leftSerial)  { leftSerial->print("J ");  leftSerial->print(name);  leftSerial->print(" ");  leftSerial->println(pwm); }
-            if (rightSerial) { rightSerial->print("J "); rightSerial->print(name); rightSerial->print(" "); rightSerial->println(pwm); }
+            if (!powerController.actuatorsParked())   // fix 5: gate motion when parked
+            {
+                actuatorManager->handleJog(name, pwm);
+                if (leftSerial)  { leftSerial->print("J ");  leftSerial->print(name);  leftSerial->print(" ");  leftSerial->println(pwm); }
+                if (rightSerial) { rightSerial->print("J "); rightSerial->print(name); rightSerial->print(" "); rightSerial->println(pwm); }
+            }
         }
         else if (cmdType == 'C')
         {
@@ -1340,8 +1698,17 @@ void loop()
         else
         {
             String s = mainSerial->readStringUntil('\n');
+            // Task 4: the Orin's PWR SHUTDOWN_ACK ("PWR 1 SHUTDOWN_ACK") lands here
+            // (no dedicated cmd char). Recognize it so the ack-wait knows poweroff is
+            // underway; the rail cut still waits the ORIN_FORCE_OFF_MS deadline. This
+            // stays live even when motor commands are gated in SOFT_CUT/SLEEP.
+            // Matched by prefix + substring only — intentionally schema-AGNOSTIC (the
+            // schema-token gate in power_messages.py is the Orin's inbound discipline,
+            // not the Mega's; no schema parse is added on the AVR by design).
+            if (s.startsWith(POWER_MSG_PREFIX) && s.indexOf("SHUTDOWN_ACK") >= 0)
+                powerController.onShutdownAck();
             // If leader (or another board) sent SYNC, reply so a restarted leader can discover us
-            if (s.indexOf(SYNC_TOKEN) >= 0)
+            else if (s.indexOf(SYNC_TOKEN) >= 0)
                 mainSerial->println(SYNC_TOKEN);
         }
     }
@@ -1357,7 +1724,10 @@ void loop()
         &rightPartialPos, roleName(ROLE_RIGHT), &followerRightFreshness,
         &followerRightGlyphs, &followerRightConnected);
 
-    actuatorManager->updateAll();
+    // Fix 5: skip the PID/calibration update entirely once parked, so a held joint
+    // can't be re-driven by a stale target while the pack recovers.
+    if (!powerController.actuatorsParked())
+        actuatorManager->updateAll();
 
     // Drain again in case bytes arrived during updateAll()
     forwardFullLines(
@@ -1374,6 +1744,21 @@ void loop()
     if (telemetryPollDue(telemetryNow, lastTelemetry))
     {
         lastTelemetry = telemetryNow;
+        // Fix 3: advance the protective FSM (and emit any PWR message) HERE — after
+        // the tick timestamp, BEFORE the telemetry line is assembled — so a PWR line
+        // lands on its own line ahead of the telemetry line, and battAppendTelemetry
+        // below ships the freshly-updated powerController.state. Leader-only: the FSM
+        // reads the Pack INA228, which followers never touch.
+        // D17: read the Pack VBUS ONCE per tick and feed BOTH the protective FSM and
+        // the BATT frame — no second readBusVoltage(). packOk carries the plausibility
+        // (finite + in-window) the FSM's valid-guard and the BATT frame both need.
+        bool  tickPackOk = false;
+        float tickPackV  = NAN;
+        if (isI2CClusterBoard())
+        {
+            tickPackV = powerReadPackV(&tickPackOk);
+            powerController.update(tickPackV, tickPackOk);
+        }
         mainSerial->print(roleName(currentRole));
         mainSerial->print(TELEMETRY_SEGMENT_DELIMITER);
         mainSerial->print(TELEMETRY_FIELD_DELIMITER);
@@ -1383,7 +1768,7 @@ void loop()
         if (isI2CClusterBoard())
         {
             imuAppendTelemetry(*mainSerial);
-            battAppendTelemetry(*mainSerial);
+            battAppendTelemetry(*mainSerial, tickPackV, tickPackOk);
         }
         mainSerial->println();
         mainSerial->flush();  // ensure full line is sent before next loop (avoids two "LEFT;" in one buffer on host)
@@ -1394,7 +1779,13 @@ void loop()
     // not evidence that a specific motor is disconnected, so only fresh remote
     // snapshots participate. STATUS_LED_PIN is shared with Task 4's low-battery
     // blink, whose low-power path returns before this line.
-    if (isI2CClusterBoard())
+    // AC-2g: light the dedicated status LED whenever any of the leader's own front
+    // actuators reads disconnected (isConnected() == posValid). Leader/solo board
+    // only, driven every tick. STATUS_LED_PIN is shared with the FSM's low-battery
+    // blink, which owns the LED in SLEEP/OVER_VOLT (that path returns above, before
+    // this line). The explicit `state != PWR_SLEEP` gate mirrors the OLED render
+    // below so the disconnect indicator never contends with the low-power blink.
+    if (isI2CClusterBoard() && powerController.state != PWR_SLEEP)
     {
         bool localConnected[6];
         for (int actuator = 0; actuator < 6; ++actuator)
@@ -1420,7 +1811,13 @@ void loop()
     // changed frame uses the OLED driver's dirty-page transfer at 400 kHz; an
     // unchanged frame is skipped inside oledRenderKrab (no I2C at all).
     // Leader/solo board only.
-    if (oledValid && millis() - lastOledDraw >= OLED_REDRAW_INTERVAL_MS)
+    // OLED krab status render, throttled off the gait/telemetry cadence. A changed
+    // frame costs a full erase()+redraw()+display() (~120 ms full-frame I2C); an
+    // unchanged frame is skipped inside oledRenderKrab (no I2C at all). Leader/solo
+    // board only. In SLEEP the PowerController owns the panel (dead-battery splash /
+    // dark below HARD_CUT), so the normal krab UI is suppressed there.
+    if (oledValid && powerController.state != PWR_SLEEP &&
+        millis() - lastOledDraw >= OLED_REDRAW_INTERVAL_MS)
     {
         lastOledDraw = millis();
         oledRenderLive();

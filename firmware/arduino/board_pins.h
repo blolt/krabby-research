@@ -68,17 +68,32 @@ inline const char* boardPinRevisionLabel()
 #endif
 }
 
-// --- M16 Task 2 (AC-2g): disconnect status LED (leader board only) ---
-// STATUS_LED_PIN drives a dedicated indicator LED that lights whenever any of the
-// leader's own actuators reads disconnected. Pin 30 is a free digital GPIO on
-// Rev 3 — deliberately NOT a PWM out (D2-D13), an EN line (D22-D27), the I2C bus
-// (D20/D21), a follower UART (D14-D19), a Hall input (D50-D52), or the Orin gate
-// (D38) — so the indicator never contends with an actuator PWM or a bus. (This is
-// why the default is a free pin rather than LED_BUILTIN / D13 = PIN_S5_PWML, which
-// is shared with the S5 actuator PWM.) Override with -DSTATUS_LED_PIN=N at build
-// time if the harness wires the LED elsewhere.
+// --- M16 status/power GPIO (leader board only) ---
+// Two named pins for the leader's hardware indicators/side-effects:
+//   STATUS_LED_PIN — a dedicated indicator LED. AC-2g (Task 2) lights it whenever
+//                    any of the leader's own actuators reads disconnected; the
+//                    protective FSM (Task 4) reuses it for the dead-battery blink
+//                    (POWER_LOW_BATT_BLINK_MS) in SLEEP/OVER_VOLT. The two never
+//                    fight: the low-power blink lives on the SLEEP path, which
+//                    returns before the normal-loop disconnect drive is reached.
+//   ORIN_PWR_PIN  — drives the high-side MOSFET / optocoupler that gates the Orin's
+//                    supply (spec §4i). HIGH = powered; the FSM drives it LOW on the
+//                    force-off timeout, HARD_CUT, SLEEP, and OVER_VOLT.
+// Pin 30 is a free digital GPIO on Rev 3 — deliberately NOT a PWM out (D2-D13), an
+// EN line (D22-D27), the I2C bus (D20/D21), a follower UART (D14-D19), a Hall input
+// (D50-D52), or the Orin gate (D38) — so the indicator never contends with an
+// actuator PWM or a bus. (This is why the default is a free pin rather than
+// LED_BUILTIN / D13 = PIN_S5_PWML, which is shared with the S5 actuator PWM.)
+// ORIN_PWR_PIN targets D38, also free in every KRABBY_PIN_REV (rev1/3 Hall use
+// 32-37 / 50-52). Both are placeholders until the MOSFET/optocoupler are wired; the
+// FSM's timer + toggle logic is live now. Override either with -DSTATUS_LED_PIN=N /
+// -DORIN_PWR_PIN=N at build time if the harness wires them elsewhere.
 #ifndef STATUS_LED_PIN
 #define STATUS_LED_PIN 30
+#endif
+
+#ifndef ORIN_PWR_PIN
+#define ORIN_PWR_PIN 38
 #endif
 
 constexpr bool boardPinIsReserved(int pin)
@@ -93,7 +108,7 @@ constexpr bool boardPinIsReserved(int pin)
         pin == PIN_S4_EN ||
         pin == PIN_S5_EN ||
         // Reserved for the Orin power-control gate shared with Task 4.
-        pin == 38 ||
+        pin == ORIN_PWR_PIN ||
         // A0-A11 are actuator pot/current inputs (digital aliases D54-D65).
         (pin >= 54 && pin <= 65) ||
 #if KRABBY_PIN_REV == 1
