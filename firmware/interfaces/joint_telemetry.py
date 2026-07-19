@@ -12,7 +12,7 @@ import enum
 import math
 import re
 from dataclasses import dataclass, field
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Union
 
 # Wire format: must match firmware (actuator_manager.h + arduino.ino).
 # Line starts with a role prefix "FRONT; ", "UNKWN; ", "LEFT ;", or "RIGHT; "
@@ -64,6 +64,11 @@ class ImuParseReason(enum.Enum):
     NON_FINITE_VALUE = "non-finite-value"    # AVR "nan"/"inf" on accel/gyro (wiring/link)
 
 
+# A dropped segment's reason comes from whichever sensor parser rejected it;
+# ParseStats records both (BatteryParseReason is defined with BatteryTelemetry).
+ParseReason = Union[ImuParseReason, "BatteryParseReason"]
+
+
 @dataclass
 class ParseStats:
     """Out-of-band aggregate of dropped segments.
@@ -76,10 +81,10 @@ class ParseStats:
     """
 
     error_count: int = 0
-    last_reason: Optional[ImuParseReason] = None
+    last_reason: Optional[ParseReason] = None
     last_segment: Optional[str] = None
 
-    def record(self, reason: ImuParseReason, segment: str) -> None:
+    def record(self, reason: ParseReason, segment: str) -> None:
         self.error_count += 1
         self.last_reason = reason
         self.last_segment = segment[:_MAX_STORED_SEGMENT]
@@ -319,14 +324,121 @@ class ImuTelemetry:
         )
 
 
+class PowerState(enum.IntEnum):
+    """The BATT frame's power_state byte. Task 3 firmware always emits NORMAL;
+    Task 4 drives the protective transitions. IntEnum because it rides the wire
+    as a small integer and consumers compare it numerically."""
+
+    NORMAL = 0
+    WARN = 1
+    SOFT_CUT = 2
+    HARD_CUT = 3
+    OVER_VOLT = 4
+    SLEEP = 5
+    RESUMING = 6
+
+
+class BatteryParseReason(enum.Enum):
+    """Why a *recognized* BATT segment was dropped (mirror of ImuParseReason)."""
+
+    BAD_TOKEN_COUNT = "bad-token-count"      # truncated or over-long segment
+    NON_NUMERIC_TOKEN = "non-numeric-token"  # garbled bytes, AVR "ovf", bad flag/state
+    NON_FINITE_VALUE = "non-finite-value"    # AVR "nan"/"inf" on a pack/battery value
+
+
+@dataclass
+class BatteryTelemetry:
+    """Leader-board INA228 pack + per-battery sample appended to the telemetry
+    line (Task 3; see arduino.ino). Pack values come from the Pack INA228 across
+    the external shunt; batt_a is the Midpoint INA228 VBUS and batt_b is derived
+    as pack_v - batt_a."""
+
+    pack_v: float          # V, total pack
+    pack_i: float          # A, signed (firmware sign convention: + discharge)
+    pack_w: float          # W
+    pack_charge: float     # C, accumulated (INA228 charge register)
+    batt_a_v: float        # V, lower battery (Midpoint INA228 VBUS)
+    batt_b_v: float        # V, upper battery (pack_v - batt_a_v)
+    divergence: bool       # |Va - Vb| > INA228_DIVERGENCE_THRESHOLD_V
+    power_state: int       # PowerState byte; Task 4 drives it (0 = NORMAL for now)
+
+    TAG = "BATT"
+    # Tag plus eight payload fields (pack V/I/P/charge, batt A/B V, divergence,
+    # power_state). Appending a field must land with a parser update; until then
+    # the over-long segment is dropped rather than misparsed.
+    TOKEN_COUNT = 9
+
+    @classmethod
+    def from_tokens(
+        cls, tokens, stats: Optional[ParseStats] = None
+    ) -> Optional["BatteryTelemetry"]:
+        """Parse one whitespace-tokenized BATT segment.
+
+        Mirrors ImuTelemetry.from_tokens: Optional-returning, None on any
+        malformed shape, drops recorded to `stats` when provided. A tag mismatch
+        is a dispatch miss and does not touch stats. divergence is exactly "0"/
+        "1" on the wire; power_state is a small non-negative byte.
+        """
+
+        def _drop(reason: BatteryParseReason) -> None:
+            if stats is not None:
+                stats.record(reason, " ".join(tokens))
+            return None
+
+        if not tokens or tokens[0] != cls.TAG:
+            return None
+        if len(tokens) != cls.TOKEN_COUNT:
+            return _drop(BatteryParseReason.BAD_TOKEN_COUNT)
+        try:
+            vals = [float(t) for t in tokens[1:7]]   # 6 floats: pack V/I/P/charge, A, B
+        except ValueError:
+            return _drop(BatteryParseReason.NON_NUMERIC_TOKEN)
+        # divergence flag is exactly "0"/"1"; anything else is corruption.
+        if tokens[7] not in ("0", "1"):
+            return _drop(BatteryParseReason.NON_NUMERIC_TOKEN)
+        # power_state is a byte enum on the wire; accept any 0..255, map later.
+        try:
+            power_state = int(tokens[8])
+        except ValueError:
+            return _drop(BatteryParseReason.NON_NUMERIC_TOKEN)
+        if not (0 <= power_state <= 255):
+            return _drop(BatteryParseReason.NON_NUMERIC_TOKEN)
+        # AVR prints non-finite floats as "nan"/"inf", which float() accepts; a
+        # wedged INA228 read would poison a pack/battery value, so reject those.
+        if not all(math.isfinite(v) for v in vals):
+            return _drop(BatteryParseReason.NON_FINITE_VALUE)
+        return cls(
+            pack_v=vals[0], pack_i=vals[1], pack_w=vals[2], pack_charge=vals[3],
+            batt_a_v=vals[4], batt_b_v=vals[5],
+            divergence=tokens[7] == "1", power_state=power_state,
+        )
+
+    @classmethod
+    def from_segment(
+        cls, segment: str, stats: Optional[ParseStats] = None
+    ) -> Optional["BatteryTelemetry"]:
+        """Parse one raw ';'-delimited segment as it appears on the wire."""
+        return cls.from_tokens(segment.split(), stats=stats)
+
+    def format_compact(self) -> str:
+        flag = " DIVERGE" if self.divergence else ""
+        state = PowerState(self.power_state).name if self.power_state in iter(PowerState) else str(self.power_state)
+        return (
+            f"pack:{self.pack_v:.2f}V {self.pack_i:+.2f}A {self.pack_w:.1f}W "
+            f"A:{self.batt_a_v:.2f}V B:{self.batt_b_v:.2f}V "
+            f"q:{self.pack_charge:.0f}C {state}{flag}"
+        )
+
+
 @dataclass
 class ParsedTelemetry:
-    """One parsed telemetry line. Future sensor segments (Task 3 BATT, ...) are
-    appended here as new Optional fields, matching the append-only wire format
-    without churning parse_telemetry_line's callers."""
+    """One parsed telemetry line. Sensor segments (IMU, Task 3 BATT, ...) are
+    Optional fields here, matching the append-only wire format without churning
+    parse_telemetry_line's callers."""
 
     joints: List[JointTelemetry] = field(default_factory=list)
     imu: Optional[ImuTelemetry] = None
+    battery: Optional[BatteryTelemetry] = None
 
 
 def parse_telemetry_line(
@@ -354,6 +466,11 @@ def parse_telemetry_line(
             imu = ImuTelemetry.from_tokens(tokens, stats=stats)
             if imu is not None:
                 parsed.imu = imu
+            continue
+        if tokens[0] == BatteryTelemetry.TAG:
+            batt = BatteryTelemetry.from_tokens(tokens, stats=stats)
+            if batt is not None:
+                parsed.battery = batt
             continue
         jt = JointTelemetry.from_tokens(tokens)
         if jt:

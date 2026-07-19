@@ -8,7 +8,9 @@ mechanically. State model:
   controllers: {"FRONT": bool, "MID": bool, "REAR": bool}  # present/detected
   actuators:   list of 6 glyph states [FL,FR,ML,MR,RL,RR], each of
                "extend"|"retract"|"hold"|"disc"
-  batt:        (frac_a, frac_b) placeholders until Task 3
+  batt:        (frac_a, frac_b) 0..1 bar levels; build them from per-battery
+               VOLTAGES via KrabState.from_battery_voltages() (the same clamp
+               the firmware OLED port runs on the BATT frame)
   role, roll, pitch, pack_v
 """
 from __future__ import annotations
@@ -33,6 +35,31 @@ class KrabState:
     roll: int = 0
     pitch: int = 0
     pack_v: float = 24.0
+
+    @classmethod
+    def from_battery_voltages(cls, *battery_voltages: float, **kwargs) -> "KrabState":
+        """Build a state whose battery bars come from per-battery resting VOLTAGES,
+        each mapped through battery_fraction() — the exact clamp the firmware OLED
+        port runs on the BATT frame's per-battery volts (batt_a_v, batt_b_v). Pass
+        one voltage per 4S battery; all other KrabState fields via kwargs. render()
+        still consumes `batt` as fractions, so this only moves the volts->fraction
+        step to the ONE place the firmware also does it."""
+        return cls(batt=tuple(battery_fraction(v) for v in battery_voltages), **kwargs)
+
+
+# --- battery state-of-charge gauge (voltage-window mapping) ---
+# LiFePO4's discharge curve is flat (~3.2 V/cell from ~90% down to ~20%), so the
+# bars are a coarse glance-gauge, not a coulomb-accurate SoC. Each 4S battery's
+# resting voltage maps linearly over its usable window; coulomb counting off the
+# INA228 charge register is the accurate upgrade (Task 4). This clamp ports to
+# firmware verbatim to drive the OLED bar fill from the BATT frame's per-battery V.
+BATT_EMPTY_V = 12.0                                    # ~3.0 V/cell resting -> 0% on the gauge
+BATT_FULL_V = 13.4                                     # rested-full 4S LiFePO4 ~3.35 V/cell (Appendix C) -> 100%
+
+
+def battery_fraction(voltage: float) -> float:
+    """One 4S LiFePO4 battery's resting voltage -> 0..1 bar level, clamped."""
+    return max(0.0, min(1.0, (voltage - BATT_EMPTY_V) / (BATT_FULL_V - BATT_EMPTY_V)))
 
 
 # --- geometry (128x64): rectangular body, split by an upside-down T (⊥) ---
@@ -120,8 +147,10 @@ def render(state: KrabState, bend=(0, 0, 0)) -> OLED:
     d.text(TEXT_Y, 0, top)
     d.line(0, 9, 127, 9)
 
-    # two horizontal battery cells laid END-TO-END in a row top-left (placeholder
-    # until Task 3). Each: closed body + right-side terminal nub + L->R charge fill.
+    # two horizontal battery cells laid END-TO-END in a row top-left. Each fraction
+    # is the BATT frame's per-battery voltage run through battery_fraction() (see
+    # KrabState.from_battery_voltages / §7). Each cell: closed body + right-side
+    # terminal nub + L->R charge fill.
     fill_h = BAT_H - 2                                   # interior height (between the walls)
     nub_dy = (BAT_H - BAT_NUB_H) // 2                    # center the nub on the right edge
     for j, frac in enumerate(state.batt):

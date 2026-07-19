@@ -1,0 +1,162 @@
+# M16 Task 3 — 24 V octopus power bus, as WireViz source (AC 3j, diagram half).
+#
+# WireViz is a text/YAML wiring-harness format (https://github.com/wireviz/WireViz).
+# It renders to SVG/PNG via Graphviz and auto-generates a BOM from this same file.
+# Chosen over Mermaid because it speaks the domain: connectors, pins, wire gauge,
+# IEC colours, Kelvin sense taps — the things that matter on a 24 V / 100 A bus.
+#
+#   Render:  pip install wireviz  &&  wireviz docs/M16-POWER-BUS-WIRING.yml
+#            -> writes M16-POWER-BUS-WIRING.svg / .png / .bom.tsv next to this file.
+#
+# STATUS: PROVISIONAL on fuse rating (Fletcher Q1 — Class-T AIC) and INA VIN source,
+# marked inline. Shunt is HIGH-side (Pack+ -> fuse -> shunt -> bus, VBUS on the load
+# side) per spec 3c; the high-side/Kelvin *safety* rationale is
+# hardware/Uno-v0.2/power-bus-safety.md §2. The harness *photos*
+# (AC 3j, other half) remain a physical deliverable.
+
+metadata:
+  title: Krabby M16 — 24 V octopus power bus (Task 3)
+  notes: >
+    2x 12 V/100 Ah LiFePO4 in series → 24 V pack. Pack INA228 (0x40) reads total
+    V/I/P/charge across the 200 A/75 mV shunt; Midpoint INA228 (0x41) reads the
+    lower battery's VBUS only (current channel grounded). battB = packV - battA is
+    derived on-board, so both VBUS trims must be calibrated before trusting divergence.
+
+options:
+  bgcolor: WH
+  fontname: sans-serif
+
+connectors:
+  PACK:
+    type: 2x 12 V / 100 Ah LiFePO4 (series)
+    subtype: 24 V nominal
+    pinlabels: [PACK+, MID, GND]
+    notes: MID = junction between lower and upper battery (Midpoint sense point)
+
+  FUSE:
+    type: Class-T fuse + holder
+    subtype: "rating PROVISIONAL — Fletcher Q1 (DC AIC)"
+    pinlabels: [IN, OUT]
+
+  SHUNT:
+    type: 200 A / 75 mV shunt
+    pinlabels: [A, B, S+, S-]
+    notes: A-B carries main current (high-side, downstream of the fuse); S+/S- are Kelvin sense to INA_PACK
+
+  BLOCK:
+    type: Maierke 150 A distribution block
+    pinlabels: ["V+", "GND"]
+
+  INA_PACK:
+    type: Adafruit INA228 @ 0x40 (Pack monitor)
+    pinlabels: [VBUS, IN+, IN-, GND, SDA, SCL, VIN]
+    notes: VBUS senses pack+ at the block; IN+/IN- Kelvin across the shunt
+
+  INA_MID:
+    type: Adafruit INA228 @ 0x41 (Midpoint monitor)
+    pinlabels: [VBUS, GND, SDA, SCL, VIN]
+    notes: current channel grounded — VBUS-only (lower battery)
+
+  FUSE_MID:
+    type: inline fuse holder + 0.5 A fuse
+    subtype: midpoint sense-lead limiter
+    pinlabels: [IN, OUT]
+    notes: >
+      Fuses the live 12–14 V midpoint sense lead. The MID tap sits UPSTREAM of the
+      150 A pack fuse, so a chafed/shorted sense wire is otherwise unprotected; a
+      low-amperage inline fuse (0.5–1 A) opens it long before the wire heats.
+
+  MEGA:
+    type: Arduino Mega 2560 (leader)
+    pinlabels: [SDA-20, SCL-21, 5V, GND]
+
+cables:
+  W_HI:
+    gauge: 2 AWG
+    colors: [RD]
+    notes: pack+ main (pack → fuse); 2 AWG so the 150 A fuse actually protects the lead
+  W_FUSED:
+    gauge: 2 AWG
+    colors: [RD]
+    notes: fused pack+ to shunt (high-side)
+  W_TOBUS:
+    gauge: 2 AWG
+    colors: [RD]
+    notes: shunt to distribution V+ (load side; INA_PACK VBUS taps here)
+  W_GND:
+    gauge: 2 AWG
+    colors: [BK]
+    notes: pack GND to distribution GND (direct, no shunt)
+  W_SENSE:
+    gauge: 20 AWG
+    colors: [WH, GY]
+    notes: Kelvin sense pair (S+/S-) to INA_PACK IN+/IN-
+  W_VBUSTAP:
+    gauge: 22 AWG
+    colors: [OG]
+    notes: high-impedance VBUS tap (pack+) to INA_PACK
+  W_MIDTAP:
+    gauge: 22 AWG
+    colors: [YE]
+    notes: high-impedance VBUS tap (midpoint) to the midpoint sense-lead fuse
+  W_MIDTAP2:
+    gauge: 22 AWG
+    colors: [YE]
+    notes: fused midpoint sense lead (FUSE_MID out) to INA_MID VBUS
+  QW1:
+    category: bundle
+    gauge: 26 AWG
+    colors: [BK, RD, BU, YE]
+    notes: Qwiic/STEMMA-QT (GND, V, SDA, SCL) — Mega to Pack. VIN alt = Mega 5V.
+  QW2:
+    category: bundle
+    gauge: 26 AWG
+    colors: [BK, RD, BU, YE]
+    notes: Qwiic/STEMMA-QT daisy chain — Pack to Midpoint
+
+connections:
+  # --- high-current path: pack+ -> fuse -> shunt -> bus (HIGH-side shunt, per spec 3c) ---
+  -
+    - PACK: [PACK+]
+    - W_HI: [1]
+    - FUSE: [IN]
+  -
+    - FUSE: [OUT]
+    - W_FUSED: [1]
+    - SHUNT: [A]
+  -
+    - SHUNT: [B]
+    - W_TOBUS: [1]
+    - BLOCK: [V+]
+  # --- return path: pack GND -> block GND (direct, no shunt) ---
+  -
+    - PACK: [GND]
+    - W_GND: [1]
+    - BLOCK: [GND]
+  # --- Pack monitor sense taps (VBUS on the load side of the shunt) ---
+  -
+    - SHUNT: [S+, S-]
+    - W_SENSE: [1-2]
+    - INA_PACK: [IN+, IN-]
+  -
+    - BLOCK: [V+]
+    - W_VBUSTAP: [1]
+    - INA_PACK: [VBUS]
+  # --- Midpoint monitor VBUS tap (fused: MID is upstream of the 150 A pack fuse) ---
+  -
+    - PACK: [MID]
+    - W_MIDTAP: [1]
+    - FUSE_MID: [IN]
+  -
+    - FUSE_MID: [OUT]
+    - W_MIDTAP2: [1]
+    - INA_MID: [VBUS]
+  # --- I2C daisy chain (Qwiic): Mega -> Pack -> Midpoint ---
+  -
+    - MEGA: [GND, 5V, SDA-20, SCL-21]
+    - QW1: [1-4]
+    - INA_PACK: [GND, VIN, SDA, SCL]
+  -
+    - INA_PACK: [GND, VIN, SDA, SCL]
+    - QW2: [1-4]
+    - INA_MID: [GND, VIN, SDA, SCL]

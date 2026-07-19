@@ -97,6 +97,21 @@ Each leg uses three segments: **hip**, **femur**, and **tibia**.
 | 8 | **2 AWG** lugs, 1/4″ | Battery series + distribution |
 | 1 | **150 A** inline circuit breaker / fuse holder | [Example](https://www.amazon.com/Nilight-Resettable-Overload-Protection-Amplifier/dp/B0CFY6J6DW) — may need to remove inner core for 2 AWG fit; place on **+** from 2nd battery to block, **within ~7″** of battery |
 
+**The octopus — the robot's main 24 V power bus (Closes AC 3a).** The parts above
+are *the octopus*: the high-current harness (built in Milestone 12) that ties the
+two series-connected 12 V LiFePO₄ batteries into one **24 V main power bus** and
+fans it out to all six H-bridge boards. It is the single place total pack current
+and voltage are measured, which is why both INA228 monitors tap in here. Topology
+is the WireViz source `docs/M16-POWER-BUS-WIRING.yml`; battery-safety rules are
+`hardware/Uno-v0.2/power-bus-safety.md §2`.
+
+**Bench-octopus fallback (M12 incomplete).** You don't need the whole robot: build
+a **bench octopus** — the battery (or two in series) on a table, with the shunt and
+INA228 sense taps wired **directly into the bus exactly as they will sit on the
+robot**. Measurements, calibration, and firmware are identical; only the chassis is
+missing. **Every rule in `power-bus-safety.md §2` applies in full — a bench pack is
+exactly as dangerous as the robot's** (single battery: see §2.1 — no midpoint node).
+
 ---
 
 ## 7. Controller electronics

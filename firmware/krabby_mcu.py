@@ -6,6 +6,7 @@ import threading
 import logging
 from typing import Dict, Optional
 from firmware.interfaces.joint_telemetry import (
+    BatteryTelemetry,
     ImuParseReason,
     ImuTelemetry,
     JointTelemetry,
@@ -98,6 +99,11 @@ class KrabbyMCUSDK:
         #   imu.valid is True    — fresh sample.
         self.imu: Optional[ImuTelemetry] = None
 
+        # Latest battery/power sample from the leader's telemetry line (Task 3).
+        # Same three-state contract as imu: None = no BATT segment seen (follower,
+        # or leader firmware without INA228s); otherwise the last parsed sample.
+        self.battery: Optional[BatteryTelemetry] = None
+
         # Malformed-segment accounting. The parse layer returns None on a bad
         # segment (lossy-stream idiom); the SDK owns the observability:
         # a monotonic counter + last reason (queryable, like last_error) and
@@ -107,6 +113,9 @@ class KrabbyMCUSDK:
         # One-shot gate for the valid->invalid IMU transition (Class B); re-armed
         # when a valid sample arrives so a later re-failure warns again.
         self._imu_stale_warned = False
+        # One-shot gate for the battery divergence transition; re-armed when the
+        # two battery voltages come back within threshold.
+        self._batt_diverge_warned = False
 
         self.last_feedback_ts = None
         self.thread = None
@@ -145,7 +154,9 @@ class KrabbyMCUSDK:
             self.parse_stats = ParseStats()
             self._last_parse_warn_ts = 0.0
             self._imu_stale_warned = False
+            self._batt_diverge_warned = False
             self.imu = None  # drop any sample cached from a prior connection
+            self.battery = None
             self.thread = threading.Thread(
                 target=self._reader_loop, daemon=True)
             self.thread.start()
@@ -253,6 +264,27 @@ class KrabbyMCUSDK:
             )
             self._imu_stale_warned = True
 
+    def _store_battery(self, battery: BatteryTelemetry):
+        """Store the latest battery sample; surface the divergence transition.
+
+        A tripped divergence flag means the two series batteries differ by more
+        than the configured threshold (a cell imbalance / a failing battery) —
+        actionable, and it persists every tick, so it is logged once per
+        transition (one-shot flag) and re-armed when the pack rebalances. The
+        sample is stored either way. Protective action on divergence / power
+        state is Task 4; here the host only records and surfaces it.
+        """
+        self.battery = battery
+        if not battery.divergence:
+            self._batt_diverge_warned = False  # re-arm for the next transition
+        elif not self._batt_diverge_warned:
+            logger.warning(
+                "Battery divergence: A=%.2fV B=%.2fV differ beyond threshold "
+                "(possible cell imbalance / failing battery).",
+                battery.batt_a_v, battery.batt_b_v,
+            )
+            self._batt_diverge_warned = True
+
     def _parse_joint_line(self, line: str):
         errors_before = self.parse_stats.error_count
         parsed = parse_telemetry_line(line, stats=self.parse_stats)
@@ -260,6 +292,8 @@ class KrabbyMCUSDK:
             self._warn_parse_errors_throttled()
         if parsed.imu is not None:
             self._store_imu(parsed.imu)
+        if parsed.battery is not None:
+            self._store_battery(parsed.battery)
         if not parsed.joints:
             return
         for jt in parsed.joints:
@@ -278,6 +312,8 @@ class KrabbyMCUSDK:
                     logger.debug("JOINTS %s %s", group_name, "; ".join(parts))
             if self.imu is not None:
                 logger.debug("IMU %s", self.imu.format_compact())
+            if self.battery is not None:
+                logger.debug("BATT %s", self.battery.format_compact())
             self._last_debug_log_ts = now
 
     def send_command_joints(self, cmds_by_joint: Dict[str, float]):

@@ -69,6 +69,25 @@ LIBRARIES = [
         # existing no-patch codepath in _apply_patch.
         patch=None,
     ),
+    # Task 3: Adafruit INA228 power monitor + its Adafruit BusIO I2C dependency.
+    # Both upstream-clean (patch=None); the Krabby-specific config lives in
+    # sensors_config.h and arduino.ino, not in the library.
+    LibSpec(
+        name="Adafruit_INA228",
+        url="https://github.com/adafruit/Adafruit_INA228/archive/refs/tags/3.0.0.tar.gz",
+        ref="3.0.0 (tag)",
+        sha256="7ac0bd305e7b039f9b8447d2ea65de6cb89e5961ab315bcc32605f5674a45999",
+        tar_root="Adafruit_INA228-3.0.0",
+        patch=None,
+    ),
+    LibSpec(
+        name="Adafruit_BusIO",
+        url="https://github.com/adafruit/Adafruit_BusIO/archive/refs/tags/1.17.4.tar.gz",
+        ref="1.17.4 (tag)",
+        sha256="59efa3acd5466e381c1b0313d5f0e824832db1bb24e4e328667e12b7d235d56d",
+        tar_root="Adafruit_BusIO-1.17.4",
+        patch=None,
+    ),
     # Task 2/3: SparkFun Qwiic OLED driver for the krab status render on the
     # 1.3" panel. Pinned to 1.0.9 — >= 1.0.14 adds a driver that includes C++
     # <map> and no longer compiles on AVR (upstream architectures=* overclaim).

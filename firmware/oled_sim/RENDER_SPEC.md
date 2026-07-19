@@ -27,7 +27,7 @@ sim has a bug — fix the sim, do not paper over it in firmware.
 |---------------|-----------------|-------------------------------------------------------------|-----------------------|
 | `controllers` | `{str: bool}`   | board present/detected: `FRONT`, `LEFT`, `RIGHT` (v0.2 by-side) | —                  |
 | `legs`        | `[(y,h,k)]×6`   | 6 legs `[FL,FR,ML,MR,RL,RR]`, each = (yaw, hip, knee) glyph state | `extend/retract/hold/disc` |
-| `batt`        | `(float,float)` | 2 cell fill fractions, 0..1 (Task-3 placeholder)            | clamped 0..1 at draw  |
+| `batt`        | `(float,float)` | 2 cell fill fractions, 0..1, from `battery_fraction(V)` (§7) | clamped 0..1 at draw  |
 | `role`        | `str`           | `roleLabel()`: `FRONT`/`LEFT`/`RIGHT`/`UNKWN`               | keep ≤5 glyphs        |
 | `roll,pitch`  | `int`           | degrees from IMU                                             | **clamped ±99** for display |
 | `pack_v`      | `float`         | pack voltage; firmware holds it as an **integer** (see §4)  | formatted from decivolts |
@@ -112,9 +112,40 @@ two implementations stay in lockstep.
 
 ## 6. Verification
 
-- `tests/unit/oled_sim/` — 38 tests: glyph shapes + inversion guard, by-side
-  topology, disjoint region tiling, chrome, and 4 golden full-frame snapshots.
+- `tests/unit/oled_sim/` — glyph shapes + inversion guard, by-side topology,
+  disjoint region tiling, chrome (incl. the battery voltage→fraction mapping),
+  and 4 golden full-frame snapshots.
 - Text fidelity confirmed on the physical panel ("KRABBY").
 - Run: `testenv/bin/python -m pytest tests/unit/oled_sim/ -q`
 - Live preview: `firmware/oled_sim/serve.py` → http://127.0.0.1:8080 (edit
   `krab.py`, browser auto-reloads).
+
+## 7. Battery bars: voltage → fill (Task 3 AC 3g)
+
+The `batt` fractions are produced by `battery_fraction(voltage)` from each 4S
+LiFePO4 battery's voltage in the `BATT` telemetry frame (`batt_a_v`, `batt_b_v`):
+
+- **On the render path now, not just in tests.** The sim builds a state's `batt`
+  via `KrabState.from_battery_voltages(a_v, b_v, …)`, which runs each per-battery
+  voltage through `battery_fraction()`; `viewer.py`'s scenes pass real volts (a
+  healthy ~13.4 V pack, a low ~12.1 V pack) through that factory — there are no
+  hand-picked fraction literals left. `render()` still **consumes** `batt` as
+  fractions (the goldens are unchanged), so the volts→fraction step lives in the
+  ONE place the firmware OLED port **also** does it. NB: the firmware OLED port
+  **exists in-tree** — `arduino.ino`'s `oledRenderLive()` reads the live pack /
+  per-battery volts and `oledBatteryFraction()` applies the identical
+  `(v-12.0)/(13.4-12.0)` clamp (`OLED_BATT_EMPTY_V`/`OLED_BATT_FULL_V`) before
+  driving each bar, via `oledRenderKrab()`. This is a real C++ port of this Python
+  path, not future work; the two must stay in **lockstep** — the volts→fraction
+  window here (`krab.py`'s `battery_fraction()` / `BATT_EMPTY_V` / `BATT_FULL_V`)
+  and the firmware's `OLED_BATT_*` constants are duplicated on purpose and pinned
+  by a parity test (`tests/unit/firmware/test_oled_port_parity.py`); change one and
+  the other must move with it.
+- Linear over a usable **resting** window: `BATT_EMPTY_V = 12.0` (~3.0 V/cell) →
+  0%, `BATT_FULL_V = 13.4` (~3.35 V/cell, rested-full) → 100%, clamped.
+- **Coarse by design.** LiFePO4's curve is flat (~3.2 V/cell from ~90% to ~20%),
+  so this is a glance-gauge, not a precise SoC, and it reads low under load (sag).
+  Coulomb counting off the INA228 charge register is the accurate upgrade (Task 4).
+- Ports to firmware verbatim: `frac = clamp((v - 12.0) / (13.4 - 12.0), 0, 1)`.
+- Per-battery imbalance is surfaced separately by the frame's `divergence` flag,
+  not by the bars.

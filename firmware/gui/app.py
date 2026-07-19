@@ -11,7 +11,7 @@ import time
 from typing import Dict, Optional
 
 from firmware.krabby_mcu import DEFAULT_BAUD, KrabbyMCUSDK, JOINT_GROUP_NAMES
-from firmware.interfaces.joint_telemetry import JointTelemetry
+from firmware.interfaces.joint_telemetry import JointTelemetry, PowerState
 
 JOG_PWM = 200               # jog magnitude sent while a Retract/Extend button is held
 TELEMETRY_REFRESH_MS = 100  # GUI poll period; decoupled from the firmware's telemetry tick
@@ -169,6 +169,56 @@ class ImuRow:
         self._state_lbl.configure(foreground=col)
 
 
+class BattRow:
+    """Global battery-pack readout in the joint-grid idiom (one pack per leader
+    board -> its own block, not a joint column). Battery has no per-frame valid
+    flag, so its "stale" is purely link-age driven."""
+
+    COLS = ["", "pack V", "A±", "W", "q C", "A V", "B V", "state", "diverge"]
+    WARN = {PowerState.WARN, PowerState.SOFT_CUT,
+            PowerState.HARD_CUT, PowerState.OVER_VOLT}
+
+    def __init__(self, parent: tk.Widget):
+        ttk.Label(parent, text="BATT", font=FONT_SENSOR_LABEL, width=6,
+                  anchor="w").grid(row=1, column=0, padx=4, pady=2, sticky="w")
+        for c, h in enumerate(self.COLS):
+            if not h:
+                continue
+            ttk.Label(parent, text=h, font=FONT_SENSOR_HEADER,
+                      anchor="e").grid(row=0, column=c, padx=4, sticky="e")
+        self._vars = [tk.StringVar(value="—") for _ in self.COLS]
+        for c in range(1, len(self.COLS)):
+            ttk.Label(parent, textvariable=self._vars[c], font=FONT_SENSOR_VALUE,
+                      width=8, anchor="e").grid(row=1, column=c, padx=4)
+        self._state_lbl = parent.grid_slaves(row=1, column=7)[0]
+        self._diverge_lbl = parent.grid_slaves(row=1, column=8)[0]
+
+    def update(self, batt, stale: bool):
+        if batt is None:
+            for v in self._vars[1:]:
+                v.set("—")
+            self._state_lbl.configure(foreground="")
+            self._diverge_lbl.configure(foreground="")
+            return
+        self._vars[1].set(f"{batt.pack_v:.2f}")
+        self._vars[2].set(f"{batt.pack_i:+.2f}")
+        self._vars[3].set(f"{batt.pack_w:.1f}")
+        self._vars[4].set(f"{batt.pack_charge:.0f}")
+        self._vars[5].set(f"{batt.batt_a_v:.2f}")
+        self._vars[6].set(f"{batt.batt_b_v:.2f}")
+        try:
+            ps = PowerState(batt.power_state)
+            name, warn = ps.name, ps in self.WARN
+        except ValueError:
+            name, warn = str(batt.power_state), False
+        self._vars[7].set("stale" if stale else name)
+        self._state_lbl.configure(
+            foreground=STATE_COLOR_STALE if (stale or warn) else STATE_COLOR_OK)
+        self._vars[8].set("DIVERGE" if batt.divergence else "ok")
+        self._diverge_lbl.configure(
+            foreground=STATE_COLOR_STALE if batt.divergence else "")
+
+
 class KrabbyTestGUI(tk.Tk):
     def __init__(self, port: Optional[str] = None, baud: int = DEFAULT_BAUD):
         super().__init__()
@@ -187,6 +237,8 @@ class KrabbyTestGUI(tk.Tk):
         # same object, whose age then grows past SENSOR_STALE_S. See latch_imu.
         self._imu_obj = None
         self._imu_ts: Optional[float] = None
+        self._batt_obj = None
+        self._batt_ts: Optional[float] = None
 
         self._build_ui()
         self._connect()
@@ -213,6 +265,9 @@ class KrabbyTestGUI(tk.Tk):
         imu_frame.pack(fill="x")
         self._imu_row = ImuRow(imu_frame)
 
+        batt_frame = ttk.Frame(self, padding=(8, 2))
+        batt_frame.pack(fill="x")
+        self._batt_row = BattRow(batt_frame)
 
         sep = ttk.Separator(self, orient="horizontal")
         sep.pack(fill="x", pady=4)
@@ -280,6 +335,12 @@ class KrabbyTestGUI(tk.Tk):
         )
         age = None if self._imu_ts is None else (time.time() - self._imu_ts)
         self._imu_row.update(self._imu_obj, age)
+
+        battery = self._mcu.battery
+        if battery is not None:
+            self._batt_obj, self._batt_ts = battery, time.time()
+        batt_stale = self._batt_ts is not None and (time.time() - self._batt_ts) > SENSOR_STALE_S
+        self._batt_row.update(self._batt_obj, batt_stale)
 
         if self._mcu.last_error:
             self._status_var.set(f"Error: {self._mcu.last_error}")

@@ -366,8 +366,10 @@ class TestParseTelemetryLine:
         # never counted. Only *recognized* tags with bad payloads count.
         stats = ParseStats()
 
+        # MAG is a genuinely-unrecognized tag (a hypothetical future
+        # magnetometer segment); BATT is now a known tag and would be counted.
         parsed = parse_telemetry_line(
-            f"FRONT; {JOINT_SEG};BATT 12.6 1.2", stats=stats
+            f"FRONT; {JOINT_SEG};MAG 12.6 1.2 0.3", stats=stats
         )
 
         assert [j.name for j in parsed.joints] == ["FLHY"]

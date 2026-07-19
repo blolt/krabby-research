@@ -19,9 +19,10 @@
 // 25-wire-byte sensor-data read (address byte + 24 data; 225 bit-times at
 // 9 bits/byte = 2.25 ms at 100 kHz, plus ISR overhead). The ceiling for any
 // AVR Wire transfer is a full 32-byte chunk (33 wire bytes ≈ 2.97 ms), so
-// 10 ms clears both and stays well under the 50 ms telemetry tick. Revisit
-// when the OLED (longer framebuffer writes) and INA228s join the bus in
-// Tasks 2-3.
+// 10 ms clears both and stays well under the 50 ms telemetry tick. Reviewed for
+// Tasks 2-3: the OLED chunks its framebuffer into <=32-byte Wire writes and an
+// INA228 register read is 3 wire bytes, so both sit under the same 32-byte
+// ceiling already bounded here; 10 ms stands.
 #define I2C_WIRE_TIMEOUT_US 10000UL
 
 // --- Telemetry cadence ---
@@ -101,3 +102,58 @@ const int8_t  IMU_AXIS_SIGN[3] = {1, 1, 1};
 // First free EEPROM byte after the IMU block; Task 3 (INA228 cal) and later
 // sensor-cluster blocks allocate from here, each with its own magic + schema.
 #define EEPROM_SENSOR_CAL_NEXT_ADDR (EEPROM_IMU_CAL_ADDR + EEPROM_IMU_CAL_SIZE)
+
+// --- INA228 power monitors (Task 3, leader board only) ---
+// Two Adafruit INA228 on the same Qwiic->Dupont bus as the BMI270 and OLED.
+//   Pack     (0x40): total 24 V pack V/I/P/charge across the external shunt.
+//   Midpoint (0x41): lower-battery VBUS only (current channel grounded);
+//                    upper battery = pack_v - midpoint_v.
+// I2C chain: BMI270 0x68 -> OLED 0x3D -> Pack 0x40 -> Midpoint 0x41.
+#define INA228_PACK_I2C_ADDR 0x40                    // default address
+#define INA228_MID_I2C_ADDR  0x41                    // A0 solder jumper strapped (AC 3d)
+
+// External shunt. Both onboard 15 mOhm shunts are trace-cut (AC 3e) so only the
+// external 200 A / 75 mV bar carries pack current: 75 mV / 200 A = 0.000375 ohm.
+// setShunt(SHUNT_OHMS, MAX_A) derives the INA228 current LSB from these two.
+#define INA228_SHUNT_OHMS      0.000375f
+#define INA228_SHUNT_MAX_AMPS  200.0f
+
+// Per-battery divergence alarm: |Va - Vb| above this (volts) sets the BATT
+// frame's divergence flag. 0.5 V across two nominally-equal 12 V batteries flags
+// a cell imbalance / a failing battery before Task 4's protective logic. (AC 3h.)
+#define INA228_DIVERGENCE_THRESHOLD_V 0.5f
+
+// Poll cadence: both INA228s are read on the existing telemetry tick
+// (TELEMETRY_INTERVAL_MS, 20 Hz) — no separate slow path in normal operation.
+// The low-power slow path is Task 4. (AC 3h; spec §4.)
+
+// EEPROM: INA228 calibration block, immediately after the IMU block, its own
+// magic + schema. Struct InaCalData (arduino.ino) = magic + schema + per-board
+// VBUS offset/gain trims (Pack, Midpoint) + a pack shunt-cal constant; a
+// static_assert there pins sizeof(InaCalData) == EEPROM_INA_CAL_SIZE. Layout is
+// finalized with the calibration procedure (AC 3i).
+#define EEPROM_INA_CAL_ADDR   EEPROM_SENSOR_CAL_NEXT_ADDR    // = 66
+#define EEPROM_INA_CAL_MAGIC  0xC8                           // distinct from IMU's 0xC7
+#define EEPROM_INA_CAL_SCHEMA 1
+// magic + schema + 5 floats: pack VBUS {offset,gain}, mid VBUS {offset,gain},
+// pack shunt-cal = 1 + 1 + 5*4 = 22 bytes: EEPROM bytes 66-87 inclusive.
+#define EEPROM_INA_CAL_SIZE   22
+// First free EEPROM byte after the INA228 block, for later sensor-cluster blocks.
+#define EEPROM_INA_CAL_NEXT_ADDR (EEPROM_INA_CAL_ADDR + EEPROM_INA_CAL_SIZE)
+
+// --- INA228 bench calibration (AC 3i; serial 'K' command) ---
+// VBUS calibration needs an EXTERNAL known reference (a DMM on the live pack),
+// so unlike the IMU gyro-bias capture it cannot self-run at boot — the operator
+// triggers it from the bench with the serial 'K' command (handleInaCalCommand in
+// arduino.ino). Full bench procedure: docs/M16-INA228-CALIBRATION.md.
+//
+// Plausibility bounds shared by the capture routines and the stored-block loader
+// inaCalPlausible(). A captured trim outside these is rejected and NOT persisted,
+// so a fat-fingered bench reference can never brick a board's telemetry — the
+// prior (or identity) calibration stays in force.
+#define INA228_CAL_PACK_REF_MAX_V   40.0f  // operator pack reference ceiling (V)
+#define INA228_CAL_MID_REF_MAX_V    20.0f  // operator midpoint reference ceiling (V)
+#define INA228_CAL_MAX_VOFFSET_V     2.0f  // max |VBUS offset| a capture may write (V)
+#define INA228_CAL_MIN_GAIN          0.5f  // VBUS/shunt gain-trim floor (unitless)
+#define INA228_CAL_MAX_GAIN          2.0f  // VBUS/shunt gain-trim ceiling (unitless)
+#define INA228_CAL_MIN_SHUNT_TRIM_A  0.1f  // min |current| (A) for a valid shunt-trim point

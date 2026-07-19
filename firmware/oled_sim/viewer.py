@@ -54,23 +54,31 @@ def build(scenes):
 
 def default_scenes():
     H = ("hold", "hold", "hold")                     # yaw, hip, knee
+    # Battery bars come from real per-battery resting VOLTAGES fed through
+    # KrabState.from_battery_voltages() -> battery_fraction() (the firmware clamp),
+    # not hand-picked fractions. Healthy 4S LiFePO4 rests ~13.4 V (~3.35 V/cell);
+    # a low pack sags toward ~12.1 V (~3.0 V/cell) — see krab.py BATT_EMPTY/FULL_V.
     return [
-        ("nominal", "⊥-body", "all boards present, all joints holding",
-         KrabState(legs=[H] * 6)),
+        ("nominal", "⊥-body", "all boards present, all joints holding; healthy batt (13.4/13.2V)",
+         KrabState.from_battery_voltages(13.4, 13.2, legs=[H] * 6)),
         ("walking", "⊥-body", "yaw hold, hips extend, knees retract",
-         KrabState(legs=[("hold", "extend", "retract")] * 6, roll=3, pitch=-1, pack_v=24.0)),
+         KrabState.from_battery_voltages(13.3, 13.1, legs=[("hold", "extend", "retract")] * 6,
+                                         roll=3, pitch=-1, pack_v=24.0)),
         ("left-down", "⊥-body", "LEFT board missing (top-left region dark)",
-         KrabState(controllers={"FRONT": True, "LEFT": False, "RIGHT": True},
+         KrabState.from_battery_voltages(13.0, 12.8,
+                   controllers={"FRONT": True, "LEFT": False, "RIGHT": True},
                    legs=[("retract", "extend", "retract"), H, H,
                          ("hold", "disc", "hold"), H, H],
                    role="FRONT", roll=5, pitch=-2, pack_v=24.1)),
-        ("degraded", "⊥-body", "only FRONT present; several joints disc; low batt",
-         KrabState(controllers={"FRONT": True, "LEFT": False, "RIGHT": False},
+        ("degraded", "⊥-body", "only FRONT present; several joints disc; low batt (12.1/12.0V)",
+         KrabState.from_battery_voltages(12.1, 12.0,
+                   controllers={"FRONT": True, "LEFT": False, "RIGHT": False},
                    legs=[H, ("hold", "hold", "disc"), ("disc", "disc", "disc"),
                          ("disc", "disc", "disc"), ("disc", "hold", "hold"), ("disc", "disc", "disc")],
-                   batt=(0.3, 0.15), roll=-12, pitch=8, pack_v=22.6)),
+                   roll=-12, pitch=8, pack_v=22.6)),
         ("unknown", "⊥-body", "role election failed: UNKWN",
-         KrabState(role="UNKWN", controllers={"FRONT": True, "LEFT": False, "RIGHT": False},
+         KrabState.from_battery_voltages(13.4, 13.4,
+                   role="UNKWN", controllers={"FRONT": True, "LEFT": False, "RIGHT": False},
                    legs=[H] * 6, pack_v=24.0)),
     ]
 

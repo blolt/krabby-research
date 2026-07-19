@@ -7,7 +7,8 @@ they survive small pixel shifts by asserting *where* lit pixels are and *that*
 fill width tracks the battery fraction, rather than exact coordinates.
 """
 from krab import (KrabState, render, BODY_X, BODY_Y, BODY_W, BODY_H,
-                  BAT_X, BAT_Y, BAT_W, BAT_H, BAT_PITCH)
+                  BAT_X, BAT_Y, BAT_W, BAT_H, BAT_PITCH,
+                  battery_fraction, BATT_EMPTY_V, BATT_FULL_V)
 from ssd1306 import OLED, WIDTH, HEIGHT
 
 
@@ -69,6 +70,54 @@ def test_battery_cells_in_top_left_corner():
     assert band_hi <= BODY_Y
     # the gauge stays left of the body's column span
     assert _lit(d, BODY_X, WIDTH, band_lo, band_hi) == 0
+
+
+# --- battery voltage -> bar-fraction mapping (Task 3 A4) ----------------------
+def test_battery_fraction_endpoints():
+    assert battery_fraction(BATT_EMPTY_V) == 0.0
+    assert battery_fraction(BATT_FULL_V) == 1.0
+
+
+def test_battery_fraction_clamps_out_of_window():
+    assert battery_fraction(BATT_EMPTY_V - 3.0) == 0.0   # over-discharged: floor
+    assert battery_fraction(BATT_FULL_V + 3.0) == 1.0    # charging surface: ceil
+
+
+def test_battery_fraction_monotonic_across_window():
+    vs = [BATT_EMPTY_V + i * (BATT_FULL_V - BATT_EMPTY_V) / 8 for i in range(9)]
+    fracs = [battery_fraction(v) for v in vs]
+    assert fracs == sorted(fracs) and fracs[0] == 0.0 and fracs[-1] == 1.0
+
+
+def test_battery_fraction_feeds_the_bars():
+    # A fuller battery voltage must light more of its cell than an emptier one,
+    # end-to-end through the render (the A4 wiring: BATT volts -> bar fill).
+    hi = render(KrabState(batt=(battery_fraction(13.4), battery_fraction(12.1))))
+    a = _lit(hi, BAT_X + 1, BAT_X + BAT_W - 1, BAT_Y + 1, BAT_Y + BAT_H - 1)
+    b = _lit(hi, BAT_X + BAT_PITCH + 1, BAT_X + BAT_PITCH + BAT_W - 1,
+             BAT_Y + 1, BAT_Y + BAT_H - 1)
+    assert a > b
+
+
+def test_from_battery_voltages_higher_lights_more_bar():
+    # The real render path: build the KrabState from per-battery VOLTAGES via the
+    # from_battery_voltages factory (which the firmware OLED port mirrors), and
+    # prove a higher voltage lights strictly MORE bar than a lower one end-to-end.
+    hi = render(KrabState.from_battery_voltages(13.4, 13.4))
+    lo = render(KrabState.from_battery_voltages(12.1, 12.1))
+    assert _cell_interior_lit(hi, 0) > _cell_interior_lit(lo, 0)
+    assert _cell_interior_lit(hi, 1) > _cell_interior_lit(lo, 1)
+
+
+def test_from_battery_voltages_maps_first_arg_to_left_cell():
+    # Asymmetric voltages pin arg->cell orientation: a symmetric pair (above)
+    # would still pass if the factory swapped its arg->cell mapping. The FIRST
+    # voltage must drive the LEFT (j=0) cell, the second the right.
+    s = KrabState.from_battery_voltages(13.4, 12.1)
+    assert s.batt == (battery_fraction(13.4), battery_fraction(12.1))
+    d = render(s)
+    # higher first voltage -> left cell lights strictly more than the right
+    assert _cell_interior_lit(d, 0) > _cell_interior_lit(d, 1)
 
 
 # --- top text strip ----------------------------------------------------------
