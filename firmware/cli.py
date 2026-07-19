@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from firmware.krabby_mcu import parse_ver_reply
+from firmware.krabby_mcu import DEFAULT_BAUD, parse_ver_reply
 from firmware.mcu_port import MEGA_USB_IDS
 from firmware.manifest import (
     BranchBuild,
@@ -55,19 +55,28 @@ def _all_mega_ports() -> list[str]:
 # the full timeout. Each readline timeout is 0.2 s → 8 × 0.2 s = 1.6 s cutoff.
 _PROBE_V_RETRY_LIMIT = 8
 
+# Pre-M16 firmware runs the MCU link at this rate. `show` re-probes here when a
+# board is silent at DEFAULT_BAUD, so a board that predates the M16 baud raise
+# reports "reflash required" instead of a bare "(no version response)".
+_LEGACY_BAUD = 115200
 
-def _probe_version(port: str, timeout: float = 6.0) -> tuple[Optional[str], Optional[str]]:
+
+def _probe_version(
+    port: str, timeout: float = 6.0, baud: int = DEFAULT_BAUD
+) -> tuple[Optional[str], Optional[str]]:
     """Open port, wait for boot, send V. Return (ver_line, role_hint). Either may be None.
 
     Captures the ROLE_HINT line printed from EEPROM before role election so the
     caller can label follower boards correctly even when probed alone (ROLE_UNKNOWN).
+    Probes at `baud` (DEFAULT_BAUD by default; callers pass _LEGACY_BAUD to detect
+    a pre-M16 board still on the old rate).
     """
     try:
         import serial
     except ImportError:
         return None, None
     try:
-        with serial.Serial(port, 115200, timeout=0.2) as ser:
+        with serial.Serial(port, baud, timeout=0.2) as ser:
             ready = False
             role_hint: Optional[str] = None
             v_retries = 0
@@ -184,7 +193,16 @@ def cmd_show(branch: Optional[str] = None) -> None:
                     v, b, c = parsed[0]
                     print(f"  {port}  {role}: {v} ({b} {c})")
                 else:
-                    print(f"  {port}  {role}: (no version response)")
+                    # Silent at the current baud: a short re-probe at the legacy
+                    # rate turns "(no version response)" into an actionable
+                    # "reflash" when the board simply predates the M16 baud raise.
+                    legacy_line, legacy_hint = _probe_version(
+                        port, timeout=2.0, baud=_LEGACY_BAUD
+                    )
+                    if legacy_line or legacy_hint:
+                        print(f"  {port}  {role}: pre-M16 firmware at {_LEGACY_BAUD} baud — reflash required")
+                    else:
+                        print(f"  {port}  {role}: (no version response)")
     else:
         print("No attached Mega boards detected.")
 
@@ -305,6 +323,17 @@ def cmd_update(branch_or_port: Optional[str] = None, port_arg: Optional[str] = N
         ports = _all_mega_ports()
         if not ports:
             sys.exit("No Mega boards detected. Connect a board or specify a port.")
+
+    # M16 raised the MCU link from 115200 to the DEFAULT_BAUD rate. Firmware and
+    # host must agree: a partially-reflashed fleet talks past itself (garbage/no
+    # telemetry) and boards that boot without hearing both siblings fall to
+    # ROLE_UNKNOWN.
+    print(
+        f"  NOTE: M16+ firmware uses {DEFAULT_BAUD} baud. Flash ALL THREE boards and update\n"
+        "        the host image (krabby update) in the same session — a mixed fleet\n"
+        "        shows garbage/no telemetry and boards boot ROLE_UNKNOWN.",
+        file=sys.stderr,
+    )
 
     failed = []
     for p in ports:

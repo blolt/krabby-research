@@ -66,15 +66,28 @@ endif
 $(info Using PORT=$(PORT))
 endif
 
-.PHONY: arduino-core compile-firmware upload-firmware flash-remote
+.PHONY: arduino-core fetch-libs compile-firmware upload-firmware flash-remote
 
+# Pinned to the core version the bench-verified hex was built with; bump
+# deliberately, together with the CI cache key in publish-firmware.yml.
 arduino-core:
-	$(ARDUINO_CLI) core install arduino:avr
+	$(ARDUINO_CLI) core install arduino:avr@1.8.8
 
-# Single compile recipe: always export the binaries to BUILD_DIR so every upload
-# path (local upload-firmware, remote flash-remote) flashes the same artifact.
-compile-firmware: arduino-core
-	$(ARDUINO_CLI) compile --fqbn $(FQBN) $(BUILD_PROPS) --output-dir "$(BUILD_DIR)" $(SKETCH)
+# Third-party Arduino libraries (e.g. SparkFun BMI270 with the Krabby AVR
+# patches) are NOT committed: fetch-libs materializes them into the gitignored
+# LIBS_DIR from pinned, SHA-256-verified upstream archives plus the committed
+# patches in arduino/patches/ (see docs/M16-DESIGN-DECISIONS.md §2.1). The
+# script is stamp-guarded — after the first successful fetch every build is
+# offline and the recipe is a fast no-op. Passed via --libraries so builds are
+# reproducible without any arduino-cli lib install step. The fetch must stay
+# inside a recipe (never `$(shell ...)`) so `make -n` stays network-free.
+LIBS_DIR := $(SKETCH)/libraries
+
+fetch-libs:
+	$(PYTHON) "$(CURDIR)/scripts/fetch_arduino_libs.py"
+
+compile-firmware: arduino-core fetch-libs
+	$(ARDUINO_CLI) compile --fqbn $(FQBN) $(BUILD_PROPS) --libraries "$(LIBS_DIR)" --output-dir "$(BUILD_DIR)" $(SKETCH)
 
 upload-firmware: compile-firmware
 	$(ARDUINO_CLI) upload -p "$(PORT)" --fqbn $(FQBN) --input-dir "$(BUILD_DIR)" $(SKETCH)

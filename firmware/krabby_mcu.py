@@ -5,8 +5,20 @@ import time
 import threading
 import logging
 from typing import Dict, Optional
-from firmware.interfaces.joint_telemetry import JointTelemetry
+from firmware.interfaces.joint_telemetry import (
+    ImuParseReason,
+    ImuTelemetry,
+    JointTelemetry,
+    ParseStats,
+    TELEMETRY_LINE_PREFIXES,
+    parse_telemetry_line,
+)
 from firmware.mcu_port import default_port
+
+# Single source of truth for the MCU serial rate. MUST equal BAUD_RATE in
+# firmware/arduino/arduino.ino (test_default_baud_matches_firmware pins it);
+# every host that opens the MCU port imports this rather than repeating 250000.
+DEFAULT_BAUD = 250000
 
 # --- LOGGING SETUP ---
 # When run as `python -m firmware --debug`, __main__.py calls basicConfig(DEBUG) before this import.
@@ -44,13 +56,17 @@ def _raw_rx_to_stderr() -> bool:
     return v in ("1", "true", "yes", "on")
 
 
-# Must match firmware roleName() + "; " in arduino.ino (note "LEFT " has trailing space).
-_TELEMETRY_LINE_PREFIXES = (
-    "FRONT;",
-    "UNKWN;",
-    "LEFT ;",
-    "RIGHT;",
-)
+# Line-start prefixes (TELEMETRY_LINE_PREFIXES) are imported from
+# joint_telemetry so the wire punctuation, including the "LEFT " padding, has
+# one definition shared by the SDK and the bench tools.
+
+# Malformed recognized segments are expected steady-state on the lossy serial
+# link, so warnings are throttled with a timestamp gate (same idiom as the
+# DEBUG joint dump below): at most one WARNING per interval, first occurrence
+# never suppressed, every drop still counted in parse_stats.
+_PARSE_WARN_INTERVAL_S = 1.0
+# Cap how much of an offending segment is echoed into a log record.
+_SEGMENT_LOG_MAX_CHARS = 80
 
 # Joint names by board for readable debug output (FRONT / LEFT / RIGHT)
 JOINT_GROUP_NAMES = (
@@ -61,7 +77,7 @@ JOINT_GROUP_NAMES = (
 
 
 class KrabbyMCUSDK:
-    def __init__(self, port=None, baud=115200):
+    def __init__(self, port=None, baud=DEFAULT_BAUD):
         self.port = port or default_port()
         self.baud = baud
         self.ser = None
@@ -70,12 +86,44 @@ class KrabbyMCUSDK:
         # Structured telemetry per joint
         self.joints: Dict[str, Optional[JointTelemetry]] = {}
 
+        # Latest IMU sample from the leader's telemetry line. Three states
+        # (see docs/M16-ERROR-HANDLING.md):
+        #   imu is None          — no IMU segment ever seen. Normal for
+        #                          followers and for firmware that predates
+        #                          the IMU segment: absence by design, never
+        #                          logged. Distinct from the next state.
+        #   imu.valid is False   — sensor present but not responding (leader
+        #                          init/read failure). Surfaced once at
+        #                          WARNING on the transition; rendered STALE.
+        #   imu.valid is True    — fresh sample.
+        self.imu: Optional[ImuTelemetry] = None
+
+        # Malformed-segment accounting. The parse layer returns None on a bad
+        # segment (lossy-stream idiom); the SDK owns the observability:
+        # a monotonic counter + last reason (queryable, like last_error) and
+        # a throttled WARNING (see _warn_parse_errors_throttled).
+        self.parse_stats = ParseStats()
+        self._last_parse_warn_ts = 0.0
+        # One-shot gate for the valid->invalid IMU transition (Class B); re-armed
+        # when a valid sample arrives so a later re-failure warns again.
+        self._imu_stale_warned = False
+
         self.last_feedback_ts = None
         self.thread = None
         self._last_debug_log_ts = 0.0
         self.last_error = None
         self.last_cmd: Dict[str, Optional[float]] = {}
         self._last_ver_line: Optional[str] = None
+
+    @property
+    def parse_error_count(self) -> int:
+        """Total recognized-but-malformed segments dropped since connect."""
+        return self.parse_stats.error_count
+
+    @property
+    def last_parse_reason(self) -> Optional[ImuParseReason]:
+        """Why the most recent segment was dropped (None if none dropped)."""
+        return self.parse_stats.last_reason
 
     def connect(self):
         try:
@@ -93,6 +141,11 @@ class KrabbyMCUSDK:
             time.sleep(5.0)  # wait for boot + 3-board role election before starting reader
             self.running = True
             self.last_error = None
+            # Fresh accounting per connection ("dropped since connect").
+            self.parse_stats = ParseStats()
+            self._last_parse_warn_ts = 0.0
+            self._imu_stale_warned = False
+            self.imu = None  # drop any sample cached from a prior connection
             self.thread = threading.Thread(
                 target=self._reader_loop, daemon=True)
             self.thread.start()
@@ -132,7 +185,7 @@ class KrabbyMCUSDK:
                     print(f"[serial rx] {line}", file=sys.stderr, flush=True)
                 elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug("serial rx: %s", line)
-                if line.startswith(_TELEMETRY_LINE_PREFIXES):
+                if line.startswith(TELEMETRY_LINE_PREFIXES):
                     self._parse_joint_line(line)
                     self.last_feedback_ts = time.time()
                 elif line.startswith("VER "):
@@ -154,11 +207,62 @@ class KrabbyMCUSDK:
                 self.running = False
                 break
 
+    def _warn_parse_errors_throttled(self):
+        """WARN about a dropped malformed segment, gated to ~1/s.
+
+        Timestamp gate (the DEBUG joint dump idiom below): the first
+        occurrence always logs; while gated, per-drop detail stays at DEBUG.
+        parse_stats keeps counting every drop regardless.
+        """
+        reason = self.parse_stats.last_reason
+        reason_name = reason.name if reason is not None else "UNKNOWN"
+        segment = (self.parse_stats.last_segment or "")[:_SEGMENT_LOG_MAX_CHARS]
+        # Monotonic clock: an NTP step on the RTC-less Jetson must not silently
+        # widen or collapse the throttle window.
+        now = time.monotonic()
+        if (now - self._last_parse_warn_ts) >= _PARSE_WARN_INTERVAL_S:
+            logger.warning(
+                "Dropped malformed telemetry segment (%s): %r — %d dropped since connect",
+                reason_name, segment, self.parse_stats.error_count,
+            )
+            self._last_parse_warn_ts = now
+        else:
+            logger.debug(
+                "Dropped malformed telemetry segment (%s): %r",
+                reason_name, segment,
+            )
+
+    def _store_imu(self, imu: ImuTelemetry):
+        """Store the latest IMU sample; surface the valid->invalid transition.
+
+        valid=0 means the sensor is present but not responding (leader-side
+        init or read failure — actionable: Qwiic wiring, I2C address, 3.3V
+        rail). It arrives every tick while the condition persists, so it is
+        logged once per transition (one-shot flag), never per tick, and never
+        raised: an unhappy optional sensor is not a transport failure. The
+        sample itself is stored either way — the host preserves everything
+        the wire carries.
+        """
+        self.imu = imu
+        if imu.valid:
+            self._imu_stale_warned = False  # re-arm for the next transition
+        elif not self._imu_stale_warned:
+            logger.warning(
+                "IMU reports valid=0 (sensor present but not responding); "
+                "readout is STALE. Check Qwiic wiring / I2C address / 3.3V rail."
+            )
+            self._imu_stale_warned = True
+
     def _parse_joint_line(self, line: str):
-        jts = JointTelemetry.parse_line(line)
-        if not jts:
+        errors_before = self.parse_stats.error_count
+        parsed = parse_telemetry_line(line, stats=self.parse_stats)
+        if self.parse_stats.error_count != errors_before:
+            self._warn_parse_errors_throttled()
+        if parsed.imu is not None:
+            self._store_imu(parsed.imu)
+        if not parsed.joints:
             return
-        for jt in jts:
+        for jt in parsed.joints:
             self.joints[jt.name] = jt
 
         # Debug Log: FRONT / LEFT / RIGHT each on its own line
@@ -172,6 +276,8 @@ class KrabbyMCUSDK:
                         parts.append(jt.format_compact(self.last_cmd.get(name)))
                 if parts:
                     logger.debug("JOINTS %s %s", group_name, "; ".join(parts))
+            if self.imu is not None:
+                logger.debug("IMU %s", self.imu.format_compact())
             self._last_debug_log_ts = now
 
     def send_command_joints(self, cmds_by_joint: Dict[str, float]):

@@ -218,6 +218,11 @@ marimo/_lsp/
 __marimo__/
 
 .vscode/settings.json
+.vscode/c_cpp_properties.json
+
+# M16 build / IDE ephemera (keep out of the PR)
+build-arduino/
+firmware/arduino/ide_intellisense_fixes.h
 
 # Build cache (for heavy downloads like Isaac Lab, reused across Docker builds)
 .build-cache/
@@ -244,3 +249,7 @@ fleet/infra/.tools/
 fleet/infra/cdk.out/
 fleet/infra/.cdk.staging/
 node_modules/
+# Third-party Arduino libraries are materialized at build time by
+# firmware/scripts/fetch_arduino_libs.py (pinned + checksummed + patched);
+# only the patches under firmware/arduino/patches/ are committed.
+firmware/arduino/libraries/

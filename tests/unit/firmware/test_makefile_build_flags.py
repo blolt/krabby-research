@@ -16,6 +16,7 @@ the buffer size -> assertions fail) and pass post-fix.
 We assert against the *actual* compile command `make` would run (`make -n`), not a
 regex on the Makefile text, so the test tracks real build behavior across edits.
 """
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -35,16 +36,21 @@ def _compile_command(pin_rev: str | None = None) -> str:
     `make -n` prints commands without executing them, so this needs neither
     arduino-cli nor a board attached.
     """
-    cmd = ["make", "-n", "compile-firmware"]
-    if pin_rev is not None:
-        cmd.append(f"PIN_REV={pin_rev}")
-    out = subprocess.run(
-        cmd, cwd=FIRMWARE_DIR, capture_output=True, text=True, check=True
-    ).stdout
+    out = _dry_run(pin_rev)
     for line in out.splitlines():
         if "arduino-cli compile" in line:
             return line
     raise AssertionError(f"no compile line in `make -n compile-firmware` output:\n{out}")
+
+
+def _dry_run(pin_rev: str | None = None) -> str:
+    """Full `make -n compile-firmware` output (commands printed, none run)."""
+    cmd = ["make", "-n", "compile-firmware"]
+    if pin_rev is not None:
+        cmd.append(f"PIN_REV={pin_rev}")
+    return subprocess.run(
+        cmd, cwd=FIRMWARE_DIR, capture_output=True, text=True, check=True
+    ).stdout
 
 
 class TestSerialRxBufferFlag:
@@ -70,3 +76,38 @@ class TestSerialRxBufferFlag:
         # The buffer fix must not drop KRABBY_PIN_REV selection.
         assert "-DKRABBY_PIN_REV=1" in _compile_command(pin_rev="1")
         assert "-DKRABBY_PIN_REV=3" in _compile_command(pin_rev="3")
+
+
+class TestFetchedLibrariesFlag:
+    # M16 Task 1: the BMI270 driver (with the Krabby AVR patches) is NOT
+    # committed -- scripts/fetch_arduino_libs.py materializes it into the
+    # gitignored arduino/libraries/ from a pinned, SHA-256-verified upstream
+    # archive plus the committed patch (docs/M16-DESIGN-DECISIONS.md 2.1),
+    # and it reaches the build via --libraries, matching publish-firmware.yml.
+    # If a Makefile refactor drops the flag or the fetch prerequisite, the
+    # unit suite would still pass and the break would only surface later as
+    # "SparkFun_BMI270_Arduino_Library.h: No such file or directory".
+
+    # Assert the flag/path *pairing*, tolerant of quoting style (double, single,
+    # or none) so a Makefile quoting refactor doesn't fail a correct build; the
+    # lookahead keeps the end-of-path anchor the old trailing-quote check gave.
+    _LIBRARIES_FLAG_RE = r'--libraries\s+["\']?\S*arduino/libraries(?=["\'\s]|$)'
+
+    def test_libraries_flag_points_at_materialized_dir(self):
+        line = _compile_command()
+        assert re.search(self._LIBRARIES_FLAG_RE, line)
+
+    def test_libraries_flag_survives_pin_rev_override(self):
+        line = _compile_command(pin_rev="1")
+        assert re.search(self._LIBRARIES_FLAG_RE, line)
+
+    def test_fetch_step_precedes_compile(self):
+        # compile-firmware must materialize the libraries before compiling;
+        # `make -n` proves the ordering without running either command (and,
+        # by succeeding offline, that the fetch is recipe-only -- no $(shell)).
+        out = _dry_run()
+        fetch_idx = out.find("fetch_arduino_libs.py")
+        compile_idx = out.find("arduino-cli compile")
+        assert fetch_idx != -1, f"no fetch_arduino_libs.py step in:\n{out}"
+        assert compile_idx != -1
+        assert fetch_idx < compile_idx

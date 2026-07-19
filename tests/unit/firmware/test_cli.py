@@ -77,6 +77,45 @@ class TestCmdShow:
         out = capsys.readouterr().out
         assert "no version response" in out
 
+    def test_show_reports_reflash_required_for_legacy_baud_board(self, capsys):
+        # A board silent at DEFAULT_BAUD but answering at the legacy 115200 rate
+        # is pre-M16 firmware: the re-probe turns "(no version response)" into an
+        # actionable "reflash required".
+        index = _make_index({"mainline": "20250101-120000-abc1234"})
+
+        def fake_probe(port, timeout=6.0, baud=cli_mod.DEFAULT_BAUD):
+            if baud == cli_mod._LEGACY_BAUD:
+                return ("VER 0.1.9 mainline oldcommit", None)
+            return (None, None)
+
+        with patch.object(cli_mod, "_all_mega_ports", return_value=["/dev/ttyACM0"]):
+            with patch.object(cli_mod, "_probe_version", side_effect=fake_probe):
+                with patch.object(cli_mod, "_fetch_index", return_value=index):
+                    cli_mod.cmd_show()
+        out = capsys.readouterr().out
+        assert "reflash required" in out
+        assert "115200" in out
+        assert "no version response" not in out
+
+    def test_board_answering_at_default_baud_is_not_reprobed(self, capsys):
+        # A board that answers at DEFAULT_BAUD must not trigger the second
+        # (legacy-rate) probe — the fallback is only for silent boards.
+        index = _make_index({"mainline": "20250101-120000-abc1234"})
+        seen_bauds = []
+
+        def fake_probe(port, timeout=6.0, baud=cli_mod.DEFAULT_BAUD):
+            seen_bauds.append(baud)
+            return ("VER 0.2.0 mainline abc1234", None)
+
+        with patch.object(cli_mod, "_all_mega_ports", return_value=["/dev/ttyACM0"]):
+            with patch.object(cli_mod, "_probe_version", side_effect=fake_probe):
+                with patch.object(cli_mod, "_fetch_index", return_value=index):
+                    cli_mod.cmd_show()
+        out = capsys.readouterr().out
+        assert "0.2.0" in out
+        assert "reflash required" not in out
+        assert cli_mod._LEGACY_BAUD not in seen_bauds  # no second probe
+
     def test_role_hint_labels_follower_as_left(self, capsys):
         index = _make_index({"release/0.2.8": "20250101-120000-abc1234"})
         with patch.object(cli_mod, "_all_mega_ports", return_value=["/dev/ttyUSB0"]):

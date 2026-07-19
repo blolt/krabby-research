@@ -85,7 +85,7 @@ public:
     }
 
     // Returns normalized position [0.0,1.0], where 0.0 = minStop, 1.0 = maxStop
-    float getPos()
+    float getPos() const
     {
         float range = maxStop - minStop;
         if (range == 0)
@@ -93,7 +93,7 @@ public:
         return ((int)avgPot - minStop) / range;
     }
 
-    int getRawPos() { return (int)avgPot; } // Returns smoothed RAW value
+    int getRawPos() const { return (int)avgPot; } // Returns smoothed RAW value
 
     // Set position target (T command only). Only this sets hasTarget = true.
     void setTarget(float val)
@@ -313,6 +313,8 @@ public:
         }
     }
 
+    // Prints the joint segments only — no line ending. The caller terminates the
+    // line so the leader can append sensor segments (e.g. ";IMU ...") first.
     void printTelemetry(Print& out) const
     {
         for (size_t i = 0; i < count; i++)
@@ -320,7 +322,6 @@ public:
             if (i) out.print(';'); // Only print semicolons between joints, not at the end
             actuators[i]->printTelemetry(out);
         }
-        out.println();
     }
 
     // ==================================================
