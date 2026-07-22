@@ -5,6 +5,26 @@
 #include "hall_hw.h"
 #include "telemetry_protocol.h"
 
+// Sane-band for the position pot (M16 Task 2, AC 2f). A wiper shorted to a
+// supply rail (or an open wiper pulled to a rail) reads a STABLE 0 or 1023 —
+// no jitter/slew test can see it because it does not move — so a reading pinned
+// at either rail is rejected as untrustworthy. Fixed mechanism constants, not
+// bench-calibrated (those live in ControlConfig).
+#define POT_BAND_LO 5     // raw ADC at/below this = wiper shorted low / open
+#define POT_BAND_HI 1018  // raw ADC at/above this = wiper shorted high
+
+// Consecutive bad ticks before posValid flips true->false (M16 Task 2, AC 2f).
+// updateSensors() runs every loop iteration (~35-50 ms), so 3 bad ticks is
+// ~105-150 ms -- under the 250 ms OLED redraw so a real disconnect never
+// visibly lags, yet it rides out an isolated single-sample ADC glitch and the
+// 1-2-tick pot coast when EN drops at the PID deadband. Re-validation is
+// immediate on the first good tick (asymmetric: slow to drop, fast to recover).
+#define POS_DEBOUNCE 3
+
+// Pure-Python mirror of the posValid FSM (POT_BAND sane-band + EN-gated slew +
+// POS_DEBOUNCE debounce) with a constant-parity test:
+// firmware/interfaces/pot_validity.py, tests/unit/firmware/test_pot_validity.py.
+
 // Linear actuator controller (w/ potentiometer feedback)
 class LinearActuator
 {
@@ -18,6 +38,25 @@ public:
         float Kp = 2.0;          // proportional gain applied to position error to derive desired PWM, PWM is set to max((targetPos - currentPos) * Kp, 255)
         float alphaPot = 0.15;    // Smoothing factor used to calculate potentiometer average (0.1 - 1.0)
         float alphaIS = 0.10;     // Smoothing factor used to calculate current sense average (0.1 - 1.0)
+        // Disconnected-actuator detection (M16 Task 2). posValid (pot trust) is
+        // gated on the pot's per-tick slew |rawPot - prevRawPot| ONLY WHILE IDLE
+        // (EN low): a driven joint is EXPECTED to move (rated 20 mm/s ~= 3.6
+        // counts/35 ms tick, and a full-PWM jog on a loop hitch can exceed 10
+        // counts/tick), so a large slew under drive is motion, not disconnection
+        // -- the test is suppressed while EN is HIGH. That makes the moving/
+        // jogged false-disconnect (the prior fix's HIGH regression) structurally
+        // impossible and needs zero motion tuning. potJitterMax is therefore an
+        // IDLE-ONLY budget: it only has to clear a real idle 10k pot's noise
+        // (<=2-3 LSB + a count or two of AVR mux settling at 10k source Z), so it
+        // is tight (6). A rail-short/open-to-rail is caught by the POT_BAND_*
+        // sane band above regardless of EN (a rail value never slews).
+        // isPresentFloor is the smoothed current (avgIS, sampled only while EN is
+        // HIGH) a wired motor exceeds -- the AC 2e current-presence signal; it
+        // must sit above idle/offset noise (~0-10 counts) and below the lowest
+        // real driven draw (no-load ~64-128 counts), hence 50. PROVISIONAL --
+        // both need real-actuator/supplier numbers to lock (see Task 2 TP).
+        float potJitterMax = 6.0;
+        float isPresentFloor = 50.0;
 
         ControlConfig() = default;
         ControlConfig(int rampStep, int intervalMs, int deadband, int errDeadband, float kp)
@@ -45,6 +84,9 @@ public:
     unsigned long lastRampTime = 0;  // Last time PWM ramp was updated, in millis, used along with rampIntervalMs to control ramp timing
     float avgPot = 0.0;              // Global state variable to track smoothed potentiometer value
     float avgIS = 0.0;               // Global state variable to track smoothed current sense value
+    int prevRawPot = 0;              // Previous raw pot sample, for the per-tick slew metric
+    uint8_t badPotTicks = 0;         // Consecutive bad ticks; posValid = (badPotTicks < POS_DEBOUNCE)
+    bool posValid = true;            // Debounced pot trust (drives OLED glyph + telemetry NaN sentinel)
 
 
     // TODO: This should accept a name and a 'SlotConfig' struct for pin assignment, so we can reuse the pin config w/ different actuator names (on different leader/follower boards)
@@ -68,9 +110,18 @@ public:
         analogWrite(pinPwmL, 0);
         digitalWrite(pinEn, LOW);
 
-        // Initialize averaging
+        // Initialize averaging. avgPot seeds from a live read (the pot pin is a
+        // real divider at boot). avgIS seeds to 0.0, NOT a boot-time analogRead:
+        // EN is LOW here, so the IS pin floats (the same untrustworthy condition
+        // the EN-gating declares) and a never-driven channel would otherwise
+        // report that boot garbage as its current forever. updateSensors() only
+        // averages avgIS while EN is HIGH, so 0.0 converges on the first real
+        // driven samples.
         avgPot = analogRead(pinPot);
-        avgIS = analogRead(pinIS);
+        avgIS = 0.0;
+        prevRawPot = (int)avgPot; // seed so the first tick's slew is ~0, not a bogus jump from 0
+        badPotTicks = 0;          // seed connected: a real actuator is never false-disconnected on the first tick
+        posValid = true;          // assume trusted until POS_DEBOUNCE bad ticks accrue (don't false-disconnect at boot)
         hasTarget = false; // No target until host sends T command
     }
 
@@ -78,11 +129,43 @@ public:
     void updateSensors()
     {
         int rawPot = analogRead(pinPot);
-        int rawIS = analogRead(pinIS);
+        bool driving = (digitalRead(pinEn) == HIGH);
+
+        // posValid (AC 2f), EN-gated + debounced. Two independent faults:
+        //   * rail-short / open-to-rail: reads a STABLE 0/1023 -> caught by the
+        //     sane band (bandOk), ALWAYS enforced (a rail value never slews, and
+        //     even a driven joint must never sit pinned at a rail).
+        //   * floating/unplugged noisy pin: swings tens-to-hundreds of counts
+        //     tick-to-tick -> caught by the per-tick slew test, but ONLY while
+        //     idle. When driving (EN high) the pot is expected to move, so a
+        //     large slew is motion, not disconnection -- suppress the slew test
+        //     so a moving/jogged joint is never false-disconnected regardless of
+        //     speed or loop-period hitch (fixes the prior fix's HIGH regression).
+        // A single noisy sample must not flip the glyph/telemetry for a frame,
+        // so require POS_DEBOUNCE consecutive bad ticks to drop valid; any good
+        // tick re-validates immediately.
+        bool bandOk = (rawPot > POT_BAND_LO) && (rawPot < POT_BAND_HI);
+        float slew  = fabs(rawPot - prevRawPot);
+        prevRawPot  = rawPot;
+        bool slewOk = driving || (slew <= controlConfig.potJitterMax);
+        if (bandOk && slewOk)
+            badPotTicks = 0;
+        else if (badPotTicks < POS_DEBOUNCE)
+            badPotTicks++;
+        posValid = (badPotTicks < POS_DEBOUNCE);
+
+        // Current presence (AC 2e): a wired motor draws a characteristic current
+        // ONLY while its EN line is driven; the IS pin floats when idle. Sample
+        // avgIS while EN==HIGH so an idle/floating current reading can't fake
+        // (or, at stall, mask) presence.
+        if (driving)
+        {
+            int rawIS = analogRead(pinIS);
+            avgIS = (avgIS * (1.0 - controlConfig.alphaIS)) + (rawIS * controlConfig.alphaIS);
+        }
 
         // Exponential Moving Average
         avgPot = (avgPot * (1.0 - controlConfig.alphaPot)) + (rawPot * controlConfig.alphaPot);
-        avgIS = (avgIS * (1.0 - controlConfig.alphaIS)) + (rawIS * controlConfig.alphaIS);
     }
 
     // Returns normalized position [0.0,1.0], where 0.0 = minStop, 1.0 = maxStop
@@ -95,6 +178,19 @@ public:
     }
 
     int getRawPos() const { return (int)avgPot; } // Returns smoothed RAW value
+
+    // Pot-trust view of "connected" that drives the OLED glyph (AC 2d): the
+    // debounced posValid (in the sane band, and -- while idle -- in-budget
+    // slew, for POS_DEBOUNCE consecutive ticks). Deliberately NOT ANDed with
+    // current-presence — a healthy joint that has simply never been driven must
+    // still render attached, or idle joints would false-disconnect (AC 2d
+    // regression); and a floating IS pin reads ~stall, so current can never
+    // gate the glyph. Current-presence (avgIS, AC 2e) rides the wire as the
+    // advisory current field for the host to use.
+    bool isConnected() const
+    {
+        return posValid;
+    }
 
     // Set position target (T command only). Only this sets hasTarget = true.
     void setTarget(float val)
@@ -195,11 +291,19 @@ public:
     // optional sensor segments, and the one line ending.
     // Keep in sync with firmware/interfaces/joint_telemetry.py
     // Keeping it super simple to avoid any string parsing and external library overhead
+    // pos = "nan" (Print emits it for NAN) whenever the pot is untrustworthy
+    // (posValid false: floating high-slew pin OR a rail-shorted wiper) instead
+    // of streaming noise/rail-garbage; token count is unchanged and the host
+    // reads it as disconnected (JointTelemetry.connected). Gating on posValid
+    // (not isConnected/current) closes the rail-short case AND the old OR-leak
+    // where a drawing motor vouched for a dead pot. getPos() can go slightly
+    // negative on a real out-of-cal reading, so a numeric sentinel would be
+    // ambiguous — NaN is not.
     void printTelemetry(Print& out) const
     {
         out.print(name);
         out.print(TELEMETRY_FIELD_DELIMITER);
-        out.print(getPos(), 3);
+        out.print(posValid ? getPos() : (float)NAN, 3);
         out.print(TELEMETRY_FIELD_DELIMITER);
         out.print((int)avgPot);
         out.print(TELEMETRY_FIELD_DELIMITER);

@@ -10,6 +10,9 @@
 #include "SparkFunLSM6DSO.h"
 #include "imu_init.h"
 #include "imu_sample.h"
+#include <SparkFun_Qwiic_OLED.h>
+#include <res/qw_fnt_5x7.h>
+#include <math.h>
 #include "board_pins.h"
 #include "command.h"
 #include "actuator_manager.h"
@@ -33,7 +36,36 @@
 enum BoardRole { ROLE_UNKNOWN, ROLE_FRONT, ROLE_LEFT, ROLE_RIGHT };
 BoardRole currentRole = ROLE_UNKNOWN;
 
-// M16 I2C sensor cluster (IMU; later OLED/INA228/power mgmt) is leader-only.
+// OLED render state types — defined up here so the .ino auto-prototype pass sees
+// them before it hoists prototypes for the render functions (oledGlyph /
+// oledRenderKrab) that take them. Constants + bodies live in the render section.
+enum OledGlyph { OG_HOLD, OG_EXTEND, OG_RETRACT, OG_DISC };
+struct OledKrabState {
+  bool front, left, right;
+  OledGlyph legs[6][3];
+  float batt[2];
+  const char *role;
+  int roll, pitch;
+  float pack_v;
+
+  // Field-wise equality so oledRenderKrab can skip the erase()+redraw()+display()
+  // (a ~120 ms full-frame I2C flush) when nothing drawn changed since last frame.
+  // role is compared by pointer: roleName() returns a fixed string literal per
+  // role, so equal role == equal pointer (no strcmp needed).
+  bool operator==(const OledKrabState &o) const {
+    if (front != o.front || left != o.left || right != o.right) return false;
+    if (roll != o.roll || pitch != o.pitch) return false;
+    if (batt[0] != o.batt[0] || batt[1] != o.batt[1] || pack_v != o.pack_v) return false;
+    if (role != o.role) return false;
+    for (int i = 0; i < 6; i++)
+      for (int j = 0; j < 3; j++)
+        if (legs[i][j] != o.legs[i][j]) return false;
+    return true;
+  }
+  bool operator!=(const OledKrabState &o) const { return !(*this == o); }
+};
+
+// M16 I2C sensor cluster (IMU; later OLED/power mgmt) is leader-only.
 // ROLE_UNKNOWN also qualifies: it is the solo-board-on-USB bench case (defaults
 // to front actuators + USB serial), not a follower — followers are assigned
 // LEFT/RIGHT during role election.
@@ -178,6 +210,19 @@ static void logImuInitFailure(ImuInitResult result)
     Serial.println(F("IMU CAL: unexpected initialization result; shipping valid=0."));
 }
 
+// OLED status render (Task 2): the krab UI on the 1.3" panel, leader-only, on
+// the same Qwiic chain. Ported 1:1 from firmware/oled_sim/krab.py; driven by
+// live telemetry (role, IMU roll/pitch; pack V + battery bars are Task 3
+// placeholders). A drawn frame is a full erase()+redraw()+display() (~120 ms
+// full-frame I2C); oledRenderKrab skips it entirely when the state is unchanged.
+Qwiic1in3OLED oled;
+bool oledValid = false;
+unsigned long lastOledDraw = 0;
+// Latest body-frame accel (m/s^2) cached by imuAppendTelemetry for the OLED's
+// roll/pitch — avoids a second getSensorData() on the render tick.
+float oledAccel[3] = {0, 0, 0};
+bool oledAccelFresh = false;
+
 // Gyro/accel bias in the RAW sensor frame (deg/s, g), captured at boot while
 // stationary and persisted at EEPROM_IMU_CAL_ADDR. Stored pre-transform so a
 // later change to IMU_AXIS_SRC/SIGN doesn't invalidate saved calibration.
@@ -198,6 +243,7 @@ struct ImuCalData
     float accelBiasG[3];
 };
 ImuCalData imuCal = {};
+// Identity default: no correction until a bench capture writes real trims.
 
 static bool imuCalPlausible();
 
@@ -226,7 +272,7 @@ static void imuCaptureGyroBias()
     }
     if (good < IMU_CAL_SAMPLES / 2)
     {
-        Serial.println("IMU CAL: too few samples; bias left at zero, not saved.");
+        Serial.println(F("IMU CAL: too few samples; bias left at zero, not saved."));
         return;
     }
     // Not stationary: leave EEPROM unwritten so the capture retries next boot.
@@ -234,7 +280,7 @@ static void imuCaptureGyroBias()
     {
         if (hi[a] - lo[a] > IMU_CAL_MAX_SPREAD_DPS)
         {
-            Serial.println("IMU CAL: motion detected; bias left at zero, not saved.");
+            Serial.println(F("IMU CAL: motion detected; bias left at zero, not saved."));
             return;
         }
     }
@@ -312,7 +358,7 @@ static void imuSetup(bool allowBiasCapture)
     EEPROM.get(EEPROM_IMU_CAL_ADDR, imuCal);
     if (imuCalPlausible())
     {
-        Serial.println("IMU CAL: loaded from EEPROM.");
+        Serial.println(F("IMU CAL: loaded from EEPROM."));
     }
     else
     {
@@ -378,6 +424,8 @@ static void imuAppendTelemetry(Print& out)
             tempC = sample.temperature * LSM6DSO_TEMP_C_PER_LSB +
                     LSM6DSO_TEMP_OFFSET_C;
             fresh = true;
+            oledAccel[0] = a[0]; oledAccel[1] = a[1]; oledAccel[2] = a[2];  // for OLED roll/pitch
+            oledAccelFresh = true;
         }
     }
     if (fresh)
@@ -394,6 +442,199 @@ static void imuAppendTelemetry(Print& out)
     out.print(fresh ? 1 : 0);
 }
 
+// ===========================================================================
+// OLED krab status render — 1:1 firmware port of firmware/oled_sim/krab.py
+// (RENDER_SPEC.md §5): same geometry + draw-call order, integer voltage format
+// (no %f), signed int for the leg math, one display() flush. oled.erase() wipes
+// the whole buffer, so every render tick that actually draws costs a full-frame
+// I2C flush (~120 ms), NOT the ~6 ms a dirty-page redraw would — the library
+// cannot diff pages across an erase(). To keep the 4 Hz redraw off the wire when
+// nothing moved, oledRenderKrab caches the last-rendered OledKrabState and skips
+// erase()+redraw()+display() entirely on an unchanged frame (no I2C at all).
+// Keep constants in lockstep with krab.py.
+// ===========================================================================
+#define OLED_REDRAW_INTERVAL_MS 250      // 4 Hz status refresh; well off the 50 ms tick
+
+static const int OLED_GLYPH = 9;
+static const int OLED_BAND_H = OLED_GLYPH + 1;                        // 10
+static const int OLED_BODY_W = 32, OLED_BODY_H = OLED_BAND_H * 3 + 1; // 32 x 31
+static const int OLED_BODY_X = (128 - OLED_BODY_W) / 2;              // 48
+static const int OLED_BODY_Y = 22;
+static const int OLED_TBAR_Y = OLED_BODY_Y + 2 * OLED_BAND_H;        // 42
+static const int OLED_STEM_X = OLED_BODY_X + OLED_BODY_W / 2;        // 64
+static const int OLED_LEG_BAND[6] = {2, 2, 1, 1, 0, 0};
+static const int OLED_BAT_W = 18, OLED_BAT_H = 7, OLED_BAT_HGAP = 4;
+static const int OLED_BAT_X = 2, OLED_BAT_Y = 11;
+static const int OLED_BAT_NUB_W = 2, OLED_BAT_NUB_H = 3;
+static const int OLED_BAT_PITCH = OLED_BAT_W + OLED_BAT_NUB_W + OLED_BAT_HGAP;
+
+static void oledGlyph(int cx, int cy, OledGlyph st) {
+  int r = OLED_GLYPH / 2;  // 4
+  int t = r - 1;           // 3
+  if (st == OG_EXTEND) {
+    for (int i = 0; i <= 2 * t; i++) { int hw = i * t / (2 * t); oled.line(cx - hw, cy - t + i, cx + hw, cy - t + i); }
+  } else if (st == OG_RETRACT) {
+    for (int i = 0; i <= 2 * t; i++) { int hw = (2 * t - i) * t / (2 * t); oled.line(cx - hw, cy - t + i, cx + hw, cy - t + i); }
+  } else if (st == OG_HOLD) {
+    for (int dy = -r; dy <= r; dy++) for (int dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r) oled.pixel(cx + dx, cy + dy);
+  } else {  // OG_DISC: bare X
+    oled.line(cx - t, cy - t, cx + t, cy + t);
+    oled.line(cx - t, cy + t, cx + t, cy - t);
+  }
+}
+
+// Live glyph for one actuator: DISC if not physically attached, else EXTEND /
+// RETRACT / HOLD from the ramped applied PWM (currentPwm; + = extend, - =
+// retract per driveActuator()). OLED_PWM_MOVE_MIN is sourced from
+// ACTUATOR_CONFIG.pwmDeadband (single source of truth) — driveActuator()
+// de-energizes only when abs(pwm) < pwmDeadband, so at |pwm| == deadband the
+// motor IS driven; the comparisons are inclusive so the glyph shows motion at
+// exactly that boundary, matching driveActuator() rather than lagging by one.
+static const int OLED_PWM_MOVE_MIN = ACTUATOR_CONFIG.pwmDeadband;
+static OledGlyph glyphForActuator(const LinearActuator* a) {
+  if (!a->isConnected()) return OG_DISC;
+  int pwm = a->currentPwm;
+  if (pwm >= OLED_PWM_MOVE_MIN) return OG_EXTEND;
+  if (pwm <= -OLED_PWM_MOVE_MIN) return OG_RETRACT;
+  return OG_HOLD;
+}
+
+// Render cache for oledRenderKrab's skip-when-unchanged (AC 2h). File-scope so a
+// path that writes the panel directly (a Task-4 low-power splash / panel clear)
+// can force the next krab frame to fully redraw via oledInvalidateKrabCache() —
+// otherwise a resume to the same pre-sleep state would match the cache and leave
+// a blank panel.
+static OledKrabState oledKrabCached;
+static bool oledKrabCacheValid = false;
+static inline void oledInvalidateKrabCache() { oledKrabCacheValid = false; }
+
+static void oledRenderKrab(const OledKrabState &s) {
+  // Skip-when-unchanged: erase() forces a full-frame I2C flush every draw, so a
+  // 4 Hz redraw of an identical frame would burn ~120 ms of bus time for nothing.
+  // Cache the last-rendered state and bail before touching I2C when it matches.
+  if (oledKrabCacheValid && s == oledKrabCached) return;
+  oledKrabCached = s;
+  oledKrabCacheValid = true;
+
+  oled.erase();
+  oled.setFont(QW_FONT_5X7);
+  int dv = (int)lround(s.pack_v * 10.0f);
+  int roll = s.roll < -99 ? -99 : (s.roll > 99 ? 99 : s.roll);
+  int pitch = s.pitch < -99 ? -99 : (s.pitch > 99 ? 99 : s.pitch);
+  char top[24];
+  snprintf(top, sizeof(top), "%s %+03d/%+03d %d.%dV", s.role, roll, pitch, dv / 10, dv % 10);
+  oled.text(0, 0, top);
+  oled.line(0, 9, 127, 9);
+
+  int fill_h = OLED_BAT_H - 2;
+  int nub_dy = (OLED_BAT_H - OLED_BAT_NUB_H) / 2;
+  for (int j = 0; j < 2; j++) {
+    int bx = OLED_BAT_X + j * OLED_BAT_PITCH;
+    oled.rectangle(bx, OLED_BAT_Y, OLED_BAT_W, OLED_BAT_H);
+    oled.rectangleFill(bx + OLED_BAT_W, OLED_BAT_Y + nub_dy, OLED_BAT_NUB_W, OLED_BAT_NUB_H);
+    float frac = s.batt[j] < 0 ? 0 : (s.batt[j] > 1 ? 1 : s.batt[j]);
+    int fw = (int)lround((OLED_BAT_W - 2) * frac);
+    if (fw > 0) oled.rectangleFill(bx + 1, OLED_BAT_Y + 1, fw, fill_h);
+  }
+
+  oled.rectangle(OLED_BODY_X, OLED_BODY_Y, OLED_BODY_W, OLED_BODY_H);
+  if (s.left)  oled.rectangleFill(OLED_BODY_X + 1, OLED_BODY_Y + 1, OLED_STEM_X - OLED_BODY_X - 1, OLED_TBAR_Y - OLED_BODY_Y - 1);
+  if (s.right) oled.rectangleFill(OLED_STEM_X, OLED_BODY_Y + 1, OLED_BODY_X + OLED_BODY_W - 1 - OLED_STEM_X, OLED_TBAR_Y - OLED_BODY_Y - 1);
+  if (s.front) oled.rectangleFill(OLED_BODY_X + 1, OLED_TBAR_Y, OLED_BODY_W - 2, OLED_BODY_Y + OLED_BODY_H - 1 - OLED_TBAR_Y);
+
+  int r = OLED_GLYPH / 2;
+  int GAP = 5;
+  int step = 2 * r + GAP;
+  for (int i = 0; i < 6; i++) {
+    int by = OLED_BODY_Y + OLED_LEG_BAND[i] * OLED_BAND_H + OLED_BAND_H / 2;
+    int sign = (i % 2 == 0) ? -1 : 1;
+    int edge = (sign < 0) ? OLED_BODY_X : OLED_BODY_X + OLED_BODY_W;
+    int px = edge, py = by;
+    for (int j = 0; j < 3; j++) {
+      int cx = edge + sign * (r + GAP + j * step);
+      int gy = by;
+      oled.line(px, py, cx - sign * r, gy);
+      oledGlyph(cx, gy, s.legs[i][j]);
+      px = cx + sign * r; py = gy;
+    }
+  }
+
+  int fcx = OLED_BODY_X + OLED_BODY_W / 2;
+  int fy = OLED_BODY_Y + OLED_BODY_H - 1;
+  int exs[2] = {fcx - 6, fcx + 6};
+  for (int k = 0; k < 2; k++) {
+    int ex = exs[k];
+    oled.line(ex, fy + 1, ex, fy + 2);
+    int ey = fy + 3;
+    oled.line(ex - 1, ey, ex + 1, ey);
+    oled.line(ex - 1, ey + 2, ex + 1, ey + 2);
+    oled.line(ex - 1, ey, ex - 1, ey + 2);
+    oled.line(ex + 1, ey, ex + 1, ey + 2);
+  }
+  oled.pixel(fcx - 2, fy + 4); oled.pixel(fcx + 2, fy + 4);
+  oled.line(fcx - 1, fy + 5, fcx + 1, fy + 5);
+
+  oled.display();
+}
+
+// Follower presence: millis() of the last complete line forwarded from each
+// follower link. Stamped in forwardFullLines; read by oledRenderLive. A follower
+// counts as present if seen within OLED_PRESENCE_MS. Followers emit telemetry
+// every TELEMETRY_INTERVAL_MS (50 ms / 20 Hz), so 500 ms absorbs ~10 dropped
+// ticks without flicker while staying responsive at the 250 ms OLED redraw.
+#define OLED_PRESENCE_MS 500
+static unsigned long followerLeftLastMs = 0, followerRightLastMs = 0;
+
+// Build the state from LIVE telemetry and draw. role from election; roll/pitch
+// from the cached IMU accel; pack V + battery bars are Task 3 placeholders (0.0
+// until the power monitor lands). Body presence is live (FRONT always here;
+// LEFT/RIGHT from follower-link recency) and the leader's own 6 legs come from
+// live actuator state; the 12 follower legs use a presence baseline (hold if the
+// board is up, else DISC) — a follow-up can parse forwarded telemetry for real
+// follower glyphs (pos "nan" -> DISC, signed PWM -> EXTEND/RETRACT) without a
+// wire-format change.
+static void oledRenderLive() {
+  OledKrabState s;
+
+  // Body presence: FRONT (this board) is always present here — oledRenderLive
+  // only runs on the leader/solo board. LEFT/RIGHT are present iff their serial
+  // link exists and we forwarded a complete line from it recently.
+  unsigned long now = millis();
+  s.front = true;
+  s.left  = (leftSerial  && now - followerLeftLastMs  < OLED_PRESENCE_MS);
+  s.right = (rightSerial && now - followerRightLastMs < OLED_PRESENCE_MS);
+
+  // Leader's own 6 actuators -> render legs FL (0) and FR (1), from live state.
+  // ACT_LIST_FRONT[k]: index k -> legs[k/3][k%3] (leg 0/1, joint yaw/hip/knee).
+  for (int k = 0; k < 6; k++)
+    s.legs[k / 3][k % 3] = glyphForActuator(ACT_LIST_FRONT[k]);
+
+  // 12 follower legs: presence baseline (holding if the board is up, else DISC).
+  // LEFT drives {ML=leg2, RL=leg4}; RIGHT drives {MR=leg3, RR=leg5}.
+  OledGlyph lg = s.left  ? OG_HOLD : OG_DISC;
+  OledGlyph rg = s.right ? OG_HOLD : OG_DISC;
+  for (int j = 0; j < 3; j++) {
+    s.legs[2][j] = lg; s.legs[4][j] = lg;
+    s.legs[3][j] = rg; s.legs[5][j] = rg;
+  }
+
+  s.role = roleName(currentRole);
+
+  if (oledAccelFresh) {                     // roll about body X, pitch about body Y
+    float ax = oledAccel[0], ay = oledAccel[1], az = oledAccel[2];
+    s.roll = (int)lround(atan2(ay, az) * 57.2957795f);
+    s.pitch = (int)lround(atan2(-ax, sqrt(ay * ay + az * az)) * 57.2957795f);
+  } else {
+    s.roll = 0; s.pitch = 0;
+  }
+
+  s.pack_v = 0.0f;
+  s.batt[0] = 0.0f;   // battery bars placeholder until Task 3
+  s.batt[1] = 0.0f;
+
+  oledRenderKrab(s);
+}
+
 // One line = "ROLE; " + ACT_COUNT segments; allow ~55 chars per segment to avoid truncation.
 // This buffer only holds *forwarded follower* lines, which never carry IMU/BATT
 // segments — the leader's own line (where sensor segments are appended) is
@@ -408,8 +649,9 @@ static void imuAppendTelemetry(Print& out)
 // derivation minus the IMU segment). Bench-measured idle (2026-07-06):
 // leader line 229 B + 2 forwarded lines at 180 B = 589 B/tick = 47%
 // utilization (at 115200 the budget was 576 B, so 589 B = 102% — the M16
-// line no longer fit). Task 3 sizes its BATT segment (~53-75 B, an estimate
-// until that code exists) against this budget before appending.
+// line no longer fit). The Task 3 BATT segment (battAppendTelemetry) adds
+// ~50-70 B to the leader line (";BATT " + 6 floats + flag + state), taking the
+// leader line to ~280-300 B and the tick to ~53% — comfortably within budget.
 #define TELEMETRY_LINE_MAX (8 + (ACT_COUNT * 55))
 
 static char leftPartial[TELEMETRY_LINE_MAX];
@@ -418,7 +660,7 @@ static size_t leftPartialPos = 0;
 static size_t rightPartialPos = 0;
 
 // Forward only complete lines (up to and including \n) from follower serial to mainSerial.
-void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, size_t cap, size_t* partialPos)
+void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, size_t cap, size_t* partialPos, unsigned long* lastLineMs)
 {
     if (!from || !to || !partial || !partialPos) return;
     while (from->available())
@@ -428,7 +670,10 @@ void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, s
         {
             partial[*partialPos] = '\0';
             if (*partialPos > 0)
+            {
                 to->println(partial);
+                if (lastLineMs) *lastLineMs = millis(); // stamp follower presence
+            }
             *partialPos = 0;
             continue;
         }
@@ -452,7 +697,7 @@ void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, s
 
 void determineRole()
 {
-    Serial.println("--- SYNC ---");
+    Serial.println(F("--- SYNC ---"));
 
     // Emit cached role before election so USB probe can label this port correctly
     // even when the board is probed alone (and would otherwise appear as ROLE_UNKNOWN).
@@ -492,7 +737,7 @@ void determineRole()
                 actuatorManager = new ActuatorManager(ACT_LIST_LEFT, ACT_COUNT);
                 mainSerial = &SERIAL_LEFT;
                 saveRole(ROLE_LEFT);
-                Serial.println("ROLE: LEFT");
+                Serial.println(F("ROLE: LEFT"));
                 return;
             }
             if (s.indexOf(SYNC_TOKEN) >= 0) syncFromLeft = true;
@@ -507,7 +752,7 @@ void determineRole()
                 actuatorManager = new ActuatorManager(ACT_LIST_RIGHT, ACT_COUNT);
                 mainSerial = &SERIAL_RIGHT;
                 saveRole(ROLE_RIGHT);
-                Serial.println("ROLE: RIGHT");
+                Serial.println(F("ROLE: RIGHT"));
                 return;
             }
             if (s.indexOf(SYNC_TOKEN) >= 0) syncFromRight = true;
@@ -523,7 +768,7 @@ void determineRole()
             leftSerial = &SERIAL_LEFT;
             rightSerial = &SERIAL_RIGHT;
             saveRole(ROLE_FRONT);
-            Serial.println("ROLE: FRONT");
+            Serial.println(F("ROLE: FRONT"));
             return;
         }
     }
@@ -534,7 +779,7 @@ void determineRole()
     mainSerial = &Serial;
     leftSerial = &SERIAL_LEFT;
     rightSerial = &SERIAL_RIGHT;
-    Serial.println("ROLE: UNKNOWN (front actuators)");
+    Serial.println(F("ROLE: UNKNOWN (front actuators)"));
 }
 
 void setup()
@@ -551,11 +796,26 @@ void setup()
     actuatorManager->loadCalibration();
 
     if (isI2CClusterBoard())
-        imuSetup(true);
+    {
+        // AC-2g: dedicated disconnect-status LED, driven each tick from loop().
+        pinMode(STATUS_LED_PIN, OUTPUT);
+        digitalWrite(STATUS_LED_PIN, LOW);
 
-    Serial.print("Krabby Ready ");
+        imuSetup(true);
+        oledValid = oled.begin();
+        if (oledValid)
+        {
+            oled.setFont(QW_FONT_5X7);
+            oledRenderLive();  // first full frame here (~120 ms), before the loop
+            Serial.println(F("OLED: online at 0x3D — krab UI live."));
+        }
+        else
+            Serial.println(F("OLED: init FAILED (0x3D absent? check Qwiic seating)."));
+    }
+
+    Serial.print(F("Krabby Ready "));
     Serial.print(boardPinRevisionLabel());
-    Serial.print(". ");
+    Serial.print(F(". "));
     Serial.println(list[0]->name);
 }
 
@@ -720,14 +980,14 @@ void loop()
 
     // Drain follower serial so RX buffers don't overflow (64-byte default drops middle of ~200-byte lines).
     // Only flush once after both drains so we don't block in flush() twice per loop (~35 ms each at 115200).
-    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos);
-    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos);
+    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos, &followerLeftLastMs);
+    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos, &followerRightLastMs);
 
     actuatorManager->updateAll();
 
     // Drain again in case bytes arrived during updateAll()
-    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos);
-    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos);
+    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos, &followerLeftLastMs);
+    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos, &followerRightLastMs);
     mainSerial->flush();
 
     if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS)
@@ -740,8 +1000,33 @@ void loop()
         // Leader appends its sensor segments to its own line only; forwarded
         // LEFT/RIGHT lines pass through forwardFullLines() untouched.
         if (isI2CClusterBoard())
+        {
             imuAppendTelemetry(*mainSerial);
+        }
         mainSerial->println();
         mainSerial->flush();  // ensure full line is sent before next loop (avoids two "LEFT;" in one buffer on host)
+    }
+
+    // AC-2g: light the dedicated status LED whenever any of the leader's own front
+    // actuators reads disconnected (isConnected() == posValid). Leader/solo board
+    // only, driven every tick. STATUS_LED_PIN is shared with Task 4's low-battery
+    // blink, but that blink runs only on the SLEEP/OVER_VOLT low-power path (added
+    // in Task 4), which returns before this line — so the two never drive it at once.
+    if (isI2CClusterBoard())
+    {
+        bool anyLeaderActuatorDisconnected = false;
+        for (int k = 0; k < 6; k++)
+            if (!ACT_LIST_FRONT[k]->isConnected()) { anyLeaderActuatorDisconnected = true; break; }
+        digitalWrite(STATUS_LED_PIN, anyLeaderActuatorDisconnected ? HIGH : LOW);
+    }
+
+    // OLED krab status render, throttled off the gait/telemetry cadence. A
+    // changed frame costs a full erase()+redraw()+display() (~120 ms full-frame
+    // I2C); an unchanged frame is skipped inside oledRenderKrab (no I2C at all).
+    // Leader/solo board only.
+    if (oledValid && millis() - lastOledDraw >= OLED_REDRAW_INTERVAL_MS)
+    {
+        lastOledDraw = millis();
+        oledRenderLive();
     }
 }

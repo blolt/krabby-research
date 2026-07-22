@@ -10,6 +10,7 @@ belong to the SDK layer (firmware/krabby_mcu.py), not here.
 """
 import enum
 import math
+import re
 from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
@@ -97,6 +98,12 @@ class JointTelemetry:
     # Role prefix (first segment of a line); not a joint.
     ROLE_PREFIXES = ("JT", "FRONT", "UNKNOWN", "LEFT", "RIGHT")
 
+    # Grammar of the 18 firmware joint names (arduino.ino): board {F,R,M} x side
+    # {L,R} x joint {HY hip-yaw, HL hip-lift, KL knee-lift}. A name outside this
+    # set is a garbled joint or an unknown appended segment that happens to be 9
+    # tokens; either way it must NOT be misparsed as a phantom joint.
+    NAME_RE = re.compile(r"^[FRM][LR](?:HY|HL|KL)$")
+
     @classmethod
     def from_tokens(cls, tokens) -> Optional["JointTelemetry"]:
         if not tokens:
@@ -106,6 +113,10 @@ class JointTelemetry:
         if not tokens or len(tokens) != 9:
             return None
         name, pos, pot, cur, enL, enR, pwmL, pwmR, saf = tokens
+        # Grammar guard: reject anything whose first token is not a known joint
+        # name before we treat the segment as joint telemetry.
+        if not cls.NAME_RE.match(name):
+            return None
         try:
             return cls(
                 name=name,
@@ -123,7 +134,24 @@ class JointTelemetry:
     def parse_line(cls, line: str):
         return parse_telemetry_line(line).joints
 
+    @property
+    def connected(self) -> bool:
+        """False when no actuator is attached to this channel.
+
+        The firmware reports pos as NaN for a channel whose motor is unplugged
+        (its pot pin floats and would otherwise stream noise as a live
+        position); a finite pos means an actuator is present. See
+        LinearActuator::isConnected in actuator_manager.h.
+
+        Guards on isfinite, not just isnan: an AVR-printed non-finite 'inf'
+        (over-range float) is also "not a live position" and must read
+        disconnected, never surface as an 'inf' through format_compact.
+        """
+        return math.isfinite(self.pos)
+
     def format_compact(self, target: Optional[float] = None) -> str:
+        if not self.connected:
+            return f"{self.name}:DISC,{self.pot},{self.current}"
         pos_part = f"{self.pos:.3f}"
         if target is not None:
             pos_part = f"{pos_part}/{target:.3f}"

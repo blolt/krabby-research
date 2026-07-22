@@ -69,6 +69,17 @@ LIBRARIES = [
         # existing no-patch codepath in _apply_patch.
         patch=None,
     ),
+    # Task 2/3: SparkFun Qwiic OLED driver for the krab status render on the
+    # 1.3" panel. Pinned to 1.0.9 — >= 1.0.14 adds a driver that includes C++
+    # <map> and no longer compiles on AVR (upstream architectures=* overclaim).
+    LibSpec(
+        name="SparkFun_Qwiic_OLED_Arduino_Library",
+        url="https://github.com/sparkfun/SparkFun_Qwiic_OLED_Arduino_Library/archive/refs/tags/v1.0.9.tar.gz",
+        ref="v1.0.9 (tag)",
+        sha256="245eccce3898ae0b2804d93932e1392fa0df6412bc70ec3710ca483ac2d76a74",
+        tar_root="SparkFun_Qwiic_OLED_Arduino_Library-1.0.9",
+        patch=None,
+    ),
 ]
 
 

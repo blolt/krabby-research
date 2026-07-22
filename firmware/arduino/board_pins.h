@@ -67,3 +67,16 @@ inline const char* boardPinRevisionLabel()
     return "PINS_REV3_UNO_V02";
 #endif
 }
+
+// --- M16 Task 2 (AC-2g): disconnect status LED (leader board only) ---
+// STATUS_LED_PIN drives a dedicated indicator LED that lights whenever any of the
+// leader's own actuators reads disconnected. Pin 30 is a free digital GPIO on
+// Rev 3 — deliberately NOT a PWM out (D2-D13), an EN line (D22-D27), the I2C bus
+// (D20/D21), a follower UART (D14-D19), a Hall input (D50-D52), or the Orin gate
+// (D38) — so the indicator never contends with an actuator PWM or a bus. (This is
+// why the default is a free pin rather than LED_BUILTIN / D13 = PIN_S5_PWML, which
+// is shared with the S5 actuator PWM.) Override with -DSTATUS_LED_PIN=N at build
+// time if the harness wires the LED elsewhere.
+#ifndef STATUS_LED_PIN
+#define STATUS_LED_PIN 30
+#endif
