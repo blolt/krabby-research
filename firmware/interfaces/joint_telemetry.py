@@ -325,9 +325,9 @@ class ImuTelemetry:
 
 
 class PowerState(enum.IntEnum):
-    """The BATT frame's power_state byte. Task 3 firmware always emits NORMAL;
-    Task 4 drives the protective transitions. IntEnum because it rides the wire
-    as a small integer and consumers compare it numerically."""
+    """The BATT frame's power_state byte, driven by Task 4's protective FSM.
+    IntEnum because it rides the wire as a small integer and consumers compare
+    it numerically."""
 
     NORMAL = 0
     WARN = 1

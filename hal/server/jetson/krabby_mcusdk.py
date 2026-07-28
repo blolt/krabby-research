@@ -66,12 +66,19 @@ class KrabbyMCUSDK:
         self._mcu_joints = mcu_joints
         self._mcu = FirmwareKrabbyMCUSDK(port=port, baud=baud)
         self._connected = False
-        
+
         logger.info(f"KrabbyMCUSDK initialized (port={port}, baud={baud}, auto_connect={auto_connect})")
-        
+
         if auto_connect:
             self.connect()
-    
+
+    @property
+    def firmware_sdk(self) -> "FirmwareKrabbyMCUSDK":
+        """The underlying firmware SDK (its serial reader). The Orin power daemon
+        hangs its power-message callback here rather than opening a second reader
+        on the same device (M16 Task 4 §6.1)."""
+        return self._mcu
+
     def connect(self) -> bool:
         """Connect to MCU. Returns True if successful."""
         if self._connected:

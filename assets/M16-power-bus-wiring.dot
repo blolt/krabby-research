@@ -1,0 +1,68 @@
+digraph M16PowerBus {
+  graph [
+    rankdir=LR,
+    bgcolor="white",
+    fontname="Helvetica",
+    fontsize=18,
+    label="Krabby M16 — 24 V Power Bus and INA228 Wiring",
+    labelloc=t,
+    nodesep=0.45,
+    ranksep=0.75,
+    pad=0.25
+  ];
+  node [shape=box, style="rounded,filled", fillcolor="white", fontname="Helvetica", fontsize=11];
+  edge [fontname="Helvetica", fontsize=10, arrowsize=0.7];
+
+  subgraph cluster_power {
+    label="High-current path";
+    color="#B8B8B8";
+    lower [label="Lower battery\n12 V / 100 Ah\n− = Pack GND", fillcolor="#EAF3FF"];
+    upper [label="Upper battery\n12 V / 100 Ah\n+ = Pack+", fillcolor="#EAF3FF"];
+    fuse [label="150 A Class-T fuse\nfirst on Pack+", fillcolor="#FFE9E5"];
+    shunt [label="200 A / 75 mV shunt\n15 mΩ onboard resistor removed", fillcolor="#FFF3D6"];
+    block [label="Distribution block\nload-side V+ / Pack GND", fillcolor="#E9F7E9"];
+
+    lower -> upper [label=" series jumper\nMIDPOINT", color="#C59B00", penwidth=2];
+    upper -> fuse [label=" Pack+ · 2 AWG", color="#C62828", penwidth=3];
+    fuse -> shunt [label=" fused Pack+ · 2 AWG", color="#C62828", penwidth=3];
+    shunt -> block [label=" load-side V+ · 2 AWG", color="#C62828", penwidth=3];
+    lower -> block [label=" Pack GND · 2 AWG\n(no shunt)", color="#202020", penwidth=3];
+  }
+
+  subgraph cluster_sensing {
+    label="Voltage/current sensing and I²C";
+    color="#B8B8B8";
+    pack_ina [
+      label="Pack INA228 · 0x40\nVBUS ← load-side V+\nIN+ / IN− ← Kelvin pair\nGND ← Pack GND",
+      fillcolor="#F0E9FF"
+    ];
+    midpoint_fuse [
+      label="0.5 A midpoint\nsense-lead fuse",
+      fillcolor="#FFE9E5"
+    ];
+    midpoint_ina [
+      label="Midpoint INA228 · 0x41\nVBUS ← fused midpoint\nGND ← Pack GND\nIN+ → GND\nIN− → GND",
+      fillcolor="#F0E9FF"
+    ];
+    mega [
+      label="Leader Arduino Mega\n5 V · GND · SDA 20 · SCL 21",
+      fillcolor="#E8F5F5"
+    ];
+
+    shunt -> pack_ina [
+      label=" S+ → IN+\nS− → IN−\nKelvin pair",
+      color="#5C5C5C",
+      penwidth=2
+    ];
+    block -> pack_ina [label=" V+ → VBUS", color="#E67E22", penwidth=2];
+    lower -> midpoint_fuse [label=" midpoint tap", color="#C59B00", penwidth=2];
+    midpoint_fuse -> midpoint_ina [label=" fused VBUS", color="#C59B00", penwidth=2];
+    block -> midpoint_ina [
+      label=" Pack GND → GND, IN+, IN−",
+      color="#202020",
+      penwidth=2
+    ];
+    mega -> pack_ina [label=" Qwiic: 5 V, GND, SDA, SCL", color="#1565C0", penwidth=2];
+    pack_ina -> midpoint_ina [label=" Qwiic daisy chain", color="#1565C0", penwidth=2];
+  }
+}

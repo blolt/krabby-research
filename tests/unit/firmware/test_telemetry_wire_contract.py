@@ -103,7 +103,7 @@ def test_leader_appends_exactly_one_imu_segment_after_joints_before_newline():
         for match in sensor_gates
         if "imuAppendTelemetry(*mainSerial);" in match.group("body")
     )
-    assert "battAppendTelemetry(*mainSerial);" in sensor_body
+    assert "battAppendTelemetry(*mainSerial, tickPackV, tickPackOk);" in sensor_body
 
 
 def test_imu_segment_uses_named_delimiters_and_tag():

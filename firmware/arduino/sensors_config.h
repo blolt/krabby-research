@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdint.h>
 #include "measurement_units.h"
 
 // I2C sensor cluster configuration (Milestone 16).
@@ -89,6 +90,50 @@ const int8_t  IMU_AXIS_SIGN[3] = {1, 1, 1};
 // ~20 ticks = ~1 s at 20 Hz. Both constants stay defined here: a later task reuses them.
 #define IMU_REINIT_AFTER_BAD_TICKS 20
 #define IMU_REINIT_INTERVAL_MS     5000UL
+
+// --- Battery-protective state machine (M16 Task 4) ---
+// Pack voltage thresholds for the 8S LiFePO4 pack (2x 12V drop-ins in series),
+// from the grant Appendix C. The state machine reads pack_v from the Task 3
+// Pack INA228 and drives WARN / SOFT_CUT / HARD_CUT / OVER_VOLT / RECOVERY.
+// LiFePO4's discharge curve is very flat, so these cluster near the knee.
+// DEFAULTS ONLY — validate against the real M12 pair under load (resting vs.
+// loaded differs by internal-resistance x current) before relying on them.
+// Appendix C default. WARN changes telemetry state immediately but does not park
+// actuators or begin shutdown. Validate the loaded-pack boundary under 4h;
+// instantaneous voltage is not a direct state-of-charge measurement.
+static constexpr Volts PACK_WARNING_THRESHOLD(24.8f);
+// Appendix C default loaded-Pack boundary. A reading must be strictly below
+// this threshold for POWER_CUT_DEBOUNCE_TICKS consecutive valid polls.
+// Pack voltage is not a direct state-of-charge measurement.
+static constexpr Volts PACK_SOFT_CUT_THRESHOLD(24.0f);
+// Appendix C default emergency-stop boundary. A valid Pack reading at or below
+// this value must persist for POWER_CUT_DEBOUNCE_TICKS; once qualified,
+// HARD_CUT takes priority and actuator de-energization begins immediately.
+static constexpr Volts PACK_HARD_CUT_THRESHOLD(22.4f);
+// Appendix C charger/BMS-fault boundary. The first valid reading at or above
+// this value enters the one-way protective cutout; only a manual reset clears it.
+static constexpr Volts PACK_OVER_VOLT_THRESHOLD(29.6f);
+// Appendix C resting-Pack resume boundary. SLEEP resumes only strictly above
+// this value. It is 2.4 V above SOFT_CUT, exceeding the 0.4 V anti-chatter
+// minimum. AC 4h must validate and update it against the real M12 battery pair.
+static constexpr Volts PACK_RECOVERY_THRESHOLD(26.4f);
+// Downward-cut debounce: a SOFT_CUT or HARD_CUT only latches after this many
+// CONSECUTIVE valid ticks below the respective threshold, so a transient sag
+// under a current spike (LiFePO4 sags ~internal_R x I) does not trip a shutdown.
+// The telemetry-only WARN transition is instantaneous (no debounce).
+// At the 20 Hz telemetry tick (TELEMETRY_POLL_INTERVAL) 4 ticks ≈ 200 ms sustained.
+// Consumed directly by power_fsm.h and its native tests.
+#define POWER_CUT_DEBOUNCE_TICKS 4
+// Low-power-mode cadences (§3): recovery poll and the LED/OLED dead-battery blink.
+#define POWER_RECOVERY_POLL_MS   30000UL
+#define POWER_LOW_BATT_BLINK_MS  10000UL
+// Force-off: if the Orin neither acks nor stops telemetry within this window of
+// a shutdown command, the MCU hard-cuts its supply (4i).
+#define ORIN_FORCE_OFF_MS        60000UL
+// D19: once the Orin has ACKed the shutdown it is already running `poweroff`, so
+// the MCU only needs a short grace before cutting the rail rather than the full
+// no-response force-off window. 15 s covers a clean Jetson poweroff + fs flush.
+#define ORIN_ACKED_OFF_MS        15000UL
 
 // EEPROM layout (see arduino.ino: joint CalData = bytes 0-25, role = 32-33).
 // IMU calibration lives at byte 40+ with its own sentinel and schema version.

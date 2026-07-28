@@ -203,6 +203,7 @@ def main():
     teleop_stop: threading.Event | None = None
     teleop_thread: threading.Thread | None = None
     teleop_sensor_ids: list[str] | None = None
+    power_daemon = None  # M16 Task 4: acks the leader's power-down and powers the host off
     _teleop_st = None
 
     try:
@@ -236,6 +237,18 @@ def main():
         ):
             logger.error("MCU not available — check firmware and wiring. Exiting.")
             sys.exit(1)
+
+        # ----- Orin power daemon (M16 Task 4) -----
+        # Hangs off the MCU serial reader: acks the leader's POWERING_DOWN and
+        # powers the host off. Started whenever the MCU SDK exists (harmless in
+        # every mode). The container->host poweroff mechanism is an open decision
+        # (see power_daemon docstring); the default logs and relies on the MCU's
+        # 60 s supply cut, so this is safe to run before that is wired.
+        if hal_server._mcusdk is not None:
+            from hal.server.jetson.power_daemon import OrinPowerDaemon
+
+            power_daemon = OrinPowerDaemon(hal_server._mcusdk.firmware_sdk)
+            power_daemon.start()
 
         # ----- Teleop signaling (portal mode, or inference with --teleop-ip) -----
 
@@ -413,6 +426,8 @@ def main():
         sys.exit(1)
 
     finally:
+        if power_daemon is not None:
+            power_daemon.stop()
         if teleop_stop is not None:
             teleop_stop.set()
         if teleop_thread is not None and teleop_thread.is_alive():

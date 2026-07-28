@@ -14,6 +14,7 @@ from firmware.interfaces.joint_telemetry import (
     TELEMETRY_LINE_PREFIXES,
     parse_telemetry_line,
 )
+from firmware.interfaces.power_messages import POWER_MSG_PREFIX, PowerMessage
 from firmware.mcu_port import default_port
 
 # Single source of truth for the MCU serial rate. MUST equal BAUD_RATE in
@@ -84,6 +85,12 @@ class KrabbyMCUSDK:
         self.ser = None
         self.running = False
 
+        # Serializes writes to self.ser. send_power_message runs on the reader
+        # thread (invoked inline from _handle_power_line), while the motor/version
+        # commands run on the app/HAL thread — two writers on one port. Guard only
+        # the write()+flush() body of each writer so their bytes never interleave.
+        self._write_lock = threading.Lock()
+
         # Structured telemetry per joint
         self.joints: Dict[str, Optional[JointTelemetry]] = {}
 
@@ -116,6 +123,13 @@ class KrabbyMCUSDK:
         # One-shot gate for the battery divergence transition; re-armed when the
         # two battery voltages come back within threshold.
         self._batt_diverge_warned = False
+
+        # Power-state control (M16 Task 4). The leader emits POWERING_DOWN /
+        # RESUMING / EMERGENCY_SHUTDOWN on the same serial link; the Orin
+        # power daemon hangs a callback here rather than opening a second reader
+        # on the same device (two readers on one port drop each other's bytes).
+        self.last_power_message: Optional[PowerMessage] = None
+        self.on_power_message = None  # Optional[Callable[[PowerMessage], None]]
 
         self.last_feedback_ts = None
         self.thread = None
@@ -199,6 +213,8 @@ class KrabbyMCUSDK:
                 if line.startswith(TELEMETRY_LINE_PREFIXES):
                     self._parse_joint_line(line)
                     self.last_feedback_ts = time.time()
+                elif line.startswith(POWER_MSG_PREFIX + " "):
+                    self._handle_power_line(line)
                 elif line.startswith("VER "):
                     self._last_ver_line = line
                 elif "Krabby" in line or "CAL" in line or "Saved" in line:
@@ -335,8 +351,9 @@ class KrabbyMCUSDK:
             parts.append(f"{val:.3f}")
 
         cmd = " ".join(parts) + "\n"
-        self.ser.write(cmd.encode('utf-8'))
-        self.ser.flush()
+        with self._write_lock:
+            self.ser.write(cmd.encode('utf-8'))
+            self.ser.flush()
 
         logger.info("CMD -> %s", " ".join(parts))
 
@@ -353,8 +370,9 @@ class KrabbyMCUSDK:
             parts.append(name)
             parts.append(str(pwm))
         cmd = " ".join(parts) + " \n"
-        self.ser.write(cmd.encode('utf-8'))
-        self.ser.flush()
+        with self._write_lock:
+            self.ser.write(cmd.encode('utf-8'))
+            self.ser.flush()
 
     def send_command_jog(self, joint_name: str, pwm: int):
         """ Send J<name> <pwm> (-255 to 255) """
@@ -362,15 +380,17 @@ class KrabbyMCUSDK:
             return
         pwm = max(-255, min(255, int(pwm)))
         cmd = f"J{joint_name} {pwm}\n"
-        self.ser.write(cmd.encode('utf-8'))
-        self.ser.flush()
+        with self._write_lock:
+            self.ser.write(cmd.encode('utf-8'))
+            self.ser.flush()
 
     def read_version(self, timeout: float = 1.0) -> Optional[str]:
         if not self.ser or not self.ser.is_open:
             return None
         self._last_ver_line = None
-        self.ser.write(b"V\n")
-        self.ser.flush()
+        with self._write_lock:                 # lock the write only, NOT the poll loop
+            self.ser.write(b"V\n")
+            self.ser.flush()
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self._last_ver_line is not None:
@@ -381,8 +401,9 @@ class KrabbyMCUSDK:
     def send_command_calibrate(self):
         if not self.ser or not self.ser.is_open:
             return
-        self.ser.write(b"C\n")
-        self.ser.flush()
+        with self._write_lock:
+            self.ser.write(b"C\n")
+            self.ser.flush()
         logger.info("CMD -> AUTO-CALIBRATE (C)")
 
     def send_command_joints_hold(self):
@@ -391,9 +412,40 @@ class KrabbyMCUSDK:
         """
         if not self.ser or not self.ser.is_open:
             return
-        self.ser.write(b"H\n")
-        self.ser.flush()
+        with self._write_lock:
+            self.ser.write(b"H\n")
+            self.ser.flush()
         logger.info("CMD -> H")
+
+    def _handle_power_line(self, line: str):
+        """Dispatch a recognized PWR line to the registered power callback.
+
+        Runs on the reader thread. An unparseable/unknown-schema PWR line is
+        dropped (PowerMessage.parse returns None). The callback is invoked
+        inline; a slow or raising callback is the daemon's problem, so it is
+        guarded so one bad handler can't kill the reader loop.
+        """
+        msg = PowerMessage.parse(line)
+        if msg is None:
+            logger.debug("Unrecognized power line dropped: %r", line)
+            return
+        self.last_power_message = msg
+        cb = self.on_power_message
+        if cb is not None:
+            try:
+                cb(msg)
+            except Exception:
+                logger.exception("on_power_message callback raised")
+
+    def send_power_message(self, msg: PowerMessage):
+        """Write a power-control message on the serial link (e.g. the Orin's
+        SHUTDOWN_ACK back to the leader). Same port as telemetry."""
+        if not self.ser or not self.ser.is_open:
+            return
+        with self._write_lock:                 # runs on the reader thread — see __init__
+            self.ser.write((msg.format_line() + "\n").encode("utf-8"))
+            self.ser.flush()
+        logger.info("PWR -> %s", msg.format_line())
 
     def wait_for_move(self, seconds):
         time.sleep(seconds)

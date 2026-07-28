@@ -5,11 +5,15 @@
 # Chosen over Mermaid because it speaks the domain: connectors, pins, wire gauge,
 # IEC colours, Kelvin sense taps — the things that matter on a 24 V / 100 A bus.
 #
-#   Render:  pip install wireviz  &&  wireviz docs/M16-POWER-BUS-WIRING.yml
-#            -> writes M16-POWER-BUS-WIRING.svg / .png / .bom.tsv next to this file.
+#   Validate/render the detailed source:
+#     wireviz -f gst -o /tmp -O M16-power-bus-wiring-detailed \
+#       docs/M16-POWER-BUS-WIRING.yml
+#   The legible review diagram and its Graphviz source live under assets/; see
+#   assets/M16-power-bus-wiring-README.md.
 #
-# STATUS: PROVISIONAL on fuse rating (Fletcher Q1 — Class-T AIC) and INA VIN source,
-# marked inline. Shunt is HIGH-side (Pack+ -> fuse -> shunt -> bus, VBUS on the load
+# The main fuse is 150 A Class-T: the spec's 150 A value protects the 2 AWG lead,
+# while Class-T supplies the required high DC interrupt rating. INA VIN source
+# remains marked inline. Shunt is HIGH-side (Pack+ -> fuse -> shunt -> bus, VBUS on the load
 # side) per spec 3c; the high-side/Kelvin *safety* rationale is
 # hardware/Uno-v0.2/power-bus-safety.md §2. The harness *photos*
 # (AC 3j, other half) remain a physical deliverable.
@@ -34,8 +38,8 @@ connectors:
     notes: MID = junction between lower and upper battery (Midpoint sense point)
 
   FUSE:
-    type: Class-T fuse + holder
-    subtype: "rating PROVISIONAL — Fletcher Q1 (DC AIC)"
+    type: 150 A Class-T fuse + holder
+    subtype: high DC interrupt rating
     pinlabels: [IN, OUT]
 
   SHUNT:
@@ -54,8 +58,13 @@ connectors:
 
   INA_MID:
     type: Adafruit INA228 @ 0x41 (Midpoint monitor)
-    pinlabels: [VBUS, GND, SDA, SCL, VIN]
-    notes: current channel grounded — VBUS-only (lower battery)
+    pinlabels: [VBUS, IN+, IN-, GND, SDA, SCL, VIN]
+    notes: IN+ and IN- are each grounded — VBUS-only (lower battery)
+
+  MID_GROUND:
+    type: Midpoint INA228 local ground tie
+    pinlabels: [QWIIC_GND, INA_GND, IN+, IN-]
+    notes: all four terminals are electrically common at Pack ground
 
   FUSE_MID:
     type: inline fuse holder + 0.5 A fuse
@@ -113,6 +122,11 @@ cables:
     gauge: 26 AWG
     colors: [BK, RD, BU, YE]
     notes: Qwiic/STEMMA-QT daisy chain — Pack to Midpoint
+  W_MID_GROUND:
+    category: bundle
+    gauge: 26 AWG
+    colors: [BK, BK, BK]
+    notes: local ground jumpers to Midpoint INA228 GND, IN+, and IN-
 
 connections:
   # --- high-current path: pack+ -> fuse -> shunt -> bus (HIGH-side shunt, per spec 3c) ---
@@ -157,6 +171,14 @@ connections:
     - QW1: [1-4]
     - INA_PACK: [GND, VIN, SDA, SCL]
   -
-    - INA_PACK: [GND, VIN, SDA, SCL]
-    - QW2: [1-4]
-    - INA_MID: [GND, VIN, SDA, SCL]
+    - INA_PACK: [GND]
+    - QW2: [1]
+    - MID_GROUND: [QWIIC_GND]
+  -
+    - INA_PACK: [VIN, SDA, SCL]
+    - QW2: [2-4]
+    - INA_MID: [VIN, SDA, SCL]
+  -
+    - MID_GROUND: [INA_GND, IN+, IN-]
+    - W_MID_GROUND: [1-3]
+    - INA_MID: [GND, IN+, IN-]
