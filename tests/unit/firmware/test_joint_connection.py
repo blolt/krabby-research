@@ -6,14 +6,10 @@ actuator_manager.h) detects this and reports pos as NaN instead of noise,
 keeping the 9-token joint segment otherwise intact. The host reads NaN as
 "disconnected" via JointTelemetry.connected.
 
-The firmware detection (EN-gated per-tick slew + POT_BAND sane band, debounced
-over POS_DEBOUNCE ticks) decides posValid on the MCU; there is no C++ host
-harness in this repo, so these tests pin the *wire contract* the firmware must
-honor -- finite pos <-> connected, "nan" <-> disconnected -- for each AC 2d/2f
-scenario. In particular a driven/jogged joint (EN high) has its slew test
-suppressed on the MCU, so it emits a finite in-band pos every tick even when the
-pot swings hundreds of counts between ticks; that manifests here as consecutive
-lines that both stay connected (the anti-false-disconnect regression guard).
+The production firmware decision (PotValidityTracker plus current attachment)
+has native C++ coverage. These tests pin the resulting *wire contract*:
+finite pos <-> connected, "nan" <-> disconnected. In particular, a
+driven/jogged joint stays connected while its real position changes quickly.
 
 Naming: test_<unit>_<condition>_<expected>, arrange/act/assert body structure.
 """
@@ -96,7 +92,7 @@ class TestFormatCompact:
 
 
 # A pot wiper shorted to a rail reads a STABLE 1023 with real stall current
-# (driven, EN high). Firmware rejects it via the sane band (posValid false) and
+# (driven, EN high). Firmware rejects it via the sane-band validity state and
 # emits pos = "nan" -- so on the wire it is indistinguishable from a float and
 # the host must read it disconnected, current draw notwithstanding (AC 2f, and
 # the closed OR-leak: a drawing motor no longer vouches for a dead pot).
@@ -111,8 +107,8 @@ MOVING_SEG = "FLHY 0.742 760 30 1 1 0 200 5"
 JOG_TICK_A = "FLHY 0.300 300 210 1 1 0 255 7"
 JOG_TICK_B = "FLHY 0.550 555 205 1 1 0 255 9"
 # Attached but idle and never driven: EN low, no current, but a valid pot -> a
-# finite position. Must stay attached (AC 2d); this is why isConnected is pot-
-# trust, not current-presence.
+# finite position. Must stay attached (AC 2d); the current-based attachment FSM
+# remains unknown until driven evidence exists, so idle current is never used.
 IDLE_ATTACHED_SEG = "FLHY 0.500 512 0 0 0 0 0 3"
 
 
@@ -156,7 +152,8 @@ class TestMovingJointNotFalselyDisconnected:
 
     def test_idle_attached_joint_stays_connected(self):
         # Attached, idle, never driven (EN low, zero current) but a valid pot:
-        # still attached (AC 2d) -- pot-trust, not current-presence, decides.
+        # still attached (AC 2d) -- attachment remains unknown/allowed until
+        # usable driven-current evidence exists.
         jt = JointTelemetry.from_tokens(IDLE_ATTACHED_SEG.split())
 
         assert jt is not None

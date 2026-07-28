@@ -7,9 +7,11 @@
 // Followers never initialize this bus; role election decides at runtime.
 
 // --- Bus ---
-// 100 kHz, not 400: the model runs ~50 Hz and the per-tick payload is tiny;
-// the slower clock buys noise margin on the Qwiic->Dupont run.
-#define I2C_BUS_CLOCK_HZ 100000UL
+// Fast-mode I2C keeps the OLED driver's worst-case dirty-page transfer inside
+// the 50 ms sensor/control/telemetry budget. All devices on the leader's Qwiic
+// cluster support 400 kHz. The physical Qwiic->Dupont run still needs bench
+// validation for signal integrity at this rate.
+#define I2C_BUS_CLOCK_HZ 400000UL
 
 // Bound every I2C transaction so a wedged bus degrades telemetry (valid=0)
 // instead of stalling the gait loop. AVR measures the whole blocking transfer,

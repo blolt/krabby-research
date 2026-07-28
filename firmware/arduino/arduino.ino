@@ -15,6 +15,11 @@
 #include <math.h>
 #include "board_pins.h"
 #include "command.h"
+#include "controller_freshness.h"
+#include "controller_slots.h"
+#include "disconnect_status.h"
+#include "oled_actuator_glyphs.h"
+#include "oled_transfer_budget.h"
 #include "actuator_manager.h"
 #include "sensors_config.h"
 #include "telemetry_protocol.h"
@@ -33,13 +38,11 @@
 #define ASSIGN_LEFT  "ROLE:LEFT"
 #define ASSIGN_RIGHT "ROLE:RIGHT"
 
-enum BoardRole { ROLE_UNKNOWN, ROLE_FRONT, ROLE_LEFT, ROLE_RIGHT };
 BoardRole currentRole = ROLE_UNKNOWN;
 
 // OLED render state types — defined up here so the .ino auto-prototype pass sees
 // them before it hoists prototypes for the render functions (oledGlyph /
 // oledRenderKrab) that take them. Constants + bodies live in the render section.
-enum OledGlyph { OG_HOLD, OG_EXTEND, OG_RETRACT, OG_DISC };
 struct OledKrabState {
   bool front, left, right;
   OledGlyph legs[6][3];
@@ -71,7 +74,7 @@ struct OledKrabState {
 // LEFT/RIGHT during role election.
 static inline bool isI2CClusterBoard()
 {
-    return currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN;
+    return roleOwnsControllerDisplay(currentRole);
 }
 
 // EEPROM address 32: magic sentinel byte (0xAB); address 33: BoardRole value.
@@ -214,7 +217,8 @@ static void logImuInitFailure(ImuInitResult result)
 // the same Qwiic chain. Ported 1:1 from firmware/oled_sim/krab.py; driven by
 // live telemetry (role, IMU roll/pitch; pack V + battery bars are Task 3
 // placeholders). A drawn frame is a full erase()+redraw()+display() (~120 ms
-// full-frame I2C); oledRenderKrab skips it entirely when the state is unchanged.
+// worst-case dirty-page I2C); oledRenderKrab skips it entirely when the state is
+// unchanged.
 Qwiic1in3OLED oled;
 bool oledValid = false;
 unsigned long lastOledDraw = 0;
@@ -445,12 +449,12 @@ static void imuAppendTelemetry(Print& out)
 // ===========================================================================
 // OLED krab status render — 1:1 firmware port of firmware/oled_sim/krab.py
 // (RENDER_SPEC.md §5): same geometry + draw-call order, integer voltage format
-// (no %f), signed int for the leg math, one display() flush. oled.erase() wipes
-// the whole buffer, so every render tick that actually draws costs a full-frame
-// I2C flush (~120 ms), NOT the ~6 ms a dirty-page redraw would — the library
-// cannot diff pages across an erase(). To keep the 4 Hz redraw off the wire when
-// nothing moved, oledRenderKrab caches the last-rendered OledKrabState and skips
-// erase()+redraw()+display() entirely on an unchanged frame (no I2C at all).
+// (no %f), signed int for the leg math, one display() flush. SparkFun's driver
+// transfers only each page's dirty x-range. Because erase()+redraw can dirty
+// most of the screen, the shared bus runs at 400 kHz so even the conservative
+// worst-case wire-time estimate remains below the 50 ms loop budget. To keep
+// unchanged frames off the wire entirely, oledRenderKrab also caches the last
+// rendered OledKrabState and skips erase()+redraw()+display().
 // Keep constants in lockstep with krab.py.
 // ===========================================================================
 #define OLED_REDRAW_INTERVAL_MS 250      // 4 Hz status refresh; well off the 50 ms tick
@@ -469,18 +473,7 @@ static const int OLED_BAT_NUB_W = 2, OLED_BAT_NUB_H = 3;
 static const int OLED_BAT_PITCH = OLED_BAT_W + OLED_BAT_NUB_W + OLED_BAT_HGAP;
 
 static void oledGlyph(int cx, int cy, OledGlyph st) {
-  int r = OLED_GLYPH / 2;  // 4
-  int t = r - 1;           // 3
-  if (st == OG_EXTEND) {
-    for (int i = 0; i <= 2 * t; i++) { int hw = i * t / (2 * t); oled.line(cx - hw, cy - t + i, cx + hw, cy - t + i); }
-  } else if (st == OG_RETRACT) {
-    for (int i = 0; i <= 2 * t; i++) { int hw = (2 * t - i) * t / (2 * t); oled.line(cx - hw, cy - t + i, cx + hw, cy - t + i); }
-  } else if (st == OG_HOLD) {
-    for (int dy = -r; dy <= r; dy++) for (int dx = -r; dx <= r; dx++) if (dx * dx + dy * dy <= r * r) oled.pixel(cx + dx, cy + dy);
-  } else {  // OG_DISC: bare X
-    oled.line(cx - t, cy - t, cx + t, cy + t);
-    oled.line(cx - t, cy + t, cx + t, cy - t);
-  }
+  drawOledActuatorGlyph(oled, cx, cy, st, OLED_GLYPH);
 }
 
 // Live glyph for one actuator: DISC if not physically attached, else EXTEND /
@@ -492,11 +485,7 @@ static void oledGlyph(int cx, int cy, OledGlyph st) {
 // exactly that boundary, matching driveActuator() rather than lagging by one.
 static const int OLED_PWM_MOVE_MIN = ACTUATOR_CONFIG.pwmDeadband;
 static OledGlyph glyphForActuator(const LinearActuator* a) {
-  if (!a->isConnected()) return OG_DISC;
-  int pwm = a->currentPwm;
-  if (pwm >= OLED_PWM_MOVE_MIN) return OG_EXTEND;
-  if (pwm <= -OLED_PWM_MOVE_MIN) return OG_RETRACT;
-  return OG_HOLD;
+  return actuatorGlyph(a->isConnected(), a->currentPwm, OLED_PWM_MOVE_MIN);
 }
 
 // Render cache for oledRenderKrab's skip-when-unchanged (AC 2h). File-scope so a
@@ -509,8 +498,8 @@ static bool oledKrabCacheValid = false;
 static inline void oledInvalidateKrabCache() { oledKrabCacheValid = false; }
 
 static void oledRenderKrab(const OledKrabState &s) {
-  // Skip-when-unchanged: erase() forces a full-frame I2C flush every draw, so a
-  // 4 Hz redraw of an identical frame would burn ~120 ms of bus time for nothing.
+  // Skip-when-unchanged: even a dirty-page transfer is wasted bus time when the
+  // rendered state is identical.
   // Cache the last-rendered state and bail before touching I2C when it matches.
   if (oledKrabCacheValid && s == oledKrabCached) return;
   oledKrabCached = s;
@@ -577,46 +566,60 @@ static void oledRenderKrab(const OledKrabState &s) {
   oled.display();
 }
 
-// Follower presence: millis() of the last complete line forwarded from each
-// follower link. Stamped in forwardFullLines; read by oledRenderLive. A follower
-// counts as present if seen within OLED_PRESENCE_MS. Followers emit telemetry
-// every TELEMETRY_INTERVAL_MS (50 ms / 20 Hz), so 500 ms absorbs ~10 dropped
-// ticks without flicker while staying responsive at the 250 ms OLED redraw.
-#define OLED_PRESENCE_MS 500
-static unsigned long followerLeftLastMs = 0, followerRightLastMs = 0;
+// Follower presence tracks only complete telemetry carrying the expected
+// role-elected prefix. Diagnostics and command/version replies are forwarded
+// normally but cannot make a telemetry-silent controller appear active.
+// Followers emit telemetry every TELEMETRY_INTERVAL_MS (50 ms / 20 Hz), so
+// 500 ms absorbs ~10 dropped ticks without flicker while staying responsive
+// at the 250 ms OLED redraw.
+static const uint32_t OLED_PRESENCE_MS = 500;
+static ControllerTelemetryFreshness followerLeftFreshness = {false, 0};
+static ControllerTelemetryFreshness followerRightFreshness = {false, 0};
+static OledGlyph followerLeftGlyphs[6] = {
+  OG_DISC, OG_DISC, OG_DISC, OG_DISC, OG_DISC, OG_DISC
+};
+static OledGlyph followerRightGlyphs[6] = {
+  OG_DISC, OG_DISC, OG_DISC, OG_DISC, OG_DISC, OG_DISC
+};
+static bool followerLeftConnected[6] = {
+  false, false, false, false, false, false
+};
+static bool followerRightConnected[6] = {
+  false, false, false, false, false, false
+};
 
 // Build the state from LIVE telemetry and draw. role from election; roll/pitch
 // from the cached IMU accel; pack V + battery bars are Task 3 placeholders (0.0
 // until the power monitor lands). Body presence is live (FRONT always here;
-// LEFT/RIGHT from follower-link recency) and the leader's own 6 legs come from
-// live actuator state; the 12 follower legs use a presence baseline (hold if the
-// board is up, else DISC) — a follow-up can parse forwarded telemetry for real
-// follower glyphs (pos "nan" -> DISC, signed PWM -> EXTEND/RETRACT) without a
-// wire-format change.
+// LEFT/RIGHT from follower-link recency). Every Mega contributes the same six
+// actuator states: the display owner's come directly from its actuator objects,
+// while LEFT/RIGHT are decoded from those Megas' forwarded telemetry.
 static void oledRenderLive() {
   OledKrabState s;
 
-  // Body presence: FRONT (this board) is always present here — oledRenderLive
-  // only runs on the leader/solo board. LEFT/RIGHT are present iff their serial
-  // link exists and we forwarded a complete line from it recently.
+  // Role election owns controller identity; freshness below only determines
+  // whether an assigned follower slot is presently active or missing.
+  ControllerSlotLinks slots = controllerSlotLinks(
+      currentRole, leftSerial != NULL, rightSerial != NULL);
   unsigned long now = millis();
-  s.front = true;
-  s.left  = (leftSerial  && now - followerLeftLastMs  < OLED_PRESENCE_MS);
-  s.right = (rightSerial && now - followerRightLastMs < OLED_PRESENCE_MS);
+  s.front = slots.frontLocal;
+  s.left = controllerTelemetryIsFresh(
+      slots.leftAssigned, followerLeftFreshness, now, OLED_PRESENCE_MS);
+  s.right = controllerTelemetryIsFresh(
+      slots.rightAssigned, followerRightFreshness, now, OLED_PRESENCE_MS);
 
-  // Leader's own 6 actuators -> render legs FL (0) and FR (1), from live state.
-  // ACT_LIST_FRONT[k]: index k -> legs[k/3][k%3] (leg 0/1, joint yaw/hip/knee).
-  for (int k = 0; k < 6; k++)
-    s.legs[k / 3][k % 3] = glyphForActuator(ACT_LIST_FRONT[k]);
+  OledGlyph localGlyphs[6];
+  for (int actuator = 0; actuator < 6; ++actuator)
+    localGlyphs[actuator] = glyphForActuator(ACT_LIST_FRONT[actuator]);
 
-  // 12 follower legs: presence baseline (holding if the board is up, else DISC).
-  // LEFT drives {ML=leg2, RL=leg4}; RIGHT drives {MR=leg3, RR=leg5}.
-  OledGlyph lg = s.left  ? OG_HOLD : OG_DISC;
-  OledGlyph rg = s.right ? OG_HOLD : OG_DISC;
-  for (int j = 0; j < 3; j++) {
-    s.legs[2][j] = lg; s.legs[4][j] = lg;
-    s.legs[3][j] = rg; s.legs[5][j] = rg;
-  }
+  const OledGlyph missingGlyphs[6] = {
+    OG_DISC, OG_DISC, OG_DISC, OG_DISC, OG_DISC, OG_DISC
+  };
+  setControllerLegGlyphs(s.legs, 0, 1, localGlyphs); // FRONT: FL, FR
+  setControllerLegGlyphs(
+      s.legs, 4, 2, s.left ? followerLeftGlyphs : missingGlyphs); // LEFT: RL, ML
+  setControllerLegGlyphs(
+      s.legs, 5, 3, s.right ? followerRightGlyphs : missingGlyphs); // RIGHT: RR, MR
 
   s.role = roleName(currentRole);
 
@@ -660,7 +663,16 @@ static size_t leftPartialPos = 0;
 static size_t rightPartialPos = 0;
 
 // Forward only complete lines (up to and including \n) from follower serial to mainSerial.
-void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, size_t cap, size_t* partialPos, unsigned long* lastLineMs)
+void forwardFullLines(
+    HardwareSerial* from,
+    HardwareSerial* to,
+    char* partial,
+    size_t cap,
+    size_t* partialPos,
+    const char* expectedRoleLabel,
+    ControllerTelemetryFreshness* freshness,
+    OledGlyph (*glyphs)[6],
+    bool (*connected)[6])
 {
     if (!from || !to || !partial || !partialPos) return;
     while (from->available())
@@ -672,7 +684,15 @@ void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, s
             if (*partialPos > 0)
             {
                 to->println(partial);
-                if (lastLineMs) *lastLineMs = millis(); // stamp follower presence
+                if (isExpectedControllerTelemetry(partial, expectedRoleLabel))
+                {
+                    if (freshness)
+                        noteControllerTelemetry(*freshness, millis());
+                    if (glyphs && connected)
+                        parseControllerActuatorStates(
+                            partial, expectedRoleLabel,
+                            OLED_PWM_MOVE_MIN, *glyphs, *connected);
+                }
             }
             *partialPos = 0;
             continue;
@@ -806,7 +826,7 @@ void setup()
         if (oledValid)
         {
             oled.setFont(QW_FONT_5X7);
-            oledRenderLive();  // first full frame here (~120 ms), before the loop
+            oledRenderLive();  // first frame is rendered before the loop
             Serial.println(F("OLED: online at 0x3D — krab UI live."));
         }
         else
@@ -980,14 +1000,26 @@ void loop()
 
     // Drain follower serial so RX buffers don't overflow (64-byte default drops middle of ~200-byte lines).
     // Only flush once after both drains so we don't block in flush() twice per loop (~35 ms each at 115200).
-    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos, &followerLeftLastMs);
-    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos, &followerRightLastMs);
+    forwardFullLines(
+        leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX,
+        &leftPartialPos, roleName(ROLE_LEFT), &followerLeftFreshness,
+        &followerLeftGlyphs, &followerLeftConnected);
+    forwardFullLines(
+        rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX,
+        &rightPartialPos, roleName(ROLE_RIGHT), &followerRightFreshness,
+        &followerRightGlyphs, &followerRightConnected);
 
     actuatorManager->updateAll();
 
     // Drain again in case bytes arrived during updateAll()
-    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos, &followerLeftLastMs);
-    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos, &followerRightLastMs);
+    forwardFullLines(
+        leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX,
+        &leftPartialPos, roleName(ROLE_LEFT), &followerLeftFreshness,
+        &followerLeftGlyphs, &followerLeftConnected);
+    forwardFullLines(
+        rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX,
+        &rightPartialPos, roleName(ROLE_RIGHT), &followerRightFreshness,
+        &followerRightGlyphs, &followerRightConnected);
     mainSerial->flush();
 
     if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS)
@@ -1007,22 +1039,36 @@ void loop()
         mainSerial->flush();  // ensure full line is sent before next loop (avoids two "LEFT;" in one buffer on host)
     }
 
-    // AC-2g: light the dedicated status LED whenever any of the leader's own front
-    // actuators reads disconnected (isConnected() == posValid). Leader/solo board
-    // only, driven every tick. STATUS_LED_PIN is shared with Task 4's low-battery
-    // blink, but that blink runs only on the SLEEP/OVER_VOLT low-power path (added
-    // in Task 4), which returns before this line — so the two never drive it at once.
+    // AC-2g: light the dedicated status LED when any known actuator is
+    // disconnected. A stale/missing follower is a controller-presence fault,
+    // not evidence that a specific motor is disconnected, so only fresh remote
+    // snapshots participate. STATUS_LED_PIN is shared with Task 4's low-battery
+    // blink, whose low-power path returns before this line.
     if (isI2CClusterBoard())
     {
-        bool anyLeaderActuatorDisconnected = false;
-        for (int k = 0; k < 6; k++)
-            if (!ACT_LIST_FRONT[k]->isConnected()) { anyLeaderActuatorDisconnected = true; break; }
-        digitalWrite(STATUS_LED_PIN, anyLeaderActuatorDisconnected ? HIGH : LOW);
+        bool localConnected[6];
+        for (int actuator = 0; actuator < 6; ++actuator)
+            localConnected[actuator] = ACT_LIST_FRONT[actuator]->isConnected();
+
+        ControllerSlotLinks slots = controllerSlotLinks(
+            currentRole, leftSerial != NULL, rightSerial != NULL);
+        uint32_t now = millis();
+        bool leftFresh = controllerTelemetryIsFresh(
+            slots.leftAssigned, followerLeftFreshness,
+            now, OLED_PRESENCE_MS);
+        bool rightFresh = controllerTelemetryIsFresh(
+            slots.rightAssigned, followerRightFreshness,
+            now, OLED_PRESENCE_MS);
+        bool ledActive = disconnectStatusLedActive(
+            localConnected,
+            leftFresh, followerLeftConnected,
+            rightFresh, followerRightConnected);
+        digitalWrite(STATUS_LED_PIN, ledActive ? HIGH : LOW);
     }
 
     // OLED krab status render, throttled off the gait/telemetry cadence. A
-    // changed frame costs a full erase()+redraw()+display() (~120 ms full-frame
-    // I2C); an unchanged frame is skipped inside oledRenderKrab (no I2C at all).
+    // changed frame uses the OLED driver's dirty-page transfer at 400 kHz; an
+    // unchanged frame is skipped inside oledRenderKrab (no I2C at all).
     // Leader/solo board only.
     if (oledValid && millis() - lastOledDraw >= OLED_REDRAW_INTERVAL_MS)
     {

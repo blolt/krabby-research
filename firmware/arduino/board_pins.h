@@ -80,3 +80,33 @@ inline const char* boardPinRevisionLabel()
 #ifndef STATUS_LED_PIN
 #define STATUS_LED_PIN 30
 #endif
+
+constexpr bool boardPinIsReserved(int pin)
+{
+    return
+        // USB serial, actuator PWM, follower UARTs, and I2C occupy D0-D21.
+        (pin >= 0 && pin <= 21) ||
+        pin == PIN_S0_EN ||
+        pin == PIN_S1_EN ||
+        pin == PIN_S2_EN ||
+        pin == PIN_S3_EN ||
+        pin == PIN_S4_EN ||
+        pin == PIN_S5_EN ||
+        // Reserved for the Orin power-control gate shared with Task 4.
+        pin == 38 ||
+        // A0-A11 are actuator pot/current inputs (digital aliases D54-D65).
+        (pin >= 54 && pin <= 65) ||
+#if KRABBY_PIN_REV == 1
+        // Original breadboard Hall inputs.
+        (pin >= 32 && pin <= 37) ||
+#elif KRABBY_PIN_REV == 3
+        // v0.2 Hall inputs D50-D52 and A12-A14 (D66-D68).
+        (pin >= 50 && pin <= 52) ||
+        (pin >= 66 && pin <= 68) ||
+#endif
+        false;
+}
+
+static_assert(
+    !boardPinIsReserved(STATUS_LED_PIN),
+    "STATUS_LED_PIN conflicts with a reserved Krabby Mega pin");

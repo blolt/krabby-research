@@ -36,6 +36,12 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     test_imu_sample
     test_controller_slots
     test_controller_freshness
+    test_oled_actuator_glyphs
+    test_actuator_attachment
+    test_pot_validity
+    test_board_pins
+    test_disconnect_status
+    test_oled_transfer_budget
 )
 
 foreach(test_name IN LISTS KRABBY_FIRMWARE_NATIVE_TESTS)
