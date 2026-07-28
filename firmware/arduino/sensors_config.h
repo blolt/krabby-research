@@ -36,6 +36,21 @@ const int TELEMETRY_INTERVAL_MS = 50;
 #define LSM6DSO_I2C_ADDR     0x6B
 #define LSM6DSO_I2C_ADDR_ALT 0x6A
 
+// Explicit register configuration. Do not replace this with the library's
+// BASIC_SETTINGS helper: that helper discards every register-write result and
+// reports success even when configuration failed.
+#define LSM6DSO_ACCEL_RANGE_G       8
+#define LSM6DSO_GYRO_RANGE_DPS      500
+#define LSM6DSO_ACCEL_DATA_RATE_HZ  416
+#define LSM6DSO_GYRO_DATA_RATE_HZ   416
+#define LSM6DSO_AUTO_INCREMENT      true
+#define LSM6DSO_BLOCK_DATA_UPDATE   true
+// Datasheet sensitivities for the configured full-scale ranges above.
+#define LSM6DSO_ACCEL_G_PER_LSB      0.000244f
+#define LSM6DSO_GYRO_DPS_PER_LSB     0.0175f
+#define LSM6DSO_TEMP_C_PER_LSB       (1.0f / 256.0f)
+#define LSM6DSO_TEMP_OFFSET_C        25.0f
+
 // Sensor->body axis transform. body[i] = IMU_AXIS_SIGN[i] * sensor[IMU_AXIS_SRC[i]]
 // Identity until the breakout's mounting orientation is fixed at bring-up;
 // update these and the firmware README together (grant AC 1i).
@@ -73,15 +88,13 @@ const int8_t  IMU_AXIS_SIGN[3] = {1, 1, 1};
 // EEPROM layout (see arduino.ino: joint CalData = bytes 0-25, role = 32-33).
 // IMU calibration lives at byte 40+ with its own sentinel and schema version.
 #define EEPROM_IMU_CAL_ADDR   40
+#define EEPROM_IMU_CAL_INVALID_MAGIC 0x00
 #define EEPROM_IMU_CAL_MAGIC  0xC7
 #define EEPROM_IMU_CAL_SCHEMA 1
 // ImuCalData (arduino.ino) = magic + schema + 3x gyro-bias float + 3x
-// accel-bias float = 26 bytes on AVR: EEPROM bytes 40-65 inclusive. A C++11
-// `static_assert` — a compile-time check, evaluated by the compiler, never at
-// runtime — sits directly below the ImuCalData struct in arduino.ino (line
-// ~149) and verifies sizeof(ImuCalData) == EEPROM_IMU_CAL_SIZE. If the
-// struct and this constant ever disagree, the firmware fails to compile with
-// that assert's message; a mismatch can never reach a running board.
+// accel-bias float = 26 bytes on AVR: EEPROM bytes 40-65 inclusive. The unit
+// EEPROM-layout contract verifies this stored shape and its non-overlap with
+// the inherited joint-calibration and role blocks.
 #define EEPROM_IMU_CAL_SIZE 26
 // First free EEPROM byte after the IMU block; Task 3 (INA228 cal) and later
 // sensor-cluster blocks allocate from here, each with its own magic + schema.

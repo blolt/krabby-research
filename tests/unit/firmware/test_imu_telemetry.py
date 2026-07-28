@@ -80,6 +80,21 @@ MALFORMED_SEGMENTS = [
         id="out-of-range-valid-flag",
     ),
     pytest.param(
+        "IMU 0.012 -0.034 9.807 0.0012 -0.0008 0.0003 24.5 -1",
+        ImuParseReason.NON_NUMERIC_TOKEN,
+        id="negative-valid-flag",
+    ),
+    pytest.param(
+        "IMU 0.012 -0.034 9.807 0.0012 -0.0008 0.0003 24.5 1.0",
+        ImuParseReason.NON_NUMERIC_TOKEN,
+        id="float-shaped-valid-flag",
+    ),
+    pytest.param(
+        "IMU 0.012 -0.034 9.807 0.0012 -0.0008 0.0003 24.5 true",
+        ImuParseReason.NON_NUMERIC_TOKEN,
+        id="textual-valid-flag",
+    ),
+    pytest.param(
         # AVR prints non-finite floats as "nan"; float() accepts it, so the
         # finiteness check must catch it.
         "IMU nan nan nan 0.0 0.0 0.0 24.5 1", ImuParseReason.NON_FINITE_VALUE,
@@ -90,8 +105,8 @@ MALFORMED_SEGMENTS = [
         id="avr-inf-print",
     ),
     # NOTE: a temp-only non-finite value (accel/gyro good) is NOT a malformed
-    # segment — the firmware NAN-poisons only temp on a getTemperature() failure
-    # and the sample is kept with temp_c=NaN. See
+    # segment. Partial motion data remains useful even though the current
+    # LSM6DSO path does not intentionally emit NaN for temperature. See
     # TestImuFromTokens.test_temp_only_nonfinite_keeps_sample_with_nan_temp.
 ]
 
@@ -181,10 +196,8 @@ class TestImuFromTokens:
         assert stats.last_segment == "IMU bad data"
 
     def test_temp_only_nonfinite_keeps_sample_with_nan_temp(self):
-        # The firmware NAN-poisons only the temp field when getTemperature()
-        # fails while accel/gyro are good. That is still a usable sample: keep
-        # it with temp_c = NaN rather than dropping the whole tick, and do NOT
-        # record it as a parse error (it is not corruption).
+        # Temperature failure alone still leaves usable motion data: keep the
+        # sample with temp_c = NaN and do NOT record a parse error.
         stats = ParseStats()
 
         imu = ImuTelemetry.from_tokens(
@@ -463,6 +476,32 @@ class TestFormatCompact:
             "a:(0.01,-0.03,9.81)m/s2 g:(0.001,-0.001,0.000)rad/s 24.5C STALE"
         )
 
+    def test_imu_format_compact_pins_zero_negative_and_rounding(self):
+        imu = ImuTelemetry(
+            accel=(0.0, -1.234, 9.876),
+            gyro=(0.0, -0.1236, 1.2346),
+            temp_c=-2.36,
+            valid=True,
+        )
+
+        assert imu.format_compact() == (
+            "a:(0.00,-1.23,9.88)m/s2 "
+            "g:(0.000,-0.124,1.235)rad/s -2.4C"
+        )
+
+    def test_imu_format_compact_keeps_motion_when_temperature_is_nan(self):
+        imu = ImuTelemetry(
+            accel=(1.0, 2.0, 3.0),
+            gyro=(4.0, 5.0, 6.0),
+            temp_c=float("nan"),
+            valid=True,
+        )
+
+        assert imu.format_compact() == (
+            "a:(1.00,2.00,3.00)m/s2 "
+            "g:(4.000,5.000,6.000)rad/s nanC"
+        )
+
 
 class TestSdkImuStorage:
     def test_leader_line_populates_imu_and_joints(self):
@@ -495,6 +534,37 @@ class TestSdkImuStorage:
 
         assert sdk.imu is not None
         assert sdk.imu.valid is True
+
+    def test_second_fresh_sample_replaces_every_stored_imu_field(self):
+        sdk = _bare_sdk()
+        sdk._parse_joint_line(LEADER_LINE)
+        first = sdk.imu
+        replacement_segment = "IMU -1.25 2.5 8.75 -0.4 0.5 -0.6 31.2 1"
+
+        sdk._parse_joint_line(f"FRONT; {JOINT_SEG};{replacement_segment}")
+
+        assert sdk.imu is not None
+        assert sdk.imu is not first
+        assert sdk.imu.accel == (-1.25, 2.5, 8.75)
+        assert sdk.imu.gyro == (-0.4, 0.5, -0.6)
+        assert sdk.imu.temp_c == 31.2
+        assert sdk.imu.valid is True
+
+    def test_imu_only_leader_line_stores_sample_without_joints(self):
+        sdk = _bare_sdk()
+
+        sdk._parse_joint_line(f"FRONT; {IMU_SEG}")
+
+        assert sdk.imu is not None
+        assert sdk.imu.valid is True
+        assert sdk.joints == {}
+
+    def test_first_malformed_imu_leaves_storage_empty(self):
+        sdk = _bare_sdk()
+
+        sdk._parse_joint_line(MALFORMED_IMU_LINE)
+
+        assert sdk.imu is None
 
     @pytest.mark.parametrize(
         "line",

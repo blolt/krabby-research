@@ -13,24 +13,35 @@
  */
 #include <Wire.h>
 
+static const unsigned long SCANNER_BAUD = 250000UL;
+// Standalone Arduino sketches are copied to a temporary build directory, so
+// this sketch cannot include ../../arduino/sensors_config.h. Host contract
+// tests require these two named values to match the production bus constants.
+static const unsigned long SCANNER_I2C_CLOCK_HZ = 100000UL;
+static const unsigned long SCANNER_I2C_TIMEOUT_US = 10000UL;
+static const unsigned long STARTUP_SETTLE_MS = 50UL;
+static const unsigned long SCAN_INTERVAL_MS = 3000UL;
+static const byte FIRST_I2C_ADDRESS = 1;
+static const byte LAST_I2C_ADDRESS = 126;
+
 void setup() {
-  Serial.begin(250000);
-  pinMode(20, INPUT_PULLUP); pinMode(21, INPUT_PULLUP);
-  delay(50);
-  Serial.print("idle SDA(D20)="); Serial.print(digitalRead(20));
-  Serial.print(" SCL(D21)="); Serial.println(digitalRead(21));
+  Serial.begin(SCANNER_BAUD);
+  pinMode(SDA, INPUT_PULLUP); pinMode(SCL, INPUT_PULLUP);
+  delay(STARTUP_SETTLE_MS);
+  Serial.print("idle SDA(D20)="); Serial.print(digitalRead(SDA));
+  Serial.print(" SCL(D21)="); Serial.println(digitalRead(SCL));
   Wire.begin();
-  Wire.setClock(100000);
-  Wire.setWireTimeout(10000, true);
+  Wire.setClock(SCANNER_I2C_CLOCK_HZ);
+  Wire.setWireTimeout(SCANNER_I2C_TIMEOUT_US, true);
 }
 
 void loop() {
   byte n = 0;
-  for (byte a = 1; a < 127; a++) {
+  for (byte a = FIRST_I2C_ADDRESS; a <= LAST_I2C_ADDRESS; a++) {
     Wire.beginTransmission(a);
     if (Wire.endTransmission() == 0) { Serial.print("FOUND 0x"); Serial.println(a, HEX); n++; }
     if (Wire.getWireTimeoutFlag()) { Serial.println("BUS TIMEOUT"); Wire.clearWireTimeoutFlag(); }
   }
   Serial.print("scan done, devices: "); Serial.println(n);
-  delay(3000);
+  delay(SCAN_INTERVAL_MS);
 }

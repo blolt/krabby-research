@@ -295,10 +295,11 @@ parsers drop it — see `firmware/interfaces/joint_telemetry.py`):
 
 Units: accel **m/s²**, gyro **rad/s** (gyro is boot-bias-subtracted), temp **°C**.
 `valid` is `0` when the sensor did not respond that tick (init failure ships
-zeros with `valid=0` and never stalls the gait loop). A failed temperature
-read (separate I2C transaction) prints `nan`; the Python parser drops
-non-finite segments, so that tick's IMU sample is skipped rather than
-shipping a plausible-looking `0.0` °C.
+zeros with `valid=0` and never stalls the gait loop). The LSM6DSO driver reads
+acceleration, angular rate, and temperature as one sample; it does not expose
+an independent temperature-read failure. The Python parser nevertheless
+preserves finite motion data if a future driver reports a non-finite
+temperature, displaying that temperature as `nan`.
 
 ### Axis convention / sensor→body transform
 
@@ -362,10 +363,10 @@ struct lives in `arduino.ino`.
 | 66– | — | free | `EEPROM_SENSOR_CAL_NEXT_ADDR` = 66; Task 3 (INA228 cal) and later blocks allocate from here, each with its own magic + schema |
 
 So "`ImuCalData` is 26 bytes" means exactly bytes 40–65:
-1 (magic) + 1 (schema) + 12 (gyro bias) + 12 (accel bias) = 26. A
-`static_assert` next to the struct in `arduino.ino` pins
-`sizeof(ImuCalData)` to `EEPROM_IMU_CAL_SIZE` at compile time, so the table
-above cannot silently drift from the code.
+1 (magic) + 1 (schema) + 12 (gyro bias) + 12 (accel bias) = 26. The
+test-only EEPROM layout contract pins this stored shape to
+`EEPROM_IMU_CAL_SIZE` and verifies that it cannot overlap the joint, role, or
+next-sensor regions.
 
 ### Loop timing (AC 1c) and serial budget
 

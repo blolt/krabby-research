@@ -51,7 +51,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python deps
-        run: pip install boto3
+        run: pip install boto3 pytest pytest-cov pytest-timeout keyboard pyserial
+
+      - name: Run native and Python firmware tests
+        run: make -C firmware test-firmware
 
       - name: Install arduino-cli 1.1.1
         run: |

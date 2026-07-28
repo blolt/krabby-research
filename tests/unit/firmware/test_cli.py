@@ -337,6 +337,26 @@ class TestCmdUpdate:
         assert "release" in str(dl_dest)
         mock_flash.assert_called_once()
 
+    def test_warns_that_m16_requires_a_matched_fleet_update(
+        self, tmp_path, monkeypatch, capsys
+    ):
+        monkeypatch.setattr(cli_mod, "CACHE_DIR", tmp_path)
+        index = self._default_index()
+        with patch.object(cli_mod, "_fetch_index", return_value=index):
+            with patch.object(cli_mod, "_download_hex"):
+                with patch.object(
+                    cli_mod, "_all_mega_ports", return_value=["/dev/ttyACM0"]
+                ):
+                    with patch.object(cli_mod, "_flash"):
+                        cli_mod.cmd_update()
+
+        warning = capsys.readouterr().err
+        assert str(cli_mod.DEFAULT_BAUD) in warning
+        assert "Flash ALL THREE boards" in warning
+        assert "update" in warning and "host image" in warning
+        assert "mixed fleet" in warning
+        assert "ROLE_UNKNOWN" in warning
+
     def test_explicit_branch_used(self, tmp_path, monkeypatch):
         monkeypatch.setattr(cli_mod, "CACHE_DIR", tmp_path)
         index = self._default_index()

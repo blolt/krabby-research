@@ -18,6 +18,9 @@
 # Windows: winget install GnuWin32.Make, then add GnuWin32\bin to PATH.
 
 ARDUINO_CLI ?= arduino-cli
+CMAKE       ?= cmake
+CTEST       ?= ctest
+PYTEST      ?= pytest
 FQBN        ?= arduino:avr:mega
 PIN_REV     ?= 3
 SKETCH      := $(CURDIR)/arduino
@@ -30,6 +33,9 @@ AVRDUDE     ?= avrdude
 SSH         ?= ssh
 SCP         ?= scp
 BUILD_DIR   := $(CURDIR)/build
+REPO_ROOT   := $(abspath $(CURDIR)/..)
+NATIVE_TEST_SOURCE := $(REPO_ROOT)/tests/native/firmware
+NATIVE_TEST_BUILD  := $(REPO_ROOT)/build/native-firmware-tests
 HEX         := $(BUILD_DIR)/arduino.ino.hex
 REMOTE_HEX  ?= /tmp/krabby-firmware.hex
 
@@ -66,7 +72,15 @@ endif
 $(info Using PORT=$(PORT))
 endif
 
-.PHONY: arduino-core fetch-libs compile-firmware upload-firmware flash-remote
+.PHONY: arduino-core fetch-libs compile-firmware upload-firmware flash-remote test-native test-firmware
+
+test-native:
+	$(CMAKE) -S "$(NATIVE_TEST_SOURCE)" -B "$(NATIVE_TEST_BUILD)"
+	$(CMAKE) --build "$(NATIVE_TEST_BUILD)"
+	$(CTEST) --test-dir "$(NATIVE_TEST_BUILD)" --output-on-failure
+
+test-firmware: test-native
+	cd "$(REPO_ROOT)" && $(PYTEST) -q tests/unit/firmware
 
 # Pinned to the core version the bench-verified hex was built with; bump
 # deliberately, together with the CI cache key in publish-firmware.yml.

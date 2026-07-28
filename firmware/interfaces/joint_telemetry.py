@@ -14,8 +14,9 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Optional
 
 # Wire format: must match firmware (actuator_manager.h + arduino.ino).
-# Line starts with a role prefix "FRONT; ", "UNKNOWN; ", "LEFT; ", or "RIGHT; " then semicolon-separated segments.
-# Forwarded lines from left/right already include their role (LEFT; / RIGHT; ).
+# Line starts with a role prefix "FRONT; ", "UNKWN; ", "LEFT ;", or "RIGHT; "
+# then semicolon-separated segments. LEFT is padded before the semicolon.
+# Forwarded lines from left/right already include their role (LEFT ; / RIGHT;).
 # Example: "FRONT; FLHY 0.123 0 512 1 0 0 128 0;FLHL ...;..."
 # Segment format: <name> <pos> <pot> <current> <enL> <enR> <pwmL> <pwmR> <saf>
 # saf: cumulative HallA edge count since boot (pins depend on KRABBY_PIN_REV in board_pins.h).
@@ -60,7 +61,6 @@ class ImuParseReason(enum.Enum):
     BAD_TOKEN_COUNT = "bad-token-count"      # truncated or over-long segment
     NON_NUMERIC_TOKEN = "non-numeric-token"  # garbled bytes, AVR "ovf", bad valid flag
     NON_FINITE_VALUE = "non-finite-value"    # AVR "nan"/"inf" on accel/gyro (wiring/link)
-    TEMP_READ_FAILED = "temp-read-failed"    # retained (later task); temp-only NaN now keeps the sample, so no longer emitted here
 
 
 @dataclass
@@ -147,6 +147,16 @@ class ImuTelemetry:
     # change that appends a field must land with a parser update; until then
     # the over-long segment is dropped rather than misparsed.
     TOKEN_COUNT = 9
+    VALID_BY_TOKEN = {"0": False, "1": True}
+    ACCEL_LABEL = "a"
+    ACCEL_UNIT = "m/s2"
+    ACCEL_DECIMALS = 2
+    GYRO_LABEL = "g"
+    GYRO_UNIT = "rad/s"
+    GYRO_DECIMALS = 3
+    TEMP_UNIT = "C"
+    TEMP_DECIMALS = 1
+    STALE_SUFFIX = " STALE"
 
     @classmethod
     def from_tokens(
@@ -176,37 +186,56 @@ class ImuTelemetry:
             return None
         if len(tokens) != cls.TOKEN_COUNT:
             return _drop(ImuParseReason.BAD_TOKEN_COUNT)
+
+        (
+            _tag,
+            accel_x_token,
+            accel_y_token,
+            accel_z_token,
+            gyro_x_token,
+            gyro_y_token,
+            gyro_z_token,
+            temp_c_token,
+            valid_token,
+        ) = tokens
         try:
-            vals = [float(t) for t in tokens[1:8]]
+            accel = (
+                float(accel_x_token),
+                float(accel_y_token),
+                float(accel_z_token),
+            )
+            gyro = (
+                float(gyro_x_token),
+                float(gyro_y_token),
+                float(gyro_z_token),
+            )
+            temp_c = float(temp_c_token)
         except ValueError:
             # Garbled bytes, or AVR Print's "ovf" for floats outside its
             # printable range; float() rejects both.
             return _drop(ImuParseReason.NON_NUMERIC_TOKEN)
+
         # The valid flag is exactly "0" or "1" on the wire; anything else is a
         # corrupt token, not a valid=2/-1 "sample".
-        if tokens[8] not in ("0", "1"):
+        if valid_token not in cls.VALID_BY_TOKEN:
             return _drop(ImuParseReason.NON_NUMERIC_TOKEN)
-        valid = tokens[8] == "1"
+        valid = cls.VALID_BY_TOKEN[valid_token]
+
         # AVR prints non-finite floats as "nan"/"inf", which float() accepts.
-        if not all(math.isfinite(v) for v in vals):
-            if not all(math.isfinite(v) for v in vals[:6]):
-                # accel/gyro (vals[:6]) garbled: a genuine wiring/link fault,
-                # so the whole sample is worthless -- drop it and record why.
-                return _drop(ImuParseReason.NON_FINITE_VALUE)
-            # Only the temp field is non-finite: the firmware NAN-poisons token 7
-            # when getTemperature() fails while accel/gyro are good. That sample
-            # is still useful, so keep it with temp_c = NaN rather than dropping
-            # the tick. This is not a parse error, so stats stay untouched.
-            return cls(
-                accel=(vals[0], vals[1], vals[2]),
-                gyro=(vals[3], vals[4], vals[5]),
-                temp_c=float("nan"),
-                valid=valid,
-            )
+        if not all(math.isfinite(value) for value in accel + gyro):
+            return _drop(ImuParseReason.NON_FINITE_VALUE)
+
+        # A non-finite temperature does not invalidate otherwise useful motion
+        # data. The LSM6DSO path does not intentionally emit NaN today, but
+        # retaining the partial sample is safer if a future driver can report
+        # temperature failure independently. This is not a parse error.
+        if not math.isfinite(temp_c):
+            temp_c = float("nan")
+
         return cls(
-            accel=(vals[0], vals[1], vals[2]),
-            gyro=(vals[3], vals[4], vals[5]),
-            temp_c=vals[6],
+            accel=accel,
+            gyro=gyro,
+            temp_c=temp_c,
             valid=valid,
         )
 
@@ -248,10 +277,17 @@ class ImuTelemetry:
     def format_compact(self) -> str:
         ax, ay, az = self.accel
         gx, gy, gz = self.gyro
-        flag = "" if self.valid else " STALE"
+        flag = "" if self.valid else self.STALE_SUFFIX
         return (
-            f"a:({ax:.2f},{ay:.2f},{az:.2f})m/s2 "
-            f"g:({gx:.3f},{gy:.3f},{gz:.3f})rad/s {self.temp_c:.1f}C{flag}"
+            f"{self.ACCEL_LABEL}:"
+            f"({ax:.{self.ACCEL_DECIMALS}f},"
+            f"{ay:.{self.ACCEL_DECIMALS}f},"
+            f"{az:.{self.ACCEL_DECIMALS}f}){self.ACCEL_UNIT} "
+            f"{self.GYRO_LABEL}:"
+            f"({gx:.{self.GYRO_DECIMALS}f},"
+            f"{gy:.{self.GYRO_DECIMALS}f},"
+            f"{gz:.{self.GYRO_DECIMALS}f}){self.GYRO_UNIT} "
+            f"{self.temp_c:.{self.TEMP_DECIMALS}f}{self.TEMP_UNIT}{flag}"
         )
 
 

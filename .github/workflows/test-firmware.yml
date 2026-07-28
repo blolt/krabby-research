@@ -1,0 +1,49 @@
+name: Test firmware
+
+on:
+  pull_request:
+    paths:
+      - 'firmware/**'
+      - 'tests/native/firmware/**'
+      - 'tests/unit/firmware/**'
+      - '.github/workflows/test-firmware.yml'
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install test dependencies
+        run: pip install pytest pytest-cov pytest-timeout keyboard pyserial
+
+      - name: Run native and Python firmware tests
+        run: make -C firmware test-firmware
+
+      - name: Install arduino-cli 1.1.1
+        run: |
+          curl -fsSL https://github.com/arduino/arduino-cli/releases/download/v1.1.1/arduino-cli_1.1.1_Linux_64bit.tar.gz \
+            | tar -xz -C /usr/local/bin arduino-cli
+
+      - name: Cache Arduino AVR core
+        uses: actions/cache@v4
+        with:
+          path: ~/.arduino15
+          key: arduino-avr-${{ runner.os }}-cli1.1.1-core1.8.8
+
+      - name: Cache pinned Arduino libraries
+        uses: actions/cache@v4
+        with:
+          path: firmware/arduino/libraries
+          key: arduino-libs-${{ hashFiles('firmware/scripts/fetch_arduino_libs.py', 'firmware/arduino/patches/**') }}
+
+      - name: Compile Mega firmware
+        run: make -C firmware compile-firmware

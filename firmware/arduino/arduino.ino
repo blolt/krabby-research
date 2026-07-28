@@ -8,10 +8,13 @@
 #include <EEPROM.h>
 #include <Wire.h>
 #include "SparkFunLSM6DSO.h"
+#include "imu_init.h"
+#include "imu_sample.h"
 #include "board_pins.h"
 #include "command.h"
 #include "actuator_manager.h"
 #include "sensors_config.h"
+#include "telemetry_protocol.h"
 #include "version.h"
 
 // --- Serial: left follower = Serial1 (TX1/RX1 on Krabby-Uno v0.1 shield), right follower = Serial2 ---
@@ -126,6 +129,54 @@ unsigned long lastTelemetry = 0;
 // The LSM6DSO IMU rides the leader's telemetry tick; followers never touch the bus.
 LSM6DSO imu;
 bool imuValid = false; // LSM6DSO init succeeded; runtime freshness is per-tick (valid field)
+uint8_t imuAddress = 0; // selected only after detection and configuration both succeed
+
+class Lsm6dsoInitBoundary
+{
+public:
+    explicit Lsm6dsoInitBoundary(LSM6DSO &device) : device_(device) {}
+
+    bool begin(uint8_t address)
+    {
+        return device_.begin(address);
+    }
+
+    bool configure()
+    {
+        return configureLsm6dso(
+            device_,
+            LSM6DSO_AUTO_INCREMENT,
+            LSM6DSO_ACCEL_RANGE_G,
+            LSM6DSO_ACCEL_DATA_RATE_HZ,
+            LSM6DSO_GYRO_RANGE_DPS,
+            LSM6DSO_GYRO_DATA_RATE_HZ,
+            LSM6DSO_BLOCK_DATA_UPDATE);
+    }
+
+private:
+    LSM6DSO &device_;
+};
+
+static void logImuInitFailure(ImuInitResult result)
+{
+    if (result == IMU_INIT_NOT_DETECTED)
+    {
+        Serial.print(F("IMU CAL: LSM6DSO not detected at 0x"));
+        Serial.print(LSM6DSO_I2C_ADDR, HEX);
+        Serial.print(F(" or 0x"));
+        Serial.print(LSM6DSO_I2C_ADDR_ALT, HEX);
+        Serial.println(F("; shipping valid=0."));
+        return;
+    }
+
+    if (result == IMU_INIT_CONFIGURATION_FAILED)
+    {
+        Serial.println(F("IMU CAL: LSM6DSO detected but register configuration failed; shipping valid=0."));
+        return;
+    }
+
+    Serial.println(F("IMU CAL: unexpected initialization result; shipping valid=0."));
+}
 
 // Gyro/accel bias in the RAW sensor frame (deg/s, g), captured at boot while
 // stationary and persisted at EEPROM_IMU_CAL_ADDR. Stored pre-transform so a
@@ -146,9 +197,9 @@ struct ImuCalData
     // stored layout stable.
     float accelBiasG[3];
 };
-static_assert(sizeof(ImuCalData) == EEPROM_IMU_CAL_SIZE,
-              "update EEPROM_IMU_CAL_SIZE in sensors_config.h");
 ImuCalData imuCal = {};
+
+static bool imuCalPlausible();
 
 static void imuCaptureGyroBias()
 {
@@ -191,13 +242,20 @@ static void imuCaptureGyroBias()
         imuCal.gyroBiasDps[a] = sum[a] / good;
     // Two-phase write: put() streams bytes from offset 0, so a power loss
     // mid-write (~86 ms) would otherwise persist a valid magic over garbage
-    // floats. Write the block with magic=0x00 first, then flip the real magic
-    // in last — a torn write always fails the magic check and recaptures.
-    imuCal.magic = 0x00;
+    // floats. Write the block with invalid magic first, then flip the real
+    // magic last — a torn write always fails validation and recaptures.
+    imuCal.magic = EEPROM_IMU_CAL_INVALID_MAGIC;
     imuCal.schema = EEPROM_IMU_CAL_SCHEMA;
     EEPROM.put(EEPROM_IMU_CAL_ADDR, imuCal);
     imuCal.magic = EEPROM_IMU_CAL_MAGIC;
     EEPROM.update(EEPROM_IMU_CAL_ADDR, EEPROM_IMU_CAL_MAGIC);
+    EEPROM.get(EEPROM_IMU_CAL_ADDR, imuCal);
+    if (!imuCalPlausible())
+    {
+        imuCal = ImuCalData{};
+        Serial.println(F("IMU CAL: EEPROM verification failed; bias left at zero, retrying next boot."));
+        return;
+    }
     Serial.println("IMU CAL: gyro bias captured and saved to EEPROM.");
 }
 
@@ -230,27 +288,26 @@ static void imuSetup(bool allowBiasCapture)
     Wire.setClock(I2C_BUS_CLOCK_HZ);
     Wire.setWireTimeout(I2C_WIRE_TIMEOUT_US, true);  // see sensors_config.h
 
-    uint8_t imuAddr = LSM6DSO_I2C_ADDR;
-    if (!imu.begin(imuAddr))
+    uint8_t selectedAddress = 0;
+    Lsm6dsoInitBoundary imuDevice(imu);
+    ImuInitResult initResult = initializeImu(
+        imuDevice,
+        LSM6DSO_I2C_ADDR,
+        LSM6DSO_I2C_ADDR_ALT,
+        selectedAddress);
+    // Derive validity from the complete result in one place. This remains
+    // correct if setup is later reused as a retry after a previously healthy
+    // sensor: either failure class actively clears the old valid state.
+    imuValid = initResult == IMU_INIT_OK;
+    if (!imuValid)
     {
-        imuAddr = LSM6DSO_I2C_ADDR_ALT;
-        if (!imu.begin(imuAddr))
-        {
-            imuValid = false;
-            Serial.println("IMU CAL: LSM6DSO init failed at 0x6B and 0x6A; shipping valid=0.");
-            return;
-        }
+        imuAddress = 0;
+        logImuInitFailure(initResult);
+        return;
     }
-    // begin() only opens the bus and checks WHO_AM_I; the accel/gyro power up in
-    // power-down (ODR=0) and read 0x0000 until configured. initialize() applies
-    // BASIC_SETTINGS: 8g accel / 500 dps gyro at 416 Hz with block-data-update on.
-    // Runs on every imuSetup() call — boot-time only in this build, since runtime
-    // recovery is silent and does not re-init in-loop (see imuMaybeRecover); a
-    // wedged sensor is re-enabled (not just re-probed) on the next reboot.
-    imu.initialize(BASIC_SETTINGS);
-    imuValid = true;
+    imuAddress = selectedAddress;
     Serial.print("IMU CAL: LSM6DSO online at 0x");
-    Serial.println(imuAddr, HEX);
+    Serial.println(imuAddress, HEX);
 
     EEPROM.get(EEPROM_IMU_CAL_ADDR, imuCal);
     if (imuCalPlausible())
@@ -296,35 +353,30 @@ static void imuAppendTelemetry(Print& out)
     bool fresh = false;
     if (imuValid)
     {
-        // LSM6DSO reads carry no per-call status (the BMI270 returned BMI2_OK from
-        // getSensorData); a total bus failure reads back 0x0000, which the all-zero
-        // guard below already treats as a browned-out sensor. readFloatAccel* returns
-        // g and readFloatGyro* returns deg/s -- the same raw units the BMI270 path fed
-        // in, so every line from here on (bias subtract, axis map, unit convert) is
-        // unchanged.
-        float rawA[3] = {imu.readFloatAccelX(), imu.readFloatAccelY(), imu.readFloatAccelZ()};
-        float rawG[3] = {imu.readFloatGyroX(), imu.readFloatGyroY(), imu.readFloatGyroZ()};
+        Lsm6dsoOutputSample sample = {};
+        const bool readOk = readLsm6dsoOutputSample(Wire, imuAddress, sample);
         // A configured accelerometer always sees gravity; all six raw axes
         // reading exactly zero is a browned-out sensor in suspend, not data.
         // Preferred over the STATUS drdy bits: those clear on data-read and go
         // low on a healthy sensor whenever the tick outpaces the ODR, which
         // would ship spurious valid=0 to the locomotion model.
-        bool allZero = rawA[0] == 0 && rawA[1] == 0 && rawA[2] == 0 &&
-                       rawG[0] == 0 && rawG[1] == 0 && rawG[2] == 0;
-        if (!allZero)
+        bool allZero = sample.accel[0] == 0 && sample.accel[1] == 0 && sample.accel[2] == 0 &&
+                       sample.gyro[0] == 0 && sample.gyro[1] == 0 && sample.gyro[2] == 0;
+        if (readOk && !allZero)
         {
+            float rawA[3], rawG[3];
+            for (int i = 0; i < 3; i++)
+            {
+                rawA[i] = sample.accel[i] * LSM6DSO_ACCEL_G_PER_LSB;
+                rawG[i] = sample.gyro[i] * LSM6DSO_GYRO_DPS_PER_LSB;
+            }
             for (int i = 0; i < 3; i++)
             {
                 a[i] = IMU_AXIS_SIGN[i] * (rawA[IMU_AXIS_SRC[i]] - imuCal.accelBiasG[IMU_AXIS_SRC[i]]) * IMU_ACCEL_G_TO_MS2;
                 g[i] = IMU_AXIS_SIGN[i] * (rawG[IMU_AXIS_SRC[i]] - imuCal.gyroBiasDps[IMU_AXIS_SRC[i]]) * IMU_GYRO_DEG_TO_RAD;
             }
-            // readTempC() returns degrees C directly and carries no status, so the
-            // BMI270's getTemperature() failure path (tempC=NAN) has no LSM6DSO
-            // analogue; temp is normally finite here. The wire field and its .1f
-            // formatting are unchanged, and the sample is kept regardless of temp:
-            // fresh is set below either way, so a non-finite temp still ships "nan"
-            // and the host keeps the sample with temp_c=NaN (accel/gyro still good).
-            tempC = imu.readTempC();
+            tempC = sample.temperature * LSM6DSO_TEMP_C_PER_LSB +
+                    LSM6DSO_TEMP_OFFSET_C;
             fresh = true;
         }
     }
@@ -332,11 +384,13 @@ static void imuAppendTelemetry(Print& out)
         imuBadTicks = 0;
     else
         imuMaybeRecover();
-    out.print(";IMU ");
-    for (int i = 0; i < 3; i++) { out.print(a[i], 3); out.print(' '); }
-    for (int i = 0; i < 3; i++) { out.print(g[i], 4); out.print(' '); }
+    out.print(TELEMETRY_SEGMENT_DELIMITER);
+    out.print(IMU_TELEMETRY_TAG);
+    out.print(TELEMETRY_FIELD_DELIMITER);
+    for (int i = 0; i < 3; i++) { out.print(a[i], 3); out.print(TELEMETRY_FIELD_DELIMITER); }
+    for (int i = 0; i < 3; i++) { out.print(g[i], 4); out.print(TELEMETRY_FIELD_DELIMITER); }
     out.print(tempC, 1);
-    out.print(' ');
+    out.print(TELEMETRY_FIELD_DELIMITER);
     out.print(fresh ? 1 : 0);
 }
 
@@ -680,7 +734,8 @@ void loop()
     {
         lastTelemetry = millis();
         mainSerial->print(roleName(currentRole));
-        mainSerial->print("; ");
+        mainSerial->print(TELEMETRY_SEGMENT_DELIMITER);
+        mainSerial->print(TELEMETRY_FIELD_DELIMITER);
         actuatorManager->printTelemetry(*mainSerial);
         // Leader appends its sensor segments to its own line only; forwarded
         // LEFT/RIGHT lines pass through forwardFullLines() untouched.
