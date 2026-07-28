@@ -17,7 +17,7 @@ static const unsigned long SCANNER_BAUD = 250000UL;
 // Standalone Arduino sketches are copied to a temporary build directory, so
 // this sketch cannot include ../../arduino/sensors_config.h. Host contract
 // tests require these two named values to match the production bus constants.
-static const unsigned long SCANNER_I2C_CLOCK_HZ = 100000UL;
+static const unsigned long SCANNER_I2C_CLOCK_HZ = 400000UL;
 static const unsigned long SCANNER_I2C_TIMEOUT_US = 10000UL;
 static const unsigned long STARTUP_SETTLE_MS = 50UL;
 static const unsigned long SCAN_INTERVAL_MS = 3000UL;

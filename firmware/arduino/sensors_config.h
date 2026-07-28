@@ -149,7 +149,7 @@ static constexpr Volts INA228_DIVERGENCE_THRESHOLD(0.5f);
 // --- INA228 implementation of power-sensing bench calibration (AC 3i) ---
 // VBUS calibration needs an EXTERNAL known reference (a DMM on the live pack),
 // so unlike the IMU gyro-bias capture it cannot self-run at boot — the operator
-// triggers it from the bench with the hardware-agnostic `P CAL ...` command
+// triggers it from the bench with the hardware-agnostic `C PWR_SENSE ...` command
 // family. Full bench procedure: docs/M16-INA228-CALIBRATION.md.
 //
 // Plausibility bounds shared by the capture routines and the stored-block loader

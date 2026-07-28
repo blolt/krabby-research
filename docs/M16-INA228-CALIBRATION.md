@@ -45,17 +45,17 @@ prior calibration stays in force. Persistence uses a magic-last write:
   partial block is rejected on restart and identity calibration is used.
 - After the final magic byte is written, the new complete block loads.
 
-## Serial command reference (`P CAL`)
+## Serial command reference (`C PWR_SENSE`)
 
 Leader board only (FRONT or the solo-on-USB bench board). Issue over the USB
 serial console at 250000 baud. The command is **not** forwarded to followers.
 
 | Command | Action |
 |---------|--------|
-| `P CAL VOLTAGE <packReferenceVolts> <midpointReferenceVolts>` | Capture both voltage offsets, save+apply |
-| `P CAL CURRENT <knownAmps>` | Capture the Pack current/shunt scale, save+apply |
-| `P CAL SHOW` | Print the currently loaded power-calibration values |
-| `P CAL ?` | Print power-calibration command help |
+| `C PWR_SENSE VOLTAGE <packReferenceVolts> <midpointReferenceVolts>` | Capture both voltage offsets, save+apply |
+| `C PWR_SENSE CURRENT <knownAmps>` | Capture the Pack current/shunt scale, save+apply |
+| `C PWR_SENSE SHOW` | Print the currently loaded power-calibration values |
+| `C PWR_SENSE ?` | Print power-calibration command help |
 
 `packReferenceVolts` and `midpointReferenceVolts` are the DMM-measured true
 voltages at the two monitor sense points when the command is issued.
@@ -66,7 +66,7 @@ voltage. `knownAmps` is signed to match the Pack INA228 convention.
 
 You need:
 
-- The leader board flashed and on USB. The boot log—not `P CAL SHOW`—must show
+- The leader board flashed and on USB. The boot log—not `C PWR_SENSE SHOW`—must show
   `INA: Pack (0x40) online` and
   `INA: Midpoint (0x41) online`).
 - A calibrated bench DMM.
@@ -102,10 +102,10 @@ tolerance.
 1. Apply a known voltage near the normal operating point and let it settle.
 2. Record the DMM readings as `packReferenceVolts` and
    `midpointReferenceVolts`.
-3. Issue `P CAL VOLTAGE <packReferenceVolts> <midpointReferenceVolts>`.
+3. Issue `C PWR_SENSE VOLTAGE <packReferenceVolts> <midpointReferenceVolts>`.
    Firmware solves both offsets, commits neither unless both are valid, then
    saves and applies both together.
-4. Record the values returned by `P CAL SHOW`.
+4. Record the values returned by `C PWR_SENSE SHOW`.
 5. Verify both reported voltages at the capture point against the recorded
    tolerance.
 6. Without recalibrating, verify at one or more independent representative
@@ -129,7 +129,7 @@ in the normal operating band for the best fit.
 1. Force a known, steady DC current through the external pack shunt, in the
    normal sense direction. Record the series-DMM value as `knownAmps`, signed to
    match the monitor convention.
-2. Issue `P CAL CURRENT <knownAmps>`. Firmware reads raw Pack current and saves
+2. Issue `C PWR_SENSE CURRENT <knownAmps>`. Firmware reads raw Pack current and saves
    `packShuntCal = knownAmps / measured`, then applies it live.
 3. **Verify:** hold the same current, watch the `BATT` telemetry `pack_i` field
    and confirm it matches `knownAmps` within the recorded tolerance.
@@ -153,15 +153,15 @@ After any VBUS capture, watch the leader telemetry `BATT` segment:
 - `batt_b` (= `pack_v - batt_a`) should match the DMM upper-battery reading.
 - With both batteries healthy and balanced, `divergence` should read `0`.
 
-`P CAL SHOW` at any time prints the stored trims for a record of what a board
-carries. `P CAL ?` prints help without mixing help text into the state output.
+`C PWR_SENSE SHOW` at any time prints the stored trims for a record of what a board
+carries. `C PWR_SENSE ?` prints help without mixing help text into the state output.
 
 ## Persistence verification
 
-1. Record `P CAL SHOW` after both capture procedures.
+1. Record `C PWR_SENSE SHOW` after both capture procedures.
 2. Remove power from the Mega, restore power, and confirm the boot log reports
    `POWER CAL: loaded from EEPROM.`
-3. Run `P CAL SHOW` and confirm all values exactly match the recorded block.
+3. Run `C PWR_SENSE SHOW` and confirm all values exactly match the recorded block.
 4. Confirm corrected telemetry remains within the recorded tolerances.
 5. If EEPROM retention across firmware upload is a project requirement, reflash
    using the intended uploader and repeat steps 2–4. Reflash retention depends on
@@ -184,15 +184,15 @@ Retain this information with the bench evidence:
 | Independent voltage point(s), errors, and pass-fail | |
 | Known current / reported current / absolute error / pass-fail | |
 | Independent current point(s), errors, and pass-fail | |
-| `P CAL SHOW` before restart | |
-| `P CAL SHOW` after restart | |
+| `C PWR_SENSE SHOW` before restart | |
+| `C PWR_SENSE SHOW` after restart | |
 | Reflash-retention result, if required | |
 
 ## `packShuntCal` status
 
 `packShuntCal` is **active**, not reserved: it multiplies live Pack current,
 power, and accumulated charge in `battAppendTelemetry` and is captured by
-`P CAL CURRENT`. Identity (1.0) until a current calibration is run, so an
+`C PWR_SENSE CURRENT`. Identity (1.0) until a current calibration is run, so an
 uncalibrated board's shunt-derived measurements remain uncorrected rather than
 being scaled by invalid persisted data. It is bounded to
 `[INA228_CAL_MIN_GAIN, INA228_CAL_MAX_GAIN]` on both capture and EEPROM load,

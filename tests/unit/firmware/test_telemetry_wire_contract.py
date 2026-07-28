@@ -92,11 +92,18 @@ def test_leader_appends_exactly_one_imu_segment_after_joints_before_newline():
 
     assert joints < imu < newline
     assert loop.count("imuAppendTelemetry(*mainSerial);") == 1
-    assert re.search(
+    sensor_gates = re.finditer(
         r"if\s*\(\s*isI2CClusterBoard\(\)\s*\)\s*"
-        r"imuAppendTelemetry\(\*mainSerial\);",
+        r"\{(?P<body>.*?)\}",
         loop,
+        flags=re.DOTALL,
     )
+    sensor_body = next(
+        match.group("body")
+        for match in sensor_gates
+        if "imuAppendTelemetry(*mainSerial);" in match.group("body")
+    )
+    assert "battAppendTelemetry(*mainSerial);" in sensor_body
 
 
 def test_imu_segment_uses_named_delimiters_and_tag():
@@ -141,13 +148,14 @@ def test_existing_joint_serialization_keeps_field_order_and_no_terminator():
 
     expected_fields = [
         "out.print(name);",
-        "out.print(getPos(), 3);",
+        "out.print(filteredActuatorPosition(isConnected(), getPos()), 3);",
         "out.print((int)avgPot);",
         "out.print((int)avgIS);",
         "out.print(en);",
         "out.print(en);",
         "out.print(currentPwm < 0 ? abs(currentPwm) : 0);",
         "out.print(currentPwm > 0 ? currentPwm : 0);",
+        "if (hallSlot >= 0 && hallSlot < 6)",
         "out.print(hallHwGetEdgeCount((uint8_t)hallSlot));",
     ]
     positions = [actuator.index(field) for field in expected_fields]
@@ -165,7 +173,7 @@ def test_existing_joint_serialization_keeps_field_order_and_no_terminator():
 def test_loop_owns_exactly_one_line_ending_after_optional_imu():
     source = ARDUINO.read_text()
     tick = _function_body(
-        source, "if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS)"
+        source, "if (telemetryPollDue(telemetryNow, lastTelemetry))"
     )
     expected_order = [
         "mainSerial->print(roleName(currentRole));",

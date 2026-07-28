@@ -4,8 +4,9 @@
 #include <math.h>
 #include <stdlib.h>
 
-static const char POWER_COMMAND_PREFIX = 'P';
-static const char POWER_CALIBRATION_NAMESPACE[] = "CAL";
+static const char CALIBRATION_COMMAND_PREFIX = 'C';
+static const char ACTUATOR_CALIBRATION_TARGET[] = "ACTUATOR";
+static const char POWER_SENSOR_CALIBRATION_TARGET[] = "PWR_SENSE";
 static const char POWER_CALIBRATION_VOLTAGE_OPERATION[] = "VOLTAGE";
 static const char POWER_CALIBRATION_CURRENT_OPERATION[] = "CURRENT";
 static const char POWER_CALIBRATION_SHOW_OPERATION[] = "SHOW";
@@ -47,12 +48,23 @@ inline bool powerCalibrationTokenEquals(
     return *actual == '\0' && *expected == '\0';
 }
 
+inline bool isActuatorCalibrationCommand(
+    size_t tokenCount,
+    const char* const* tokens)
+{
+    return tokenCount == 0 ||
+           (tokens != nullptr &&
+            tokenCount == 1 &&
+            powerCalibrationTokenEquals(
+                tokens[0], ACTUATOR_CALIBRATION_TARGET));
+}
+
 inline PowerCalibrationOperation parsePowerCalibrationOperation(
     const char* namespaceToken,
     const char* operationToken)
 {
     if (!powerCalibrationTokenEquals(
-            namespaceToken, POWER_CALIBRATION_NAMESPACE))
+            namespaceToken, POWER_SENSOR_CALIBRATION_TARGET))
         return PowerCalibrationOperation::Invalid;
     if (powerCalibrationTokenEquals(
             operationToken, POWER_CALIBRATION_VOLTAGE_OPERATION))

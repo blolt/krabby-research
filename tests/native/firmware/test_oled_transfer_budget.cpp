@@ -17,7 +17,7 @@ static void test_worst_case_oled_wire_time_fits_telemetry_budget()
 {
     const uint32_t transferUs = oledWorstCaseWireTimeUs(I2C_BUS_CLOCK_HZ);
     const uint32_t telemetryBudgetUs =
-        static_cast<uint32_t>(TELEMETRY_INTERVAL_MS) * 1000UL;
+        TELEMETRY_POLL_INTERVAL.value() * 1000UL;
 
     TEST_ASSERT_EQUAL_UINT32(28800UL, transferUs);
     TEST_ASSERT_LESS_THAN_UINT32(telemetryBudgetUs, transferUs);
@@ -27,7 +27,7 @@ static void test_old_standard_mode_cannot_meet_the_budget()
 {
     const uint32_t transferUsAt100KHz = oledWorstCaseWireTimeUs(100000UL);
     const uint32_t telemetryBudgetUs =
-        static_cast<uint32_t>(TELEMETRY_INTERVAL_MS) * 1000UL;
+        TELEMETRY_POLL_INTERVAL.value() * 1000UL;
 
     TEST_ASSERT_GREATER_THAN_UINT32(
         telemetryBudgetUs, transferUsAt100KHz);

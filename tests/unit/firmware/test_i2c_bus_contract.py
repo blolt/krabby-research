@@ -1,7 +1,7 @@
 """Source-contract coverage for the Task 1 leader I2C bus setup.
 
 The Arduino Wire calls cannot execute in the host Python suite. These tests pin
-the small compile-time contract instead: a named 100 kHz constant, initialization
+the small compile-time contract instead: a named 400 kHz constant, initialization
 order, leader gating, and reuse of the production constants by the bench scanner.
 """
 
@@ -18,6 +18,9 @@ I2C_SCANNER = (
     / "bench_sketches"
     / "i2c_scanner"
     / "i2c_scanner.ino"
+)
+CONTROLLER_SLOTS = (
+    REPO_ROOT / "firmware" / "arduino" / "controller_slots.h"
 )
 
 
@@ -36,7 +39,7 @@ def _function_body(source: str, signature: str) -> str:
     raise AssertionError(f"unterminated function: {signature}")
 
 
-def test_i2c_clock_is_a_named_100_khz_constant():
+def test_i2c_clock_is_a_named_400_khz_constant():
     config = SENSORS_CONFIG.read_text()
 
     match = re.search(
@@ -46,7 +49,7 @@ def test_i2c_clock_is_a_named_100_khz_constant():
     )
 
     assert match is not None
-    assert int(match.group(1)) == 100_000
+    assert int(match.group(1)) == 400_000
 
 
 def test_leader_bus_setup_uses_named_constants_in_required_order():
@@ -68,17 +71,24 @@ def test_setup_initializes_i2c_only_through_the_sensor_cluster_gate():
     source = ARDUINO.read_text()
     setup = _function_body(source, "void setup()")
     gate = _function_body(source, "static inline bool isI2CClusterBoard()")
-
-    assert re.search(
-        r"if\s*\(\s*isI2CClusterBoard\(\)\s*\)\s*"
-        r"imuSetup\(true\);",
-        setup,
+    display_owner = _function_body(
+        CONTROLLER_SLOTS.read_text(), "static bool roleOwnsControllerDisplay("
     )
+
+    cluster_gate = re.search(
+        r"if\s*\(\s*isI2CClusterBoard\(\)\s*\)\s*\{(?P<body>.*?)\}",
+        setup,
+        flags=re.DOTALL,
+    )
+    assert cluster_gate is not None
+    assert "imuSetup(true);" in cluster_gate.group("body")
+    assert "inaSetup();" in cluster_gate.group("body")
     assert setup.count("imuSetup(") == 1
-    assert "currentRole == ROLE_FRONT" in gate
-    assert "currentRole == ROLE_UNKNOWN" in gate
-    assert "ROLE_LEFT" not in gate
-    assert "ROLE_RIGHT" not in gate
+    assert "roleOwnsControllerDisplay(currentRole)" in gate
+    assert "role == ROLE_FRONT" in display_owner
+    assert "role == ROLE_UNKNOWN" in display_owner
+    assert "ROLE_LEFT" not in display_owner
+    assert "ROLE_RIGHT" not in display_owner
 
 
 def test_i2c_scanner_named_constants_match_production_bus_contract():

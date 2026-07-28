@@ -7,25 +7,44 @@
 void setUp() {}
 void tearDown() {}
 
-static void test_top_level_command_prefix_is_power()
+static void test_top_level_command_prefix_is_calibration()
 {
-    TEST_ASSERT_EQUAL_CHAR('P', POWER_COMMAND_PREFIX);
+    TEST_ASSERT_EQUAL_CHAR('C', CALIBRATION_COMMAND_PREFIX);
+    TEST_ASSERT_EQUAL_STRING(
+        "ACTUATOR", ACTUATOR_CALIBRATION_TARGET);
+    TEST_ASSERT_EQUAL_STRING(
+        "PWR_SENSE", POWER_SENSOR_CALIBRATION_TARGET);
+}
+
+static void test_actuator_calibration_accepts_only_bare_or_explicit_target()
+{
+    const char* explicitTarget[] = {"ACTUATOR"};
+    const char* lowercaseTarget[] = {"actuator"};
+    const char* extraToken[] = {"ACTUATOR", "extra"};
+    const char* powerSensor[] = {"PWR_SENSE"};
+
+    TEST_ASSERT_TRUE(isActuatorCalibrationCommand(0, nullptr));
+    TEST_ASSERT_TRUE(isActuatorCalibrationCommand(1, explicitTarget));
+    TEST_ASSERT_TRUE(isActuatorCalibrationCommand(1, lowercaseTarget));
+    TEST_ASSERT_FALSE(isActuatorCalibrationCommand(1, nullptr));
+    TEST_ASSERT_FALSE(isActuatorCalibrationCommand(2, extraToken));
+    TEST_ASSERT_FALSE(isActuatorCalibrationCommand(1, powerSensor));
 }
 
 static void test_complete_tokens_select_each_operation_case_insensitively()
 {
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(PowerCalibrationOperation::Voltage),
-        static_cast<int>(parsePowerCalibrationOperation("CAL", "VOLTAGE")));
+        static_cast<int>(parsePowerCalibrationOperation("PWR_SENSE", "VOLTAGE")));
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(PowerCalibrationOperation::Current),
-        static_cast<int>(parsePowerCalibrationOperation("cal", "current")));
+        static_cast<int>(parsePowerCalibrationOperation("pwr_sense", "current")));
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(PowerCalibrationOperation::Show),
-        static_cast<int>(parsePowerCalibrationOperation("Cal", "Show")));
+        static_cast<int>(parsePowerCalibrationOperation("Pwr_Sense", "Show")));
     TEST_ASSERT_EQUAL_INT(
         static_cast<int>(PowerCalibrationOperation::Help),
-        static_cast<int>(parsePowerCalibrationOperation("CAL", "?")));
+        static_cast<int>(parsePowerCalibrationOperation("PWR_SENSE", "?")));
 }
 
 static void test_missing_wrong_and_partial_tokens_are_invalid()
@@ -33,13 +52,13 @@ static void test_missing_wrong_and_partial_tokens_are_invalid()
     const char* invalid[][2] = {
         {"", "VOLTAGE"},
         {"POWER", "VOLTAGE"},
-        {"CAL", ""},
-        {"CAL", "V"},
-        {"CAL", "CURRENTLY"},
-        {"CAL", "SHUNT"},
-        {"CAL", "LIST"},
+        {"PWR", ""},
+        {"PWR_SENSE", "V"},
+        {"PWR_SENSE", "CURRENTLY"},
+        {"PWR_SENSE", "SHUNT"},
+        {"PWR_SENSE", "LIST"},
         {nullptr, "SHOW"},
-        {"CAL", nullptr},
+        {"PWR_SENSE", nullptr},
     };
 
     for (size_t index = 0; index < 9; ++index)
@@ -95,10 +114,10 @@ static void test_invalid_numbers_do_not_mutate_result()
 
 static void test_complete_commands_require_exact_argument_counts()
 {
-    const char* voltage[] = {"CAL", "VOLTAGE", "25.84", "12.91"};
-    const char* current[] = {"CAL", "CURRENT", "-10.0"};
-    const char* show[] = {"CAL", "SHOW"};
-    const char* help[] = {"CAL", "?"};
+    const char* voltage[] = {"PWR_SENSE", "VOLTAGE", "25.84", "12.91"};
+    const char* current[] = {"PWR_SENSE", "CURRENT", "-10.0"};
+    const char* show[] = {"PWR_SENSE", "SHOW"};
+    const char* help[] = {"PWR_SENSE", "?"};
     PowerCalibrationCommand result = {
         PowerCalibrationOperation::Invalid, 99.0f, 98.0f};
 
@@ -127,13 +146,13 @@ static void test_complete_commands_require_exact_argument_counts()
 
 static void test_invalid_complete_commands_preserve_prior_result()
 {
-    const char* missingVoltage[] = {"CAL", "VOLTAGE", "25.84"};
+    const char* missingVoltage[] = {"PWR_SENSE", "VOLTAGE", "25.84"};
     const char* extraVoltage[] = {
-        "CAL", "VOLTAGE", "25.84", "12.91", "extra"};
-    const char* missingCurrent[] = {"CAL", "CURRENT"};
-    const char* extraCurrent[] = {"CAL", "CURRENT", "10", "extra"};
-    const char* extraShow[] = {"CAL", "SHOW", "extra"};
-    const char* badNumber[] = {"CAL", "CURRENT", "10A"};
+        "PWR_SENSE", "VOLTAGE", "25.84", "12.91", "extra"};
+    const char* missingCurrent[] = {"PWR_SENSE", "CURRENT"};
+    const char* extraCurrent[] = {"PWR_SENSE", "CURRENT", "10", "extra"};
+    const char* extraShow[] = {"PWR_SENSE", "SHOW", "extra"};
+    const char* badNumber[] = {"PWR_SENSE", "CURRENT", "10A"};
     const char** invalid[] = {
         missingVoltage,
         extraVoltage,
@@ -166,7 +185,8 @@ static void test_invalid_complete_commands_preserve_prior_result()
 int main()
 {
     UNITY_BEGIN();
-    RUN_TEST(test_top_level_command_prefix_is_power);
+    RUN_TEST(test_top_level_command_prefix_is_calibration);
+    RUN_TEST(test_actuator_calibration_accepts_only_bare_or_explicit_target);
     RUN_TEST(test_complete_tokens_select_each_operation_case_insensitively);
     RUN_TEST(test_missing_wrong_and_partial_tokens_are_invalid);
     RUN_TEST(test_valid_numbers_are_parsed_exactly);

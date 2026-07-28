@@ -275,7 +275,7 @@ ImuCalData imuCal = {};
 // INA228 calibration (Task 3, AC 3i): per-board VBUS offset trims so the two
 // monitors agree with a reference DMM, plus a Pack shunt-cal fine trim on the
 // current channel. Captured at the bench against a known voltage/current via the
-// serial power-calibration command (handlePowerCalibrationCommand below;
+// serial power-sensor calibration command (handleCalibrationCommand below;
 // procedure in
 // docs/M16-INA228-CALIBRATION.md) and persisted at EEPROM_INA_CAL_ADDR with the
 // same torn-write-safe magic scheme as the IMU block. A board with no valid block
@@ -586,14 +586,17 @@ static void printPowerCalibration()
 static void printPowerCalibrationUsage()
 {
     Serial.println(F("POWER CAL usage (leader bench only):"));
-    Serial.println(F("  P CAL VOLTAGE <packReferenceVolts> <midpointReferenceVolts>"));
-    Serial.println(F("  P CAL CURRENT <knownAmps>"));
-    Serial.println(F("  P CAL SHOW"));
-    Serial.println(F("  P CAL ?"));
+    Serial.println(F("  C PWR_SENSE VOLTAGE <packReferenceVolts> <midpointReferenceVolts>"));
+    Serial.println(F("  C PWR_SENSE CURRENT <knownAmps>"));
+    Serial.println(F("  C PWR_SENSE SHOW"));
+    Serial.println(F("  C PWR_SENSE ?"));
 }
 
-// Parse and dispatch one power command line (the leading 'P' already consumed).
-static void handlePowerCalibrationCommand(const String& line)
+// Parse and dispatch one calibration command line (the leading 'C' already
+// consumed). Bare C retains the existing whole-controller actuator calibration;
+// C ACTUATOR is its explicit equivalent. C PWR_SENSE is leader-only and is
+// never forwarded to follower boards.
+static void handleCalibrationCommand(const String& line)
 {
     int idx = 0;
     const int len = line.length();
@@ -607,6 +610,14 @@ static void handlePowerCalibrationCommand(const String& line)
             break;
         tokens[tokenCount] = tokenStorage[tokenCount].c_str();
         ++tokenCount;
+    }
+
+    if (isActuatorCalibrationCommand(tokenCount, tokens))
+    {
+        actuatorManager->startAutoCalibration();
+        if (leftSerial) leftSerial->println(CALIBRATION_COMMAND_PREFIX);
+        if (rightSerial) rightSerial->println(CALIBRATION_COMMAND_PREFIX);
+        return;
     }
 
     PowerCalibrationCommand command = {
@@ -1273,10 +1284,8 @@ void loop()
         else if (cmdType == 'C')
         {
             mainSerial->read();
-            mainSerial->readStringUntil('\n');
-            actuatorManager->startAutoCalibration();
-            if (leftSerial)  leftSerial->println("C");
-            if (rightSerial) rightSerial->println("C");
+            String payload = mainSerial->readStringUntil('\n');
+            handleCalibrationCommand(payload);
         }
         else if (cmdType == 'H')
         {
@@ -1327,14 +1336,6 @@ void loop()
                 mainSerial->print(" ");
                 mainSerial->print(KRABBY_FW_COMMIT); mainSerial->print("|"); mainSerial->print(lCommit); mainSerial->print("|"); mainSerial->println(rCommit);
             }
-        }
-        else if (cmdType == POWER_COMMAND_PREFIX)
-        {
-            // Power-sensing bench calibration (AC 3i). Leader-only: the sensors
-            // live on the leader bus, so this is NOT forwarded to followers.
-            mainSerial->read();
-            String payload = mainSerial->readStringUntil('\n');
-            handlePowerCalibrationCommand(payload);
         }
         else
         {
