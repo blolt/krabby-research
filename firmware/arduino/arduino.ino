@@ -30,6 +30,7 @@
 #include "measurement_units.h"
 #include "power_calibration_protocol.h"
 #include "power_calibration_storage.h"
+#include "power_message_parser.h"
 #include "actuator_manager.h"
 #include "sensors_config.h"
 #include "shunt_calibration.h"
@@ -904,7 +905,7 @@ static void oledRenderKrab(const OledKrabState &s) {
 // Follower presence tracks only complete telemetry carrying the expected
 // role-elected prefix. Diagnostics and command/version replies are forwarded
 // normally but cannot make a telemetry-silent controller appear active.
-// Followers emit telemetry every TELEMETRY_INTERVAL_MS (50 ms / 20 Hz), so
+// Followers emit telemetry every TELEMETRY_POLL_INTERVAL (50 ms / 20 Hz), so
 // 500 ms absorbs ~10 dropped ticks without flicker while staying responsive
 // at the 250 ms OLED redraw.
 static const uint32_t OLED_PRESENCE_MS = 500;
@@ -1257,7 +1258,8 @@ static void parseVerToken(const String& reply, String& ver, String& branch, Stri
 static float powerReadPackV(bool* valid)
 {
     if (!packValid) { *valid = false; return NAN; }
-    float v = inaPack.readBusVoltage() * inaCal.packVGain + inaCal.packVOffset;
+    const float v = readCorrectedInaBusVoltage(
+        inaPack, Volts(inaCal.packVoltageOffset)).value();
     *valid = isfinite(v) && v >= PACK_V_MIN && v <= PACK_V_MAX;
     return v;
 }
@@ -1280,7 +1282,7 @@ static void powerLowPowerSerial()
     while (mainSerial->available())
     {
         String s = mainSerial->readStringUntil('\n');
-        if (s.startsWith(POWER_MSG_PREFIX) && s.indexOf("SHUTDOWN_ACK") >= 0)
+        if (powerIsShutdownAckLine(s.c_str()))
             powerController.onShutdownAck();
         else if (s.indexOf(SYNC_TOKEN) >= 0)
             mainSerial->println(SYNC_TOKEN);
@@ -1723,17 +1725,8 @@ void loop()
         else
         {
             String s = mainSerial->readStringUntil('\n');
-            // Task 4: the Orin's PWR SHUTDOWN_ACK ("PWR 1 SHUTDOWN_ACK") lands here
-            // (no dedicated cmd char). Recognize it so the ack-wait knows poweroff is
-            // underway; the rail cut still waits the ORIN_FORCE_OFF_MS deadline. This
-            // stays live even when motor commands are gated in SOFT_CUT/SLEEP.
-            // Matched by prefix + substring only — intentionally schema-AGNOSTIC (the
-            // schema-token gate in power_messages.py is the Orin's inbound discipline,
-            // not the Mega's; no schema parse is added on the AVR by design).
-            if (s.startsWith(POWER_MSG_PREFIX) && s.indexOf("SHUTDOWN_ACK") >= 0)
-                powerController.onShutdownAck();
-            // If leader (or another board) sent SYNC, reply so a restarted leader can discover us
-            else if (s.indexOf(SYNC_TOKEN) >= 0)
+            // If leader (or another board) sent SYNC, reply so a restarted leader can discover us.
+            if (s.indexOf(SYNC_TOKEN) >= 0)
                 mainSerial->println(SYNC_TOKEN);
         }
     }

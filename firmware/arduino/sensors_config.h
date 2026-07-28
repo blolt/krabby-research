@@ -121,7 +121,7 @@ static constexpr Volts PACK_RECOVERY_THRESHOLD(26.4f);
 // CONSECUTIVE valid ticks below the respective threshold, so a transient sag
 // under a current spike (LiFePO4 sags ~internal_R x I) does not trip a shutdown.
 // The telemetry-only WARN transition is instantaneous (no debounce).
-// At the 20 Hz telemetry tick (TELEMETRY_INTERVAL_MS) 4 ticks ≈ 200 ms sustained.
+// At the 20 Hz telemetry tick (TELEMETRY_POLL_INTERVAL) 4 ticks ≈ 200 ms sustained.
 // Consumed directly by power_fsm.h and its native tests.
 #define POWER_CUT_DEBOUNCE_TICKS 4
 // Low-power-mode cadences (§3): recovery poll and the LED/OLED dead-battery blink.

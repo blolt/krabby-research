@@ -54,6 +54,7 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     test_shunt_calibration
     test_telemetry_poll
     test_power_fsm
+    test_power_message_parser
 )
 
 foreach(test_name IN LISTS KRABBY_FIRMWARE_NATIVE_TESTS)

@@ -68,6 +68,16 @@ def _const_int(name: str, text: str = None) -> int:
     return int(m.group(1))
 
 
+def _typed_milliseconds(name: str, text: str = None) -> int:
+    text = _SENSORS_H if text is None else text
+    m = re.search(
+        rf"static\s+constexpr\s+Milliseconds\s+{name}\s*\(\s*(\d+)U?\s*\)",
+        text,
+    )
+    assert m, f"typed Milliseconds constant {name} not found in sensors_config.h"
+    return int(m.group(1))
+
+
 # --- low-power cadences (spec §3, AC 4f/4g) ----------------------------------
 def test_recovery_poll_is_30s():
     # Spec §3 "Recovery check (~30 s)" / AC 4f "recovery checked ~every 30 s".
@@ -156,8 +166,8 @@ def test_cut_debounce_is_4_ticks():
 
 def test_debounce_windows_are_sane_in_wall_clock():
     # The tick counts only mean anything relative to the telemetry period; if
-    # TELEMETRY_INTERVAL_MS is ever retuned, these windows move with it silently.
-    period = _const_int("TELEMETRY_INTERVAL_MS")
+    # TELEMETRY_POLL_INTERVAL is ever retuned, these windows move with it silently.
+    period = _typed_milliseconds("TELEMETRY_POLL_INTERVAL")
     cut_ms = period * _define_int("POWER_CUT_DEBOUNCE_TICKS")
     assert 100 <= cut_ms <= 1_000, (
         f"cut debounce is {cut_ms} ms ({period} ms tick x ticks) — outside the "
