@@ -11,17 +11,50 @@ one-way OVER_VOLT, park/ack/force-off, low-power loop). It does **not** validate
 real pack's load-sag behavior — tuning the thresholds against the actual LiFePO4 pair
 under load is **AC 4h**, physical, and stays with Fletcher/the real pack.
 
+## Shutdown hierarchy
+
+```mermaid
+stateDiagram-v2
+    [*] --> Normal
+
+    state PoweringDown {
+        [*] --> UnderVoltageSoft
+        [*] --> Manual
+        UnderVoltageSoft --> GraceGate
+        Manual --> GraceGate
+        GraceGate --> ShutdownSleep: SHUTDOWN_ACK or timeout
+    }
+
+    state EmergencyShutdown {
+        [*] --> HardCut
+        [*] --> OverVoltage
+        HardCut --> ShutdownSleep: silent; no handshake
+        OverVoltage --> TerminalSleep: emit EMERGENCY_SHUTDOWN
+    }
+
+    Normal --> PoweringDown: graceful trigger
+    Normal --> EmergencyShutdown: immediate trigger
+    ShutdownSleep --> Resuming: voltage above RECOVERY
+    Resuming --> Normal
+    TerminalSleep --> [*]: manual reset only
+```
+
+`POWERING_DOWN` is the graceful ACK/timeout gate before shutdown sleep.
+HARD_CUT and OVER_VOLT both bypass that gate. HARD_CUT emits no message, exactly
+as specified; stopped telemetry is the Orin's signal. OVER_VOLT emits the
+approved `EMERGENCY_SHUTDOWN over_voltage` best-effort notification and never
+waits for an ACK.
+
 ## Thresholds & timing (from `sensors_config.h` — cross-check before testing)
 
 | Constant | Value | Meaning |
 |---|---|---|
-| `PACK_WARN_V` | 24.8 V | telemetry-only WARN (instant, no debounce) |
-| `PACK_SOFT_CUT_V` | 24.0 V | graceful shutdown (park + signal Orin) |
-| `PACK_HARD_CUT_V` | 22.4 V | immediate stop → SLEEP |
-| `PACK_RECOVERY_V` | 25.8 V | auto-resume gate (1.8 V hysteresis) |
-| `PACK_OVER_VOLT_V` | 29.6 V | one-way protective cutout |
+| `PACK_WARNING_THRESHOLD` | 24.8 V | telemetry-only WARN (instant, no debounce) |
+| `PACK_SOFT_CUT_THRESHOLD` | 24.0 V | graceful shutdown (park + signal Orin) |
+| `PACK_HARD_CUT_THRESHOLD` | 22.4 V | immediate stop after qualification → SLEEP |
+| `PACK_RECOVERY_THRESHOLD` | 26.4 V | auto-resume gate (2.4 V hysteresis) |
+| `PACK_OVER_VOLT_THRESHOLD` | 29.6 V | immediate one-way protective cutout |
 | `POWER_CUT_DEBOUNCE_TICKS` | 4 | ≈200 ms sustained below SOFT/HARD before latch |
-| `POWER_OVER_VOLT_DEBOUNCE_TICKS` | 3 | ≈150 ms sustained ≥ OVER_VOLT before latch |
 | `POWER_RECOVERY_POLL_MS` | 30 000 | SLEEP recovery-poll cadence |
 | `POWER_LOW_BATT_BLINK_MS` | 10 000 | SLEEP LED/OLED blink cadence |
 | `ORIN_FORCE_OFF_MS` | 60 000 | force-off deadline after a shutdown command |
@@ -62,17 +95,17 @@ Set the supply, hold, watch the `power_state` byte in the BATT frame (and the PW
    ~4 ticks: `power_state → 3 (HARD_CUT)` then the dedicated low-power loop (SLEEP): polls
    only the Pack INA at ~30 s, blinks LED/OLED at ~10 s, goes dark below HARD, motors
    gated. **Record.**
-6. **OVER_VOLT (terminal, one-way).** From NORMAL, raise to 29.8 V (≥ OVER_VOLT 29.6) and
-   hold. After ~3 ticks: `power_state → 4 (OVER_VOLT)`, one
-   `PWR 1 OVER_VOLTAGE_SHUTDOWN over_voltage` line, over-volt splash. **Then lower the
+6. **OVER_VOLT (terminal, one-way).** From NORMAL, raise to 29.8 V (≥ OVER_VOLT 29.6).
+   On the first valid qualifying reading: `power_state → 4 (OVER_VOLT)`, one
+   `PWR 1 EMERGENCY_SHUTDOWN over_voltage` line, over-volt splash. **Then lower the
    voltage and confirm it does NOT clear** (one-way latch). **Record.**
-7. **RECOVERY.** From a SLEEP state (via step 3 or 5), raise to 26.5 V (> RECOVERY 25.8)
+7. **RECOVERY.** From a SLEEP state (via step 3 or 5), raise to 26.5 V (> RECOVERY 26.4)
    and hold. Confirm `power_state → 6 (RESUMING) → 0 (NORMAL)`, one
    `PWR 1 RESUMING voltage_recovered` line, `ORIN_PWR_PIN` back HIGH, actuators re-enabled.
    Note the recovery is gated by the ~30 s poll. **Record.**
-8. **Debounce rejection.** Briefly dip below SOFT (24.0) for < 4 ticks then back above, and
-   below OVER_VOLT... i.e. a single fast spike. Confirm **no latch** — the transient is
-   rejected. This proves the debounce guards a load-sag spike mid-gait.
+8. **Under-voltage debounce rejection.** Briefly dip below SOFT (24.0) for < 4 ticks
+   then return above it. Confirm **no latch**. OVER_VOLT is intentionally not
+   debounced: the first valid reading at or above 29.6 V must latch the cutout.
 
 ## Timings table (fill on the bench)
 
@@ -82,13 +115,14 @@ Set the supply, hold, watch the `power_state` byte in the BATT frame (and the PW
 | 3 | WARN→SOFT_CUT | 23.8 | ~200 ms (4 ticks) | | PWR POWERING_DOWN seen? park seen? |
 | 4 | ack shortens force-off | — | 60 s → ~15 s | | ORIN_PWR_PIN drop time |
 | 5 | NORMAL→HARD_CUT→SLEEP | 22.0 | ~200 ms | | blink/poll cadence observed |
-| 6 | NORMAL→OVER_VOLT | 29.8 | ~150 ms (3 ticks) | | stays latched after V drops? |
+| 6 | NORMAL→OVER_VOLT | 29.8 | first valid reading | | stays latched after V drops? |
 | 7 | SLEEP→RESUMING→NORMAL | 26.5 | ~30 s poll | | Orin re-power, actuators re-enabled |
 | 8 | transient below SOFT | dip <4 ticks | no latch | | |
 
 ## Pass criteria
 
-All eight transitions occur at the documented thresholds with the documented debounce,
-OVER_VOLT does not self-clear, the transient is rejected, and the ack shortens the
+All eight transitions occur at the documented thresholds, OVER_VOLT acts on its first
+valid qualifying reading and does not self-clear, the under-voltage transient is
+rejected, and the ack shortens the
 force-off window. Any deviation → note it against the `sensors_config.h` constant and
 raise before the real-pack run (4h).

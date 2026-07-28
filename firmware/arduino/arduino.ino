@@ -763,7 +763,7 @@ static void battAppendTelemetry(Print& out, float packV, bool packOk)
         toWatts(MilliWatts(inaPack.readPower())), inaCal.packShuntCal);
     const Coulombs packQ = applyShuntTrim(
         Coulombs(inaPack.readCharge()), inaCal.packShuntCal);
-    uint8_t powerState = powerController.state;
+    uint8_t powerState = static_cast<uint8_t>(powerController.state);
 
     const BatteryTelemetryFrame frame = {
         Volts(packV),
@@ -1343,10 +1343,9 @@ static void holdAllAndFollowers()
 
 void PowerController::enterSleep(unsigned long now)
 {
-    state          = PWR_SLEEP;
+    state          = PowerState::Sleep;
     belowSoftTicks = 0;
     belowHardTicks = 0;
-    overVoltTicks  = 0;
     holdAllAndFollowers();                              // D14: leader + followers stay de-energized
     lastRecoveryPollMs = now;                           // first recovery poll ~POWER_RECOVERY_POLL_MS out
     lastBlinkMs  = now;
@@ -1374,12 +1373,12 @@ void PowerController::lowPowerServices(float packV, bool valid, unsigned long no
     if (oledValid && now - lastSplashMs >= POWER_LOW_BATT_BLINK_MS)
     {
         lastSplashMs = now;
-        if (state == PWR_OVER_VOLT)
+        if (state == PowerState::OverVolt)
         {
             oledOverVoltSplash(valid ? packV : lastPackV);  // charger fault: keep it lit
             panelCleared = false;
         }
-        else if (valid && packV > PACK_HARD_CUT_V)
+        else if (valid && packV > PACK_HARD_CUT_THRESHOLD.value())
         {
             oledDeadBatterySplash(packV);
             panelCleared = false;
@@ -1423,15 +1422,17 @@ void PowerController::lowPowerStep(float packV, bool valid)
 {
     lastPackV     = packV;
     lastPackValid = valid;
-    uint8_t prev  = state;
+    PowerState prev = state;
     step(packV, valid);
-    if (state != prev && state == PWR_RESUMING)
+    if (state != prev && state == PowerState::Resuming)
     {
         // Pack recovered past RECOVERY: re-power the Orin, close the force-off window,
         // tell the Orin, drop the sleep LED. The next NORMAL loop settles RESUMING.
         powerDriveOrin(true); orinPowered = true;
         orinCutArmed = false;
-        if (mainSerial) powerEmitResuming(*mainSerial);
+        if (mainSerial)
+            emitPowerMessage(
+                *mainSerial, ResumingReason::VoltageRecovered);
         shutdownAcked = false;      // rebooted Orin: no ack pending for a later cut window
         statusLedOn = false;
         digitalWrite(STATUS_LED_PIN, LOW);
@@ -1440,11 +1441,50 @@ void PowerController::lowPowerStep(float packV, bool valid)
     }
 }
 
+void PowerController::beginEmergencyShutdown(
+    EmergencyShutdownReason reason, unsigned long now)
+{
+    // Every emergency path bypasses the graceful POWERING_DOWN gate.
+    holdAllAndFollowers();
+
+    switch (reason)
+    {
+        case EmergencyShutdownReason::HardCut:
+            // Exact 4d behavior: no message and no handshake. The Orin detects
+            // stopped telemetry out of band. Keep the existing independent 4i
+            // force-cut deadline running after the MCU enters recoverable sleep.
+            if (!orinCutArmed)
+            {
+                shutdownAcked = false;
+                softCutEnteredMs = now;
+                orinCutArmed = true;
+            }
+            break;
+
+        case EmergencyShutdownReason::OverVoltage:
+            // Approved M16 protocol clarification: one-way, best-effort
+            // emergency notification; never ACK-gated.
+            if (mainSerial)
+                emitPowerMessage(
+                    *mainSerial, EmergencyShutdownReason::OverVoltage);
+            powerDriveOrin(false);
+            orinPowered = false;
+            orinCutArmed = false;
+            lastRecoveryPollMs = now;
+            lastBlinkMs = now;
+            lastSplashMs = 0;
+            statusLedOn = true;
+            digitalWrite(STATUS_LED_PIN, HIGH);
+            panelCleared = false;
+            break;
+    }
+}
+
 void PowerController::update(float packV, bool valid)
 {
     lastPackV     = packV;              // D17/D13: cache the tick's reading for the
     lastPackValid = valid;              // low-power indicators
-    uint8_t prev = state;
+    PowerState prev = state;
     step(packV, valid);                 // pure FSM advance (updates state + counters)
     unsigned long now = millis();
 
@@ -1453,7 +1493,7 @@ void PowerController::update(float packV, bool valid)
     {
         switch (state)
         {
-            case PWR_SOFT_CUT:
+            case PowerState::SoftCut:
                 // Graceful shutdown (4c): tell the Orin, park the leader + followers
                 // (D14), open the force-off window.
                 // TODO (F4): 4c step 2 asks to "lower the body to its belly, THEN
@@ -1462,46 +1502,31 @@ void PowerController::update(float packV, bool valid)
                 // posture move here (or a follower-broadcast park pose) before the hold
                 // once the gait layer exposes one — the joints then settle gently
                 // instead of dropping under gravity.
-                if (mainSerial) powerEmitPoweringDown(*mainSerial);
+                if (mainSerial)
+                    emitPowerMessage(
+                        *mainSerial,
+                        PoweringDownReason::UnderVoltageSoft);
                 holdAllAndFollowers();
                 shutdownAcked    = false;
                 softCutEnteredMs = now;
                 orinCutArmed     = true;
                 break;
-            case PWR_HARD_CUT:
-                // 4d: immediate motor EN drop, leader + followers (D14). F5: do NOT
-                // instant-yank the Orin rail — route the cut through the SAME force-off
-                // window so a HARD_CUT still gives the Orin its grace (shortened once it
-                // acks) to flush/poweroff. If we escalated from SOFT_CUT the window is
-                // already open — keep its (earlier) deadline rather than reset it.
-                holdAllAndFollowers();
-                // Fresh window: clear any stale ack from a PRIOR (recovered) cut cycle
-                // so a direct HARD_CUT gives the freshly-booted Orin the full no-response
-                // grace, not the ack-shortened one (shutdownAcked is only cleared on
-                // SOFT_CUT entry otherwise, so it survives SLEEP->RESUMING->NORMAL).
-                if (!orinCutArmed) { shutdownAcked = false; softCutEnteredMs = now; orinCutArmed = true; }
+            case PowerState::HardCut:
+                beginEmergencyShutdown(
+                    EmergencyShutdownReason::HardCut, now);
                 break;
-            case PWR_OVER_VOLT:
-                // One-way protective cutout (4e): a charger/BMS over-charge fault — the
-                // pack has ample power, so cut the Orin rail now (not through the window)
-                // and latch. Park leader + followers (D14); arm the low-power indicators
-                // (OVER_VOLT never routes through enterSleep) so loop()'s low-power branch
-                // shows the over-volt splash.
-                if (mainSerial) powerEmitOverVoltage(*mainSerial);
-                holdAllAndFollowers();
-                powerDriveOrin(false); orinPowered = false;
-                orinCutArmed = false;
-                lastRecoveryPollMs = now;
-                lastBlinkMs = now; lastSplashMs = 0;
-                statusLedOn = true; digitalWrite(STATUS_LED_PIN, HIGH);
-                panelCleared = false;
+            case PowerState::OverVolt:
+                beginEmergencyShutdown(
+                    EmergencyShutdownReason::OverVoltage, now);
                 break;
-            case PWR_RESUMING:
+            case PowerState::Resuming:
                 // Pack recovered past RECOVERY: re-power the Orin, close the force-off
                 // window, tell it, clear the sleep blink so the next tick settles NORMAL.
                 powerDriveOrin(true); orinPowered = true;
                 orinCutArmed = false;
-                if (mainSerial) powerEmitResuming(*mainSerial);
+                if (mainSerial)
+                    emitPowerMessage(
+                        *mainSerial, ResumingReason::VoltageRecovered);
                 shutdownAcked = false;      // rebooted Orin: no ack pending for a later window
                 statusLedOn = false;
                 digitalWrite(STATUS_LED_PIN, LOW);
@@ -1519,7 +1544,7 @@ void PowerController::update(float packV, bool valid)
     // --- State-driven ongoing actions (timers / routing) ---
     switch (state)
     {
-        case PWR_SOFT_CUT:
+        case PowerState::SoftCut:
             // D15: the undebounced single-tick SOFT->HARD (->SLEEP) shortcut is gone —
             // the FSM's debounced SOFT_CUT->HARD_CUT escalation (power_fsm.h) is the
             // single source of truth. Here we only settle into the SLEEP low-power loop
@@ -1528,11 +1553,11 @@ void PowerController::update(float packV, bool valid)
             if (now - softCutEnteredMs >= (shutdownAcked ? ORIN_ACKED_OFF_MS : ORIN_FORCE_OFF_MS))
                 enterSleep(now);
             break;
-        case PWR_HARD_CUT:
+        case PowerState::HardCut:
             // Report one tick of HARD_CUT (host observability), then settle into the
             // SLEEP low-power loop. The force-off window opened on entry keeps counting
             // across the drop to SLEEP (serviceOrinForceOff runs there too).
-            if (prev == PWR_HARD_CUT) enterSleep(now);
+            if (prev == PowerState::HardCut) enterSleep(now);
             break;
         default:
             break;
@@ -1548,7 +1573,7 @@ void loop()
     // (§3/4f). SHUTDOWN_ACK + SYNC recognition stay live (powerLowPowerSerial). This
     // is leader-only (followers never run the FSM, so never reach these states).
     if (isI2CClusterBoard() &&
-        (powerController.state == PWR_SLEEP || powerController.state == PWR_OVER_VOLT))
+        (powerController.state == PowerState::Sleep || powerController.state == PowerState::OverVolt))
     {
         unsigned long now = millis();
         powerLowPowerSerial();                                   // keep ACK + SYNC live
@@ -1566,7 +1591,7 @@ void loop()
         powerController.serviceOrinForceOff(now);               // HARD-opened window persists here
         // A recovery step may have moved us to RESUMING; only run the low-power
         // indicators while still in a low-power state.
-        if (powerController.state == PWR_SLEEP || powerController.state == PWR_OVER_VOLT)
+        if (powerController.state == PowerState::Sleep || powerController.state == PowerState::OverVolt)
             powerController.lowPowerServices(powerController.lastPackV,
                                              powerController.lastPackValid, now);
         return;
@@ -1783,9 +1808,9 @@ void loop()
     // actuators reads disconnected (isConnected() == posValid). Leader/solo board
     // only, driven every tick. STATUS_LED_PIN is shared with the FSM's low-battery
     // blink, which owns the LED in SLEEP/OVER_VOLT (that path returns above, before
-    // this line). The explicit `state != PWR_SLEEP` gate mirrors the OLED render
+    // this line). The explicit `state != PowerState::Sleep` gate mirrors the OLED render
     // below so the disconnect indicator never contends with the low-power blink.
-    if (isI2CClusterBoard() && powerController.state != PWR_SLEEP)
+    if (isI2CClusterBoard() && powerController.state != PowerState::Sleep)
     {
         bool localConnected[6];
         for (int actuator = 0; actuator < 6; ++actuator)
@@ -1816,7 +1841,7 @@ void loop()
     // unchanged frame is skipped inside oledRenderKrab (no I2C at all). Leader/solo
     // board only. In SLEEP the PowerController owns the panel (dead-battery splash /
     // dark below HARD_CUT), so the normal krab UI is suppressed there.
-    if (oledValid && powerController.state != PWR_SLEEP &&
+    if (oledValid && powerController.state != PowerState::Sleep &&
         millis() - lastOledDraw >= OLED_REDRAW_INTERVAL_MS)
     {
         lastOledDraw = millis();

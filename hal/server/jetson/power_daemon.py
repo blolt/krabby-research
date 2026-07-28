@@ -21,13 +21,6 @@ from firmware.interfaces.power_messages import PowerMessage, PowerMessageType
 
 logger = logging.getLogger("KrabbyPowerDaemon")
 
-# Signals that mean "the pack is failing, take the Orin down now".
-_SHUTDOWN_TYPES = (
-    PowerMessageType.POWERING_DOWN,
-    PowerMessageType.OVER_VOLTAGE_SHUTDOWN,
-)
-
-
 def _default_poweroff() -> None:
     logger.error(
         "Power-down acked but no host-poweroff mechanism is configured; relying "
@@ -76,7 +69,16 @@ class OrinPowerDaemon:
         if msg.type is PowerMessageType.RESUMING:
             self._handled = False       # re-arm for a future shutdown after recovery
             return
-        if msg.type not in _SHUTDOWN_TYPES:
+        if msg.type is PowerMessageType.EMERGENCY_SHUTDOWN:
+            # One-way best-effort notification. The MCU does not wait, so an ACK
+            # would falsely imply a handshake and a clean poweroff cannot be
+            # relied upon to finish before the rail disappears.
+            logger.critical(
+                "Emergency shutdown received (%s); no ACK is defined",
+                msg.reason.value,
+            )
+            return
+        if msg.type is not PowerMessageType.POWERING_DOWN:
             return
         if self._handled:
             return

@@ -2,15 +2,16 @@ Id	Description	Qty	Unit	Designators
 1	Cable, 1 x 2 AWG	0	m	W_FUSED, W_GND, W_HI, W_TOBUS
 2	Cable, 1 x 22 AWG	0	m	W_MIDTAP, W_MIDTAP2, W_VBUSTAP
 3	Cable, 2 x 20 AWG	0	m	W_SENSE
-4	Connector, 200 A / 75 mV shunt, 4 pins	1		SHUNT
-5	Connector, 2x 12 V / 100 Ah LiFePO4 (series), 24 V nominal, 3 pins	1		PACK
-6	Connector, Adafruit INA228 @ 0x40 (Pack monitor), 7 pins	1		INA_PACK
-7	Connector, Adafruit INA228 @ 0x41 (Midpoint monitor), 5 pins	1		INA_MID
-8	Connector, Arduino Mega 2560 (leader), 4 pins	1		MEGA
-9	Connector, Class-T fuse + holder, rating PROVISIONAL — Fletcher Q1 (DC AIC), 2 pins	1		FUSE
+4	Connector, 150 A Class-T fuse + holder, high DC interrupt rating, 2 pins	1		FUSE
+5	Connector, 200 A / 75 mV shunt, 4 pins	1		SHUNT
+6	Connector, 2x 12 V / 100 Ah LiFePO4 (series), 24 V nominal, 3 pins	1		PACK
+7	Connector, Adafruit INA228 @ 0x40 (Pack monitor), 7 pins	1		INA_PACK
+8	Connector, Adafruit INA228 @ 0x41 (Midpoint monitor), 7 pins	1		INA_MID
+9	Connector, Arduino Mega 2560 (leader), 4 pins	1		MEGA
 10	Connector, Maierke 150 A distribution block, 2 pins	1		BLOCK
-11	Connector, inline fuse holder + 0.5 A fuse, midpoint sense-lead limiter, 2 pins	1		FUSE_MID
-12	Wire, 26 AWG, BK	0	m	QW1, QW2
-13	Wire, 26 AWG, BU	0	m	QW1, QW2
-14	Wire, 26 AWG, RD	0	m	QW1, QW2
-15	Wire, 26 AWG, YE	0	m	QW1, QW2
+11	Connector, Midpoint INA228 local ground tie, 4 pins	1		MID_GROUND
+12	Connector, inline fuse holder + 0.5 A fuse, midpoint sense-lead limiter, 2 pins	1		FUSE_MID
+13	Wire, 26 AWG, BK	0	m	QW1, QW2, W_MID_GROUND
+14	Wire, 26 AWG, BU	0	m	QW1, QW2
+15	Wire, 26 AWG, RD	0	m	QW1, QW2
+16	Wire, 26 AWG, YE	0	m	QW1, QW2

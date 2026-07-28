@@ -98,31 +98,32 @@ const int8_t  IMU_AXIS_SIGN[3] = {1, 1, 1};
 // LiFePO4's discharge curve is very flat, so these cluster near the knee.
 // DEFAULTS ONLY — validate against the real M12 pair under load (resting vs.
 // loaded differs by internal-resistance x current) before relying on them.
-#define PACK_WARN_V       24.8f  // ~20-30% SoC; telemetry only, no behavior change
-#define PACK_SOFT_CUT_V   24.0f  // ~10% SoC; begin graceful shutdown (park + signal Orin)
-#define PACK_HARD_CUT_V   22.4f  // margin above the ~20V internal-BMS cutoff; immediate stop
-#define PACK_OVER_VOLT_V  29.6f  // charger/BMS fault; one-way protective cutout, no auto-resume
-#define PACK_RECOVERY_V   25.8f  // auto-resume gate. PROVISIONAL (4h tunes vs real pack). This is a
-                                 // RESTING-voltage gate: SLEEP de-energizes the motors, so it must
-                                 // clear on the unloaded pack. Set at ~nominal 8S resting (~25.6V,
-                                 // 3.23V/cell) so a half-charged pack can wake; still ~1.8V above the
-                                 // LOADED SOFT_CUT (24.0V), which is ample anti-chatter margin. (Was
-                                 // 26.4V, ~50-60% SoC resting — a genuinely half pack rested below it
-                                 // and could never wake. See M16 review F13/D36.)
+// Appendix C default. WARN changes telemetry state immediately but does not park
+// actuators or begin shutdown. Validate the loaded-pack boundary under 4h;
+// instantaneous voltage is not a direct state-of-charge measurement.
+static constexpr Volts PACK_WARNING_THRESHOLD(24.8f);
+// Appendix C default loaded-Pack boundary. A reading must be strictly below
+// this threshold for POWER_CUT_DEBOUNCE_TICKS consecutive valid polls.
+// Pack voltage is not a direct state-of-charge measurement.
+static constexpr Volts PACK_SOFT_CUT_THRESHOLD(24.0f);
+// Appendix C default emergency-stop boundary. A valid Pack reading at or below
+// this value must persist for POWER_CUT_DEBOUNCE_TICKS; once qualified,
+// HARD_CUT takes priority and actuator de-energization begins immediately.
+static constexpr Volts PACK_HARD_CUT_THRESHOLD(22.4f);
+// Appendix C charger/BMS-fault boundary. The first valid reading at or above
+// this value enters the one-way protective cutout; only a manual reset clears it.
+static constexpr Volts PACK_OVER_VOLT_THRESHOLD(29.6f);
+// Appendix C resting-Pack resume boundary. SLEEP resumes only strictly above
+// this value. It is 2.4 V above SOFT_CUT, exceeding the 0.4 V anti-chatter
+// minimum. AC 4h must validate and update it against the real M12 battery pair.
+static constexpr Volts PACK_RECOVERY_THRESHOLD(26.4f);
 // Downward-cut debounce: a SOFT_CUT or HARD_CUT only latches after this many
 // CONSECUTIVE valid ticks below the respective threshold, so a transient sag
 // under a current spike (LiFePO4 sags ~internal_R x I) does not trip a shutdown.
 // The telemetry-only WARN transition is instantaneous (no debounce).
 // At the 20 Hz telemetry tick (TELEMETRY_INTERVAL_MS) 4 ticks ≈ 200 ms sustained.
-// Keep in sync with power_fsm.py / power_fsm.h POWER_CUT_DEBOUNCE_TICKS.
+// Consumed directly by power_fsm.h and its native tests.
 #define POWER_CUT_DEBOUNCE_TICKS 4
-// Over-voltage debounce: OVER_VOLT only latches after this many CONSECUTIVE valid
-// ticks at or above PACK_OVER_VOLT_V, so a single glitchy high reading (an INA228
-// misread / regen spike) does not trip the one-way protective cutout. 3 ticks ≈
-// 150 ms at the 20 Hz tick — short, because a real over-voltage must still cut
-// fast, but long enough to reject a lone sample. Keep in sync with
-// power_fsm.py / power_fsm.h POWER_OVER_VOLT_DEBOUNCE_TICKS.
-#define POWER_OVER_VOLT_DEBOUNCE_TICKS 3
 // Low-power-mode cadences (§3): recovery poll and the LED/OLED dead-battery blink.
 #define POWER_RECOVERY_POLL_MS   30000UL
 #define POWER_LOW_BATT_BLINK_MS  10000UL

@@ -125,7 +125,7 @@ class KrabbyMCUSDK:
         self._batt_diverge_warned = False
 
         # Power-state control (M16 Task 4). The leader emits POWERING_DOWN /
-        # RESUMING / OVER_VOLTAGE_SHUTDOWN on the same serial link; the Orin
+        # RESUMING / EMERGENCY_SHUTDOWN on the same serial link; the Orin
         # power daemon hangs a callback here rather than opening a second reader
         # on the same device (two readers on one port drop each other's bytes).
         self.last_power_message: Optional[PowerMessage] = None

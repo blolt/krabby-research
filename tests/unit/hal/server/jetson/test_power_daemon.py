@@ -6,9 +6,11 @@ The daemon has no thread of its own; it hangs a callback on the SDK's serial
 reader. These tests exercise the callback logic with a fake SDK (no real port).
 """
 from firmware.interfaces.power_messages import (
+    EmergencyShutdownReason,
     PowerMessage,
     PowerMessageType,
-    PowerReason,
+    PoweringDownReason,
+    ResumingReason,
 )
 from hal.server.jetson.power_daemon import OrinPowerDaemon
 
@@ -64,19 +66,26 @@ class TestOrinPowerDaemon:
         calls = []
         daemon = OrinPowerDaemon(sdk, poweroff=lambda: calls.append("off"))
 
-        daemon.handle(PowerMessage(PowerMessageType.POWERING_DOWN, PowerReason.UNDER_VOLTAGE_SOFT))
+        daemon.handle(PowerMessage(
+            PowerMessageType.POWERING_DOWN,
+            PoweringDownReason.UNDER_VOLTAGE_SOFT,
+        ))
 
         assert [m.type for m in sdk.sent] == [PowerMessageType.SHUTDOWN_ACK]
         assert calls == ["off"]
 
-    def test_over_voltage_shutdown_also_powers_off(self):
+    def test_emergency_shutdown_is_not_acked_or_clean_poweroff_gated(self):
         sdk = FakeSDK()
         calls = []
         daemon = OrinPowerDaemon(sdk, poweroff=lambda: calls.append("off"))
 
-        daemon.handle(PowerMessage(PowerMessageType.OVER_VOLTAGE_SHUTDOWN, PowerReason.OVER_VOLTAGE))
+        daemon.handle(PowerMessage(
+            PowerMessageType.EMERGENCY_SHUTDOWN,
+            EmergencyShutdownReason.OVER_VOLTAGE,
+        ))
 
-        assert calls == ["off"]
+        assert sdk.sent == []
+        assert calls == []
 
     def test_repeated_power_down_powers_off_once(self):
         # The leader repeats POWERING_DOWN every tick through its ack window.
@@ -85,7 +94,10 @@ class TestOrinPowerDaemon:
         daemon = OrinPowerDaemon(sdk, poweroff=lambda: calls.append("off"))
 
         for _ in range(5):
-            daemon.handle(PowerMessage(PowerMessageType.POWERING_DOWN, PowerReason.UNDER_VOLTAGE_SOFT))
+            daemon.handle(PowerMessage(
+                PowerMessageType.POWERING_DOWN,
+                PoweringDownReason.UNDER_VOLTAGE_SOFT,
+            ))
 
         assert calls == ["off"]
         assert len(sdk.sent) == 1
@@ -95,7 +107,10 @@ class TestOrinPowerDaemon:
         calls = []
         daemon = OrinPowerDaemon(sdk, poweroff=lambda: calls.append("off"))
 
-        daemon.handle(PowerMessage(PowerMessageType.RESUMING, PowerReason.VOLTAGE_RECOVERED))
+        daemon.handle(PowerMessage(
+            PowerMessageType.RESUMING,
+            ResumingReason.VOLTAGE_RECOVERED,
+        ))
         daemon.handle(PowerMessage(PowerMessageType.SHUTDOWN_ACK))
 
         assert calls == []
@@ -110,13 +125,22 @@ class TestOrinPowerDaemon:
         calls = []
         daemon = OrinPowerDaemon(sdk, poweroff=lambda: calls.append("off"))
 
-        daemon.handle(PowerMessage(PowerMessageType.POWERING_DOWN, PowerReason.UNDER_VOLTAGE_SOFT))
+        daemon.handle(PowerMessage(
+            PowerMessageType.POWERING_DOWN,
+            PoweringDownReason.UNDER_VOLTAGE_SOFT,
+        ))
         assert calls == ["off"]
         assert [m.type for m in sdk.sent] == [PowerMessageType.SHUTDOWN_ACK]
 
-        daemon.handle(PowerMessage(PowerMessageType.RESUMING, PowerReason.VOLTAGE_RECOVERED))
+        daemon.handle(PowerMessage(
+            PowerMessageType.RESUMING,
+            ResumingReason.VOLTAGE_RECOVERED,
+        ))
 
-        daemon.handle(PowerMessage(PowerMessageType.POWERING_DOWN, PowerReason.UNDER_VOLTAGE_SOFT))
+        daemon.handle(PowerMessage(
+            PowerMessageType.POWERING_DOWN,
+            PoweringDownReason.UNDER_VOLTAGE_SOFT,
+        ))
         assert calls == ["off", "off"]
         assert [m.type for m in sdk.sent] == [
             PowerMessageType.SHUTDOWN_ACK,
@@ -134,7 +158,10 @@ class TestOrinPowerDaemon:
         daemon = OrinPowerDaemon(sdk, poweroff=lambda: calls.append("off"))
 
         try:
-            daemon.handle(PowerMessage(PowerMessageType.POWERING_DOWN))
+            daemon.handle(PowerMessage(
+                PowerMessageType.POWERING_DOWN,
+                PoweringDownReason.UNDER_VOLTAGE_SOFT,
+            ))
         except OSError:
             pass  # the raise propagates after finally; poweroff must have run
 

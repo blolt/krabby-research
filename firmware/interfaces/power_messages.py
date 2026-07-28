@@ -4,7 +4,7 @@ The battery state machine on the leader Mega and the Orin-side power daemon
 exchange these over the *same* serial link as joint telemetry, each on its own
 ``PWR``-prefixed line so they never collide with a telemetry line. Directions:
 
-    Mega -> Orin : POWERING_DOWN, RESUMING, OVER_VOLTAGE_SHUTDOWN
+    Mega -> Orin : POWERING_DOWN, RESUMING, EMERGENCY_SHUTDOWN
     Orin -> Mega : SHUTDOWN_ACK
 
 Wire format (whitespace-separated, matching the rest of the serial protocol)::
@@ -18,7 +18,7 @@ uses for unknown segment tags.
 """
 import enum
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Union
 
 # Line prefix that marks a power-control message (vs. a telemetry or VER line).
 POWER_MSG_PREFIX = "PWR"
@@ -29,24 +29,52 @@ POWER_MSG_SCHEMA = 1
 
 
 class PowerMessageType(enum.Enum):
-    POWERING_DOWN = "POWERING_DOWN"                # Mega -> Orin: shut down cleanly
-    SHUTDOWN_ACK = "SHUTDOWN_ACK"                  # Orin -> Mega: ack, poweroff underway
-    RESUMING = "RESUMING"                          # Mega -> Orin: pack recovered, powering back on
-    OVER_VOLTAGE_SHUTDOWN = "OVER_VOLTAGE_SHUTDOWN" # Mega -> Orin: one-way protective cutout
+    POWERING_DOWN = "POWERING_DOWN"          # graceful; ACK/timeout gates sleep
+    SHUTDOWN_ACK = "SHUTDOWN_ACK"            # Orin -> Mega: clean poweroff underway
+    RESUMING = "RESUMING"                    # pack recovered, powering back on
+    EMERGENCY_SHUTDOWN = "EMERGENCY_SHUTDOWN"  # immediate; never ACK-gated
 
 
-class PowerReason(enum.Enum):
-    UNDER_VOLTAGE_SOFT = "under_voltage_soft"  # SOFT_CUT graceful shutdown
-    OVER_VOLTAGE = "over_voltage"              # charger/BMS fault
-    MANUAL = "manual"                          # operator-commanded
-    VOLTAGE_RECOVERED = "voltage_recovered"    # pack rose above RECOVERY
+class PoweringDownReason(enum.Enum):
+    UNDER_VOLTAGE_SOFT = "under_voltage_soft"
+    MANUAL = "manual"
+
+
+class EmergencyShutdownReason(enum.Enum):
+    HARD_CUT = "hard_cut"
+    OVER_VOLTAGE = "over_voltage"
+
+
+class ResumingReason(enum.Enum):
+    VOLTAGE_RECOVERED = "voltage_recovered"
+
+
+PowerMessageReason = Union[
+    PoweringDownReason,
+    EmergencyShutdownReason,
+    ResumingReason,
+]
 
 
 @dataclass
 class PowerMessage:
     type: PowerMessageType
-    reason: Optional[PowerReason] = None
+    reason: Optional[PowerMessageReason] = None
     schema_version: int = POWER_MSG_SCHEMA
+
+    def __post_init__(self) -> None:
+        expected_reason_type = {
+            PowerMessageType.POWERING_DOWN: PoweringDownReason,
+            PowerMessageType.EMERGENCY_SHUTDOWN: EmergencyShutdownReason,
+            PowerMessageType.RESUMING: ResumingReason,
+        }.get(self.type)
+        if expected_reason_type is None:
+            if self.reason is not None:
+                raise ValueError(f"{self.type.value} does not carry a reason")
+        elif not isinstance(self.reason, expected_reason_type):
+            raise ValueError(
+                f"{self.type.value} requires {expected_reason_type.__name__}"
+            )
 
     def format_line(self) -> str:
         """Render the wire line (no trailing newline)."""
@@ -60,9 +88,9 @@ class PowerMessage:
         """Parse one ``PWR`` line. Returns None if it is not a power message,
         the schema is unknown, or the type is unrecognized.
 
-        An *unknown reason* on a known type is tolerated (the typed message is
-        still actionable) -- reason codes may grow without a schema bump. An
-        unknown *schema* or *type* is not guessed at.
+        Message-specific reason enums enforce the graceful/emergency hierarchy.
+        Missing, unknown, cross-family, or extra fields are rejected rather than
+        converted into an actionable message with lost semantics.
         """
         tokens = line.split()
         if len(tokens) < 3 or tokens[0] != POWER_MSG_PREFIX:
@@ -77,10 +105,18 @@ class PowerMessage:
             mtype = PowerMessageType(tokens[2])
         except ValueError:
             return None
-        reason: Optional[PowerReason] = None
-        if len(tokens) >= 4:
+        reason_type = {
+            PowerMessageType.POWERING_DOWN: PoweringDownReason,
+            PowerMessageType.EMERGENCY_SHUTDOWN: EmergencyShutdownReason,
+            PowerMessageType.RESUMING: ResumingReason,
+        }.get(mtype)
+        expected_token_count = 3 if reason_type is None else 4
+        if len(tokens) != expected_token_count:
+            return None
+        reason: Optional[PowerMessageReason] = None
+        if reason_type is not None:
             try:
-                reason = PowerReason(tokens[3])
+                reason = reason_type(tokens[3])
             except ValueError:
-                reason = None  # forward-compatible: keep the typed message
+                return None
         return cls(type=mtype, reason=reason, schema_version=schema)

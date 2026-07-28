@@ -53,6 +53,7 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     test_power_calibration_storage
     test_shunt_calibration
     test_telemetry_poll
+    test_power_fsm
 )
 
 foreach(test_name IN LISTS KRABBY_FIRMWARE_NATIVE_TESTS)
