@@ -58,6 +58,14 @@ class TestFormatParseRoundTrip:
             f"PWR {POWER_MSG_SCHEMA} SHUTDOWN_ACK"
         )
 
+    def test_resuming_line_carries_its_typed_reason(self):
+        assert PowerMessage(
+            PowerMessageType.RESUMING,
+            ResumingReason.VOLTAGE_RECOVERED,
+        ).format_line() == (
+            f"PWR {POWER_MSG_SCHEMA} RESUMING voltage_recovered"
+        )
+
     def test_emergency_shutdown_line_carries_its_typed_reason(self):
         assert PowerMessage(
             PowerMessageType.EMERGENCY_SHUTDOWN,

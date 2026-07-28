@@ -176,6 +176,8 @@ static inline PowerFsmResult powerFsmStep(
 
 static constexpr uint8_t POWER_MSG_SCHEMA = 1;
 
+// Compact internal discriminant only. These numeric values are never placed on
+// the wire; powerPrintTypeToken() maps them to the versioned PWR text protocol.
 enum class PowerMessageType : uint8_t
 {
     PoweringDown,
