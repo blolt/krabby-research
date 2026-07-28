@@ -624,6 +624,8 @@ static void handleCalibrationCommand(const String& line)
 
     if (isActuatorCalibrationCommand(tokenCount, tokens))
     {
+        if (powerController.actuatorsParked())
+            return;
         actuatorManager->startAutoCalibration();
         if (leftSerial) leftSerial->println(CALIBRATION_COMMAND_PREFIX);
         if (rightSerial) rightSerial->println(CALIBRATION_COMMAND_PREFIX);
@@ -1283,7 +1285,7 @@ static void powerLowPowerSerial()
     {
         String s = mainSerial->readStringUntil('\n');
         if (powerIsShutdownAckLine(s.c_str()))
-            powerController.onShutdownAck();
+            powerController.acceptShutdownAckIfExpected();
         else if (s.indexOf(SYNC_TOKEN) >= 0)
             mainSerial->println(SYNC_TOKEN);
     }
@@ -1721,6 +1723,16 @@ void loop()
                 mainSerial->print(" ");
                 mainSerial->print(KRABBY_FW_COMMIT); mainSerial->print("|"); mainSerial->print(lCommit); mainSerial->print("|"); mainSerial->println(rCommit);
             }
+        }
+        else if (cmdType == 'P')
+        {
+            // P belongs exclusively to the versioned PWR runtime protocol.
+            // The top-level dispatcher consumes the prefix byte; only the exact
+            // remaining SHUTDOWN_ACK payload can affect the graceful cut window.
+            mainSerial->read();
+            String payload = mainSerial->readStringUntil('\n');
+            if (powerIsShutdownAckPayload(payload.c_str()))
+                powerController.acceptShutdownAckIfExpected();
         }
         else
         {

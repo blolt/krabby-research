@@ -22,7 +22,11 @@ stateDiagram-v2
         [*] --> Manual
         UnderVoltageSoft --> GraceGate
         Manual --> GraceGate
-        GraceGate --> ShutdownSleep: SHUTDOWN_ACK or timeout
+        GraceGate --> OrinPoweroff: exact SHUTDOWN_ACK
+        OrinPoweroff --> ShutdownSleep: clean poweroff / telemetry stops
+        GraceGate --> ForcedRailCut: no response for 60 s
+        OrinPoweroff --> ForcedRailCut: 15 s safety deadline
+        ForcedRailCut --> ShutdownSleep
     }
 
     state EmergencyShutdown {
@@ -39,11 +43,20 @@ stateDiagram-v2
     TerminalSleep --> [*]: manual reset only
 ```
 
-`POWERING_DOWN` is the graceful ACK/timeout gate before shutdown sleep.
+`POWERING_DOWN` opens the graceful transaction. Only an exact
+`PWR 1 SHUTDOWN_ACK` received while that transaction is active is accepted; it
+means the Orin has accepted the request and begun clean poweroff, not that
+poweroff has completed. Stopped Orin telemetry is the completion signal. The
+rail-cut deadlines remain a 60 s no-response fallback and a 15 s safety deadline
+after ACK.
 HARD_CUT and OVER_VOLT both bypass that gate. HARD_CUT emits no message, exactly
 as specified; stopped telemetry is the Orin's signal. OVER_VOLT emits the
 approved `EMERGENCY_SHUTDOWN over_voltage` best-effort notification and never
 waits for an ACK.
+
+The diagram states the complete required workflow. Exact ACK parsing and
+transaction scoping are implemented here; detecting stopped Orin telemetry as a
+successful completion signal remains an explicit AC 4i implementation item.
 
 ## Thresholds & timing (from `sensors_config.h` — cross-check before testing)
 
@@ -60,7 +73,7 @@ waits for an ACK.
 | `ORIN_FORCE_OFF_MS` | 60 000 | force-off deadline after a shutdown command |
 | `ORIN_ACKED_OFF_MS` | 15 000 | shortened deadline once SHUTDOWN_ACK arrives |
 
-Telemetry tick is 20 Hz (`TELEMETRY_INTERVAL_MS` 50 ms), so 4 ticks ≈ 200 ms.
+Telemetry tick is 20 Hz (`TELEMETRY_POLL_INTERVAL` 50 ms), so 4 ticks ≈ 200 ms.
 
 ## Setup
 

@@ -253,6 +253,49 @@ static void test_park_gate_state_codes_and_power_message_tokens()
         powerReasonToken(ResumingReason::VoltageRecovered));
 }
 
+static void test_shutdown_ack_is_scoped_to_an_active_graceful_transaction()
+{
+    PowerController controller;
+
+    const PowerState rejectedStates[] = {
+        PowerState::Normal,
+        PowerState::Warn,
+        PowerState::HardCut,
+        PowerState::OverVolt,
+        PowerState::Sleep,
+        PowerState::Resuming,
+    };
+    for (size_t index = 0;
+         index < sizeof(rejectedStates) / sizeof(rejectedStates[0]);
+         ++index)
+    {
+        controller.state = rejectedStates[index];
+        controller.orinCutArmed = true;
+        controller.orinPowered = true;
+        controller.shutdownAcked = false;
+        TEST_ASSERT_FALSE(controller.acceptShutdownAckIfExpected());
+        TEST_ASSERT_FALSE(controller.shutdownAcked);
+    }
+
+    controller.state = PowerState::SoftCut;
+    controller.orinCutArmed = false;
+    controller.orinPowered = true;
+    TEST_ASSERT_FALSE(controller.acceptShutdownAckIfExpected());
+
+    controller.orinCutArmed = true;
+    controller.orinPowered = false;
+    TEST_ASSERT_FALSE(controller.acceptShutdownAckIfExpected());
+
+    controller.orinPowered = true;
+    TEST_ASSERT_TRUE(controller.acceptShutdownAckIfExpected());
+    TEST_ASSERT_TRUE(controller.shutdownAcked);
+
+    // A repeated exact ACK is harmless and remains accepted while the same
+    // graceful transaction is active.
+    TEST_ASSERT_TRUE(controller.acceptShutdownAckIfExpected());
+    TEST_ASSERT_TRUE(controller.shutdownAcked);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -265,5 +308,6 @@ int main()
     RUN_TEST(test_sleep_recovery_is_strict_and_routes_through_resuming);
     RUN_TEST(test_every_invalid_reading_holds_state_and_resets_all_counters);
     RUN_TEST(test_park_gate_state_codes_and_power_message_tokens);
+    RUN_TEST(test_shutdown_ack_is_scoped_to_an_active_graceful_transaction);
     return UNITY_END();
 }

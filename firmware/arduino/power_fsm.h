@@ -386,12 +386,15 @@ struct PowerController
         return state;
     }
 
-    // Orin -> Mega SHUTDOWN_ACK arrived during the ack-wait. Pure bookkeeping
-    // (no I/O), so it stays host-buildable: the rail cut still waits the
-    // ORIN_FORCE_OFF_MS deadline so the Orin can finish `shutdown -h now`.
-    void onShutdownAck()
+    // Accept SHUTDOWN_ACK only while a graceful POWERING_DOWN transaction is
+    // actively waiting on the still-powered Orin. Emergency, stale, and early
+    // ACKs cannot shorten a later or unrelated rail-cut deadline.
+    bool acceptShutdownAckIfExpected()
     {
+        if (state != PowerState::SoftCut || !orinCutArmed || !orinPowered)
+            return false;
         shutdownAcked = true;
+        return true;
     }
 
     // True in any state where the leader has parked its actuators — motor
