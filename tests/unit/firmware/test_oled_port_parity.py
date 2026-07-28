@@ -1,11 +1,8 @@
-"""Firmware <-> sim parity for the OLED battery-gauge voltage window.
+"""Secondary firmware <-> sim contract for the OLED battery-gauge window.
 
-The volts->bar-fraction clamp is duplicated on purpose: krab.py (the Python sim,
-RENDER_SPEC §7) holds BATT_EMPTY_V / BATT_FULL_V, and arduino.ino's OLED port
-holds OLED_BATT_EMPTY_V / OLED_BATT_FULL_V, applied by oledBatteryFraction().
-Nothing else pins that the two windows agree, so a silent edit to one side would
-drift the physical panel away from the sim/goldens. This test reads the firmware
-constants straight out of arduino.ino and asserts they equal the Python ones.
+The direct Unity test executes BatteryLevel, which is the production C++
+calculation. This narrower source check only pins the intentionally duplicated
+Python simulator endpoints to that C++ rendering contract.
 """
 import re
 import sys
@@ -18,19 +15,19 @@ if str(_SIM) not in sys.path:
 
 import krab  # noqa: E402  (sys.path set above; sim lives outside the package tree)
 
-_ARDUINO_INO = _REPO / "firmware" / "arduino" / "arduino.ino"
+_BATTERY_LEVEL_HEADER = _REPO / "firmware" / "arduino" / "battery_level.h"
 
-# Matches e.g. `static const float OLED_BATT_EMPTY_V = 12.0f, OLED_BATT_FULL_V = 13.4f;`
-_WINDOW_RE = re.compile(
-    r"OLED_BATT_EMPTY_V\s*=\s*([0-9.]+)f?\s*,\s*OLED_BATT_FULL_V\s*=\s*([0-9.]+)f?"
-)
+_EMPTY_RE = re.compile(r"BATTERY_LEVEL_EMPTY_VOLTS\s*=\s*([0-9.]+)f?")
+_FULL_RE = re.compile(r"BATTERY_LEVEL_FULL_VOLTS\s*=\s*([0-9.]+)f?")
 
 
 def _firmware_batt_window() -> tuple[float, float]:
-    text = _ARDUINO_INO.read_text()
-    m = _WINDOW_RE.search(text)
-    assert m is not None, "OLED_BATT_EMPTY_V/OLED_BATT_FULL_V not found in arduino.ino"
-    return float(m.group(1)), float(m.group(2))
+    text = _BATTERY_LEVEL_HEADER.read_text()
+    empty = _EMPTY_RE.search(text)
+    full = _FULL_RE.search(text)
+    assert empty is not None, "BATTERY_LEVEL_EMPTY_VOLTS not found"
+    assert full is not None, "BATTERY_LEVEL_FULL_VOLTS not found"
+    return float(empty.group(1)), float(full.group(1))
 
 
 def test_batt_gauge_window_matches_firmware():

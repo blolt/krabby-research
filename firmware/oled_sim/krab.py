@@ -11,7 +11,7 @@ mechanically. State model:
   batt:        (frac_a, frac_b) 0..1 bar levels; build them from per-battery
                VOLTAGES via KrabState.from_battery_voltages() (the same clamp
                the firmware OLED port runs on the BATT frame)
-  role, roll, pitch, pack_v
+  role, roll, pitch, pack_volts
 """
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ class KrabState:
     role: str = "FRONT"                              # firmware roleLabel(): FRONT/UNKWN/LEFT/RIGHT
     roll: int = 0
     pitch: int = 0
-    pack_v: float = 24.0
+    pack_volts: float = 24.0
 
     @classmethod
     def from_battery_voltages(cls, *battery_voltages: float, **kwargs) -> "KrabState":
@@ -50,9 +50,9 @@ class KrabState:
 # --- battery state-of-charge gauge (voltage-window mapping) ---
 # LiFePO4's discharge curve is flat (~3.2 V/cell from ~90% down to ~20%), so the
 # bars are a coarse glance-gauge, not a coulomb-accurate SoC. Each 4S battery's
-# resting voltage maps linearly over its usable window; coulomb counting off the
-# INA228 charge register is the accurate upgrade (Task 4). This clamp ports to
-# firmware verbatim to drive the OLED bar fill from the BATT frame's per-battery V.
+# resting voltage maps linearly over its usable window. A future state-of-charge
+# design would need capacity, initialization/reconciliation, reset and brownout
+# behavior, and a way to represent both batteries; that is outside this A/C.
 BATT_EMPTY_V = 12.0                                    # ~3.0 V/cell resting -> 0% on the gauge
 BATT_FULL_V = 13.4                                     # rested-full 4S LiFePO4 ~3.35 V/cell (Appendix C) -> 100%
 
@@ -97,7 +97,7 @@ def _lround(x: float) -> int:
     to format decivolts and size the battery fill). Python's built-in round() is
     banker's rounding (half to even) -- e.g. round(242.5)==242 but lround==243 --
     which would make the sim string diverge from the panel at exact-half boundaries
-    (pack_v 24.25 -> "24.2V" in the sim vs "24.3V" on hardware). Keep them equal."""
+    (pack_volts 24.25 -> "24.2V" in the sim vs "24.3V" on hardware). Keep them equal."""
     return int(x + 0.5) if x >= 0 else -int(-x + 0.5)
 
 
@@ -136,11 +136,11 @@ def render(state: KrabState, bend=(0, 0, 0)) -> OLED:
     # write it, so the port is mechanical (see RENDER_SPEC.md "Firmware limits"):
     #   - NO %f: AVR snprintf omits float unless you link -lprintf_flt (flash
     #     cost). Format the pack voltage from integer decivolts as two %d fields.
-    #     The INA228 already yields an integer reading; pack_v is the float stand-in.
+    #     The INA228 already yields an integer reading; pack_volts is the float stand-in.
     #   - roll/pitch clamped to +/-99 so the 3-char (incl. sign) fields can't
     #     widen the line past its 128px / ~21-glyph budget at 5x7.
     d.setFont("5x7")                                     # firmware: setFont(&QW_FONT_5X7)
-    dv = _lround(state.pack_v * 10)                      # decivolts (C lround, half away from 0)
+    dv = _lround(state.pack_volts * 10)                  # decivolts (C lround, half away from 0)
     roll = max(-99, min(99, state.roll))
     pitch = max(-99, min(99, state.pitch))
     top = f"{state.role} {roll:+03d}/{pitch:+03d} {dv // 10:d}.{dv % 10:d}V"

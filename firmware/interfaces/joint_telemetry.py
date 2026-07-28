@@ -350,17 +350,17 @@ class BatteryParseReason(enum.Enum):
 class BatteryTelemetry:
     """Leader-board INA228 pack + per-battery sample appended to the telemetry
     line (Task 3; see arduino.ino). Pack values come from the Pack INA228 across
-    the external shunt; batt_a is the Midpoint INA228 VBUS and batt_b is derived
-    as pack_v - batt_a."""
+    the external shunt; battery A is the Midpoint INA228 VBUS and battery B is
+    derived as pack volts minus battery-A volts."""
 
-    pack_v: float          # V, total pack
-    pack_i: float          # A, signed (firmware sign convention: + discharge)
-    pack_w: float          # W
-    pack_charge: float     # C, accumulated (INA228 charge register)
-    batt_a_v: float        # V, lower battery (Midpoint INA228 VBUS)
-    batt_b_v: float        # V, upper battery (pack_v - batt_a_v)
-    divergence: bool       # |Va - Vb| > INA228_DIVERGENCE_THRESHOLD_V
-    power_state: int       # PowerState byte; Task 4 drives it (0 = NORMAL for now)
+    pack_volts: float               # V, total pack
+    pack_current_amperes: float     # A, signed (firmware sign convention: + discharge)
+    pack_power_watts: float         # W
+    pack_charge_coulombs: float     # C, accumulated (INA228 charge register)
+    battery_a_volts: float          # V, lower battery (Midpoint INA228 VBUS)
+    battery_b_volts: float          # V, upper battery (pack_volts - battery_a_volts)
+    divergence: bool       # |Va - Vb| > INA228_DIVERGENCE_THRESHOLD
+    power_state: Union[PowerState, int]  # known enum, or unknown byte retained
 
     TAG = "BATT"
     # Tag plus eight payload fields (pack V/I/P/charge, batt A/B V, divergence,
@@ -390,27 +390,53 @@ class BatteryTelemetry:
         if len(tokens) != cls.TOKEN_COUNT:
             return _drop(BatteryParseReason.BAD_TOKEN_COUNT)
         try:
-            vals = [float(t) for t in tokens[1:7]]   # 6 floats: pack V/I/P/charge, A, B
+            (
+                pack_volts,
+                pack_current_amperes,
+                pack_power_watts,
+                pack_charge_coulombs,
+                battery_a_volts,
+                battery_b_volts,
+            ) = (float(token) for token in tokens[1:7])
         except ValueError:
             return _drop(BatteryParseReason.NON_NUMERIC_TOKEN)
+        divergence_token = tokens[7]
+        power_state_token = tokens[8]
         # divergence flag is exactly "0"/"1"; anything else is corruption.
-        if tokens[7] not in ("0", "1"):
+        if divergence_token not in ("0", "1"):
             return _drop(BatteryParseReason.NON_NUMERIC_TOKEN)
         # power_state is a byte enum on the wire; accept any 0..255, map later.
         try:
-            power_state = int(tokens[8])
+            power_state_byte = int(power_state_token)
         except ValueError:
             return _drop(BatteryParseReason.NON_NUMERIC_TOKEN)
-        if not (0 <= power_state <= 255):
+        if not (0 <= power_state_byte <= 255):
             return _drop(BatteryParseReason.NON_NUMERIC_TOKEN)
         # AVR prints non-finite floats as "nan"/"inf", which float() accepts; a
         # wedged INA228 read would poison a pack/battery value, so reject those.
-        if not all(math.isfinite(v) for v in vals):
+        measurements = (
+            pack_volts,
+            pack_current_amperes,
+            pack_power_watts,
+            pack_charge_coulombs,
+            battery_a_volts,
+            battery_b_volts,
+        )
+        if not all(math.isfinite(measurement) for measurement in measurements):
             return _drop(BatteryParseReason.NON_FINITE_VALUE)
+        try:
+            power_state: Union[PowerState, int] = PowerState(power_state_byte)
+        except ValueError:
+            power_state = power_state_byte
         return cls(
-            pack_v=vals[0], pack_i=vals[1], pack_w=vals[2], pack_charge=vals[3],
-            batt_a_v=vals[4], batt_b_v=vals[5],
-            divergence=tokens[7] == "1", power_state=power_state,
+            pack_volts=pack_volts,
+            pack_current_amperes=pack_current_amperes,
+            pack_power_watts=pack_power_watts,
+            pack_charge_coulombs=pack_charge_coulombs,
+            battery_a_volts=battery_a_volts,
+            battery_b_volts=battery_b_volts,
+            divergence=divergence_token == "1",
+            power_state=power_state,
         )
 
     @classmethod
@@ -422,11 +448,16 @@ class BatteryTelemetry:
 
     def format_compact(self) -> str:
         flag = " DIVERGE" if self.divergence else ""
-        state = PowerState(self.power_state).name if self.power_state in iter(PowerState) else str(self.power_state)
+        state = (
+            self.power_state.name
+            if isinstance(self.power_state, PowerState)
+            else str(self.power_state)
+        )
         return (
-            f"pack:{self.pack_v:.2f}V {self.pack_i:+.2f}A {self.pack_w:.1f}W "
-            f"A:{self.batt_a_v:.2f}V B:{self.batt_b_v:.2f}V "
-            f"q:{self.pack_charge:.0f}C {state}{flag}"
+            f"pack:{self.pack_volts:.2f}V {self.pack_current_amperes:+.2f}A "
+            f"{self.pack_power_watts:.1f}W A:{self.battery_a_volts:.2f}V "
+            f"B:{self.battery_b_volts:.2f}V "
+            f"q:{self.pack_charge_coulombs:.0f}C {state}{flag}"
         )
 
 

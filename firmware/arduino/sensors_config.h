@@ -1,5 +1,7 @@
 #pragma once
 
+#include "measurement_units.h"
+
 // I2C sensor cluster configuration (Milestone 16).
 // Single home for the wiring/contract constants of the shared I2C bus on the
 // primary (leader) MCU. The bus lives on the Mega's hardware I2C pins:
@@ -29,7 +31,7 @@
 // Moved from arduino.ino. 50 ms = 20 Hz. The Orin control loop runs 100 Hz and
 // the model ~50 Hz; the IMU rides this tick. If the model needs faster
 // proprioception, lower this as an explicit, documented decision.
-const int TELEMETRY_INTERVAL_MS = 50;
+static constexpr Milliseconds TELEMETRY_POLL_INTERVAL(50U);
 
 // --- LSM6DSO IMU (SparkFun Qwiic 6DoF, STMicro LSM6DSO, leader board only) ---
 // Init probes the primary address then the alternate, so a breakout with the
@@ -104,56 +106,59 @@ const int8_t  IMU_AXIS_SIGN[3] = {1, 1, 1};
 #define EEPROM_SENSOR_CAL_NEXT_ADDR (EEPROM_IMU_CAL_ADDR + EEPROM_IMU_CAL_SIZE)
 
 // --- INA228 power monitors (Task 3, leader board only) ---
-// Two Adafruit INA228 on the same Qwiic->Dupont bus as the BMI270 and OLED.
+// Two Adafruit INA228 on the same Qwiic->Dupont bus as the LSM6DSO and OLED.
 //   Pack     (0x40): total 24 V pack V/I/P/charge across the external shunt.
 //   Midpoint (0x41): lower-battery VBUS only (current channel grounded);
 //                    upper battery = pack_v - midpoint_v.
-// I2C chain: BMI270 0x68 -> OLED 0x3D -> Pack 0x40 -> Midpoint 0x41.
+// I2C chain: LSM6DSO 0x6B (or 0x6A) -> OLED 0x3D -> Pack 0x40 ->
+// Midpoint 0x41.
 #define INA228_PACK_I2C_ADDR 0x40                    // default address
-#define INA228_MID_I2C_ADDR  0x41                    // A0 solder jumper strapped (AC 3d)
+#define INA228_MID_I2C_ADDR  0x41                    // A0 jumper solder-bridged (AC 3d)
 
-// External shunt. Both onboard 15 mOhm shunts are trace-cut (AC 3e) so only the
-// external 200 A / 75 mV bar carries pack current: 75 mV / 200 A = 0.000375 ohm.
-// setShunt(SHUNT_OHMS, MAX_A) derives the INA228 current LSB from these two.
-#define INA228_SHUNT_OHMS      0.000375f
-#define INA228_SHUNT_MAX_AMPS  200.0f
+// External shunt. Both onboard 15 mOhm resistors are removed (the accepted
+// implementation of AC 3e) so only the external 200 A / 75 mV bar carries pack
+// current: 75 mV / 200 A = 0.000375 ohm.
+// setShunt(resistance, max current) derives the INA228 current LSB from these
+// two values. Keep their units explicit until the Adafruit API boundary.
+static constexpr Ohms INA228_SHUNT_RESISTANCE(0.000375f);
+static constexpr Amps INA228_SHUNT_MAX_CURRENT(200.0f);
 
 // Per-battery divergence alarm: |Va - Vb| above this (volts) sets the BATT
 // frame's divergence flag. 0.5 V across two nominally-equal 12 V batteries flags
 // a cell imbalance / a failing battery before Task 4's protective logic. (AC 3h.)
-#define INA228_DIVERGENCE_THRESHOLD_V 0.5f
+static constexpr Volts INA228_DIVERGENCE_THRESHOLD(0.5f);
 
 // Poll cadence: both INA228s are read on the existing telemetry tick
-// (TELEMETRY_INTERVAL_MS, 20 Hz) — no separate slow path in normal operation.
+// (TELEMETRY_POLL_INTERVAL, 20 Hz) — no separate slow path in normal operation.
 // The low-power slow path is Task 4. (AC 3h; spec §4.)
 
 // EEPROM: INA228 calibration block, immediately after the IMU block, its own
-// magic + schema. Struct InaCalData (arduino.ino) = magic + schema + per-board
-// VBUS offset/gain trims (Pack, Midpoint) + a pack shunt-cal constant; a
-// static_assert there pins sizeof(InaCalData) == EEPROM_INA_CAL_SIZE. Layout is
+// magic + schema. PowerCalibrationData = magic + schema + per-board VBUS offset
+// trims (Pack, Midpoint) + a Pack shunt-cal constant; static_asserts in the
+// storage header and arduino.ino pin its size to EEPROM_INA_CAL_SIZE. Layout is
 // finalized with the calibration procedure (AC 3i).
 #define EEPROM_INA_CAL_ADDR   EEPROM_SENSOR_CAL_NEXT_ADDR    // = 66
 #define EEPROM_INA_CAL_MAGIC  0xC8                           // distinct from IMU's 0xC7
 #define EEPROM_INA_CAL_SCHEMA 1
-// magic + schema + 5 floats: pack VBUS {offset,gain}, mid VBUS {offset,gain},
-// pack shunt-cal = 1 + 1 + 5*4 = 22 bytes: EEPROM bytes 66-87 inclusive.
-#define EEPROM_INA_CAL_SIZE   22
+// magic + schema + 3 floats: Pack VBUS offset, Midpoint VBUS offset, Pack
+// shunt-cal = 1 + 1 + 3*4 = 14 bytes: EEPROM bytes 66-79 inclusive.
+#define EEPROM_INA_CAL_SIZE   14
 // First free EEPROM byte after the INA228 block, for later sensor-cluster blocks.
 #define EEPROM_INA_CAL_NEXT_ADDR (EEPROM_INA_CAL_ADDR + EEPROM_INA_CAL_SIZE)
 
-// --- INA228 bench calibration (AC 3i; serial 'K' command) ---
+// --- INA228 implementation of power-sensing bench calibration (AC 3i) ---
 // VBUS calibration needs an EXTERNAL known reference (a DMM on the live pack),
 // so unlike the IMU gyro-bias capture it cannot self-run at boot — the operator
-// triggers it from the bench with the serial 'K' command (handleInaCalCommand in
-// arduino.ino). Full bench procedure: docs/M16-INA228-CALIBRATION.md.
+// triggers it from the bench with the hardware-agnostic `P CAL ...` command
+// family. Full bench procedure: docs/M16-INA228-CALIBRATION.md.
 //
 // Plausibility bounds shared by the capture routines and the stored-block loader
-// inaCalPlausible(). A captured trim outside these is rejected and NOT persisted,
+// powerCalibrationIsPlausible(). A captured trim outside these is rejected and NOT persisted,
 // so a fat-fingered bench reference can never brick a board's telemetry — the
 // prior (or identity) calibration stays in force.
 #define INA228_CAL_PACK_REF_MAX_V   40.0f  // operator pack reference ceiling (V)
 #define INA228_CAL_MID_REF_MAX_V    20.0f  // operator midpoint reference ceiling (V)
 #define INA228_CAL_MAX_VOFFSET_V     2.0f  // max |VBUS offset| a capture may write (V)
-#define INA228_CAL_MIN_GAIN          0.5f  // VBUS/shunt gain-trim floor (unitless)
-#define INA228_CAL_MAX_GAIN          2.0f  // VBUS/shunt gain-trim ceiling (unitless)
+#define INA228_CAL_MIN_GAIN          0.5f  // shunt-trim floor (unitless)
+#define INA228_CAL_MAX_GAIN          2.0f  // shunt-trim ceiling (unitless)
 #define INA228_CAL_MIN_SHUNT_TRIM_A  0.1f  // min |current| (A) for a valid shunt-trim point

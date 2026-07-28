@@ -281,7 +281,7 @@ class KrabbyMCUSDK:
             logger.warning(
                 "Battery divergence: A=%.2fV B=%.2fV differ beyond threshold "
                 "(possible cell imbalance / failing battery).",
-                battery.batt_a_v, battery.batt_b_v,
+                battery.battery_a_volts, battery.battery_b_volts,
             )
             self._batt_diverge_warned = True
 

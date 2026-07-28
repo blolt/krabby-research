@@ -8,10 +8,15 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 import time
+from dataclasses import dataclass
 from typing import Dict, Optional
 
 from firmware.krabby_mcu import DEFAULT_BAUD, KrabbyMCUSDK, JOINT_GROUP_NAMES
-from firmware.interfaces.joint_telemetry import JointTelemetry, PowerState
+from firmware.interfaces.joint_telemetry import (
+    BatteryTelemetry,
+    JointTelemetry,
+    PowerState,
+)
 
 JOG_PWM = 200               # jog magnitude sent while a Retract/Extend button is held
 TELEMETRY_REFRESH_MS = 100  # GUI poll period; decoupled from the firmware's telemetry tick
@@ -43,6 +48,12 @@ FONT_SENSOR_HEADER = FONT_TABLE_HEADER     # Segoe 9 bold caption row
 FONT_SENSOR_VALUE = ("Consolas", 10)       # monospace tabular numbers, anchor e
 STATE_COLOR_OK = "#2e7d32"
 STATE_COLOR_STALE = "#c0392b"
+BATTERY_WARNING_STATES = {
+    PowerState.WARN,
+    PowerState.SOFT_CUT,
+    PowerState.HARD_CUT,
+    PowerState.OVER_VOLT,
+}
 
 
 def resolve_imu_state(imu, age_s: Optional[float]) -> tuple[str, str]:
@@ -77,6 +88,66 @@ def latch_imu(prev_obj, prev_ts, imu, now):
     if imu is not None and imu is not prev_obj:
         return imu, now
     return prev_obj, prev_ts
+
+
+@dataclass(frozen=True)
+class BatteryRowPresentation:
+    pack_volts: str
+    pack_current_amperes: str
+    pack_power_watts: str
+    pack_charge_coulombs: str
+    battery_a_volts: str
+    battery_b_volts: str
+    power_state: str
+    divergence: str
+    power_state_color: str
+    divergence_color: str
+
+
+def format_battery_row(
+    battery: Optional[BatteryTelemetry],
+    stale: bool,
+) -> BatteryRowPresentation:
+    """Format the production BATT model without creating Tk widgets."""
+    if battery is None:
+        return BatteryRowPresentation(
+            pack_volts="—",
+            pack_current_amperes="—",
+            pack_power_watts="—",
+            pack_charge_coulombs="—",
+            battery_a_volts="—",
+            battery_b_volts="—",
+            power_state="—",
+            divergence="—",
+            power_state_color="",
+            divergence_color="",
+        )
+
+    known_power_state = (
+        battery.power_state
+        if isinstance(battery.power_state, PowerState)
+        else None
+    )
+    power_state_name = (
+        known_power_state.name
+        if known_power_state is not None
+        else str(battery.power_state)
+    )
+    warning_state = known_power_state in BATTERY_WARNING_STATES
+    return BatteryRowPresentation(
+        pack_volts=f"{battery.pack_volts:.2f}",
+        pack_current_amperes=f"{battery.pack_current_amperes:+.2f}",
+        pack_power_watts=f"{battery.pack_power_watts:.1f}",
+        pack_charge_coulombs=f"{battery.pack_charge_coulombs:.0f}",
+        battery_a_volts=f"{battery.battery_a_volts:.2f}",
+        battery_b_volts=f"{battery.battery_b_volts:.2f}",
+        power_state="stale" if stale else power_state_name,
+        divergence="DIVERGE" if battery.divergence else "ok",
+        power_state_color=(
+            STATE_COLOR_STALE if (stale or warning_state) else STATE_COLOR_OK
+        ),
+        divergence_color=STATE_COLOR_STALE if battery.divergence else "",
+    )
 
 
 class JointRow:
@@ -175,9 +246,6 @@ class BattRow:
     flag, so its "stale" is purely link-age driven."""
 
     COLS = ["", "pack V", "A±", "W", "q C", "A V", "B V", "state", "diverge"]
-    WARN = {PowerState.WARN, PowerState.SOFT_CUT,
-            PowerState.HARD_CUT, PowerState.OVER_VOLT}
-
     def __init__(self, parent: tk.Widget):
         ttk.Label(parent, text="BATT", font=FONT_SENSOR_LABEL, width=6,
                   anchor="w").grid(row=1, column=0, padx=4, pady=2, sticky="w")
@@ -194,29 +262,21 @@ class BattRow:
         self._diverge_lbl = parent.grid_slaves(row=1, column=8)[0]
 
     def update(self, batt, stale: bool):
-        if batt is None:
-            for v in self._vars[1:]:
-                v.set("—")
-            self._state_lbl.configure(foreground="")
-            self._diverge_lbl.configure(foreground="")
-            return
-        self._vars[1].set(f"{batt.pack_v:.2f}")
-        self._vars[2].set(f"{batt.pack_i:+.2f}")
-        self._vars[3].set(f"{batt.pack_w:.1f}")
-        self._vars[4].set(f"{batt.pack_charge:.0f}")
-        self._vars[5].set(f"{batt.batt_a_v:.2f}")
-        self._vars[6].set(f"{batt.batt_b_v:.2f}")
-        try:
-            ps = PowerState(batt.power_state)
-            name, warn = ps.name, ps in self.WARN
-        except ValueError:
-            name, warn = str(batt.power_state), False
-        self._vars[7].set("stale" if stale else name)
-        self._state_lbl.configure(
-            foreground=STATE_COLOR_STALE if (stale or warn) else STATE_COLOR_OK)
-        self._vars[8].set("DIVERGE" if batt.divergence else "ok")
-        self._diverge_lbl.configure(
-            foreground=STATE_COLOR_STALE if batt.divergence else "")
+        presentation = format_battery_row(batt, stale)
+        values = (
+            presentation.pack_volts,
+            presentation.pack_current_amperes,
+            presentation.pack_power_watts,
+            presentation.pack_charge_coulombs,
+            presentation.battery_a_volts,
+            presentation.battery_b_volts,
+            presentation.power_state,
+            presentation.divergence,
+        )
+        for variable, value in zip(self._vars[1:], values):
+            variable.set(value)
+        self._state_lbl.configure(foreground=presentation.power_state_color)
+        self._diverge_lbl.configure(foreground=presentation.divergence_color)
 
 
 class KrabbyTestGUI(tk.Tk):

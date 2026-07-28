@@ -14,6 +14,9 @@
 #include <SparkFun_Qwiic_OLED.h>
 #include <res/qw_fnt_5x7.h>
 #include <math.h>
+#include "battery_level.h"
+#include "battery_split.h"
+#include "battery_telemetry.h"
 #include "board_pins.h"
 #include "command.h"
 #include "controller_freshness.h"
@@ -21,8 +24,17 @@
 #include "disconnect_status.h"
 #include "oled_actuator_glyphs.h"
 #include "oled_transfer_budget.h"
+#include "ina_pack_config.h"
+#include "ina_pack_lifecycle.h"
+#include "ina_voltage.h"
+#include "measurement_units.h"
+#include "power_calibration_protocol.h"
+#include "power_calibration_storage.h"
 #include "actuator_manager.h"
 #include "sensors_config.h"
+#include "shunt_calibration.h"
+#include "telemetry_poll.h"
+#include "voltage_calibration.h"
 #include "telemetry_protocol.h"
 #include "version.h"
 
@@ -47,10 +59,10 @@ BoardRole currentRole = ROLE_UNKNOWN;
 struct OledKrabState {
   bool front, left, right;
   OledGlyph legs[6][3];
-  float batt[2];
+  float batteryLevels[2];
   const char *role;
   int roll, pitch;
-  float pack_v;
+  float packVoltage;
 
   // Field-wise equality so oledRenderKrab can skip the erase()+redraw()+display()
   // (a ~120 ms full-frame I2C flush) when nothing drawn changed since last frame.
@@ -59,7 +71,9 @@ struct OledKrabState {
   bool operator==(const OledKrabState &o) const {
     if (front != o.front || left != o.left || right != o.right) return false;
     if (roll != o.roll || pitch != o.pitch) return false;
-    if (batt[0] != o.batt[0] || batt[1] != o.batt[1] || pack_v != o.pack_v) return false;
+    if (batteryLevels[0] != o.batteryLevels[0] ||
+        batteryLevels[1] != o.batteryLevels[1] ||
+        packVoltage != o.packVoltage) return false;
     if (role != o.role) return false;
     for (int i = 0; i < 6; i++)
       for (int j = 0; j < 3; j++)
@@ -158,8 +172,9 @@ const LinearActuator::ControlConfig ACTUATOR_CONFIG = {
 const size_t CMD_BUF_SIZE = 18;
 Command cmdBuf[CMD_BUF_SIZE];
 
-// TELEMETRY_INTERVAL_MS lives in sensors_config.h (shared with the I2C poll cadence).
-unsigned long lastTelemetry = 0;
+// TELEMETRY_POLL_INTERVAL lives in sensors_config.h and drives the shared
+// telemetry/I2C poll cadence.
+uint32_t lastTelemetry = 0;
 
 // --- I2C sensor cluster (Milestone 16) — leader board only ---
 // The LSM6DSO IMU rides the leader's telemetry tick; followers never touch the bus.
@@ -257,30 +272,24 @@ struct ImuCalData
 };
 ImuCalData imuCal = {};
 
-// INA228 calibration (Task 3, AC 3i): per-board VBUS offset+gain trims so the two
-// monitors agree with a reference DMM, plus a pack shunt-cal fine trim on the
+// INA228 calibration (Task 3, AC 3i): per-board VBUS offset trims so the two
+// monitors agree with a reference DMM, plus a Pack shunt-cal fine trim on the
 // current channel. Captured at the bench against a known voltage/current via the
-// serial 'K' command (handleInaCalCommand below; procedure in
+// serial power-calibration command (handlePowerCalibrationCommand below;
+// procedure in
 // docs/M16-INA228-CALIBRATION.md) and persisted at EEPROM_INA_CAL_ADDR with the
 // same torn-write-safe magic scheme as the IMU block. A board with no valid block
 // runs identity trims (gain 1, offset 0, shunt 1) — the read is uncorrected,
 // never wrong. Layout pinned to EEPROM_INA_CAL_SIZE.
-struct InaCalData
-{
-    uint8_t magic;
-    uint8_t schema;
-    float packVOffset;   // V, added to Pack readBusVoltage
-    float packVGain;     // unitless, multiplies Pack readBusVoltage
-    float midVOffset;    // V, added to Midpoint readBusVoltage
-    float midVGain;      // unitless, multiplies Midpoint readBusVoltage
-    float packShuntCal;  // unitless, multiplies Pack current+power (identity = 1)
-};
-static_assert(sizeof(InaCalData) == EEPROM_INA_CAL_SIZE,
+static_assert(sizeof(PowerCalibrationData) == EEPROM_INA_CAL_SIZE,
               "update EEPROM_INA_CAL_SIZE in sensors_config.h");
-// Identity default: no correction until a bench capture writes real trims. Defined
-// once so the boot default and the EEPROM-invalid fallback in inaSetup cannot drift.
-static const InaCalData INA_CAL_IDENTITY = {0, 0, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f};
-InaCalData inaCal = INA_CAL_IDENTITY;
+static const PowerCalibrationStorageRules POWER_CALIBRATION_STORAGE_RULES = {
+    EEPROM_INA_CAL_MAGIC,
+    EEPROM_INA_CAL_SCHEMA,
+    INA228_CAL_MAX_VOFFSET_V,
+    INA228_CAL_MIN_GAIN,
+    INA228_CAL_MAX_GAIN};
+PowerCalibrationData inaCal = identityPowerCalibration();
 
 static bool imuCalPlausible();
 
@@ -479,35 +488,18 @@ static void imuAppendTelemetry(Print& out)
     out.print(fresh ? 1 : 0);
 }
 
-// Stored INA cal must survive the magic check AND look like calibration: all five
-// floats finite, both VBUS gains near unity. Any failure is a missing block.
-static bool inaCalPlausible()
-{
-    if (inaCal.magic != EEPROM_INA_CAL_MAGIC || inaCal.schema != EEPROM_INA_CAL_SCHEMA)
-        return false;
-    const float f[5] = {inaCal.packVOffset, inaCal.packVGain, inaCal.midVOffset,
-                        inaCal.midVGain, inaCal.packShuntCal};
-    for (int i = 0; i < 5; i++)
-        if (!isfinite(f[i])) return false;
-    if (inaCal.packVGain < INA228_CAL_MIN_GAIN || inaCal.packVGain > INA228_CAL_MAX_GAIN) return false;
-    if (inaCal.midVGain < INA228_CAL_MIN_GAIN || inaCal.midVGain > INA228_CAL_MAX_GAIN) return false;
-    // packShuntCal now multiplies the live current/power reads, so a garbage
-    // value must fail the load exactly like a bad gain (falls back to identity).
-    if (inaCal.packShuntCal < INA228_CAL_MIN_GAIN || inaCal.packShuntCal > INA228_CAL_MAX_GAIN) return false;
-    return true;
-}
-
+// Stored INA cal must survive the magic check AND look like calibration: all
+// three floats finite, both offsets bounded, and the shunt scale near unity.
 // Bring up both INA228 monitors on the shared I2C bus (already begun by imuSetup).
 // Per-device: one missing board must not block the other. Pack gets the external
 // shunt calibration; Midpoint is VBUS-only (current channel unused). The Pack
 // charge accumulator is zeroed so pack_charge counts from this boot.
 static void inaSetup()
 {
-    packValid = inaPack.begin(INA228_PACK_I2C_ADDR, &Wire);
+    packValid = startPackIna(
+        inaPack, INA228_PACK_I2C_ADDR, &Wire, PackInaStart::Boot);
     if (packValid)
     {
-        inaPack.setShunt(INA228_SHUNT_OHMS, INA228_SHUNT_MAX_AMPS);
-        inaPack.resetAccumulators();  // pack_charge counts from boot
         Serial.println(F("INA: Pack (0x40) online, setShunt(0.000375, 200)."));
     }
     else
@@ -517,13 +509,15 @@ static void inaSetup()
     Serial.println(midValid ? F("INA: Midpoint (0x41) online.")
                             : F("INA: Midpoint (0x41) init FAILED."));
 
-    EEPROM.get(EEPROM_INA_CAL_ADDR, inaCal);
-    if (inaCalPlausible())
-        Serial.println(F("INA CAL: loaded from EEPROM."));
+    if (loadPowerCalibration(
+            EEPROM,
+            EEPROM_INA_CAL_ADDR,
+            POWER_CALIBRATION_STORAGE_RULES,
+            inaCal))
+        Serial.println(F("POWER CAL: loaded from EEPROM."));
     else
     {
-        inaCal = INA_CAL_IDENTITY;  // identity trims
-        Serial.println(F("INA CAL: none/invalid; running identity trims."));
+        Serial.println(F("POWER CAL: none/invalid; running identity trims."));
     }
 }
 
@@ -542,13 +536,11 @@ static void inaRecoverPack()
     if (inaPackBadTicks < IMU_REINIT_AFTER_BAD_TICKS) return;
     if (millis() - inaPackLastReinit < IMU_REINIT_INTERVAL_MS) return;
     inaPackLastReinit = millis();
-    // skipReset=true: a mid-run re-begin must NOT reset the device, or the CHARGE
-    // accumulator (pack_charge) is zeroed. begin()'s default (skipReset=false) issues
-    // a full device reset -- resetAccumulators() was never the only path that cleared
-    // charge, so this argument, not its absence, is what preserves it. Re-apply the
-    // shunt cal after (cheap; config survives a transient wedge, is at POR after a brownout).
-    packValid = inaPack.begin(INA228_PACK_I2C_ADDR, &Wire, /*skipReset=*/true);
-    if (packValid) inaPack.setShunt(INA228_SHUNT_OHMS, INA228_SHUNT_MAX_AMPS);
+    // A mid-run re-begin skips the device reset so a still-powered INA228 retains
+    // its CHARGE accumulator. A physical INA228 brownout has already cleared that
+    // hardware state; recovery cannot reconstruct the lost interval.
+    packValid = startPackIna(
+        inaPack, INA228_PACK_I2C_ADDR, &Wire, PackInaStart::Recovery);
     inaPackBadTicks = 0;
 }
 
@@ -565,7 +557,7 @@ static void inaRecoverMid()
 // --- INA228 bench calibration capture (AC 3i) ---
 // VBUS calibration needs an EXTERNAL known reference (a DMM on the live pack), so
 // unlike imuCaptureGyroBias it cannot self-run at boot; the operator triggers it
-// from the bench with the serial 'K' command. Full procedure lives in
+// from the bench with the serial power-calibration command. Full procedure lives in
 // docs/M16-INA228-CALIBRATION.md. Every write reuses imuCaptureGyroBias's
 // torn-write-safe scheme (inaPersistCal): stream the block with magic=0x00 first,
 // then flip the real magic byte in last, so a power loss mid-write always fails
@@ -573,207 +565,157 @@ static void inaRecoverMid()
 // could produce a bad number bails BEFORE writing, so a mistyped bench reference
 // leaves the prior (or identity) calibration untouched.
 
-// Pending two-point VBUS LOW point (raw live readings + operator references),
-// captured by 'K L' and consumed by 'K H'. RAM-only: an aborted two-point run
-// (never sending 'K H') never touches EEPROM.
-static bool  inaPendingLow = false;
-static float inaPendingPackRaw = 0, inaPendingMidRaw = 0;
-static float inaPendingPackRef = 0, inaPendingMidRef = 0;
-
 static void inaPersistCal()
 {
-    inaCal.schema = EEPROM_INA_CAL_SCHEMA;
-    inaCal.magic  = 0x00;                                    // garbage magic first
-    EEPROM.put(EEPROM_INA_CAL_ADDR, inaCal);                 // stream the floats
-    inaCal.magic  = EEPROM_INA_CAL_MAGIC;                    // real magic last
-    EEPROM.update(EEPROM_INA_CAL_ADDR, EEPROM_INA_CAL_MAGIC);
+    persistPowerCalibration(
+        EEPROM,
+        EEPROM_INA_CAL_ADDR,
+        POWER_CALIBRATION_STORAGE_RULES,
+        inaCal);
 }
 
-static void inaPrintCal()
+static void printPowerCalibration()
 {
     // F() keeps these literals in flash, not SRAM (this bench-only help/status
     // text would otherwise cost ~1 KB of the Mega's 8 KB RAM).
-    Serial.print(F("INA CAL: packVGain="));  Serial.print(inaCal.packVGain, 5);
-    Serial.print(F(" packVOffset="));        Serial.print(inaCal.packVOffset, 4);
-    Serial.print(F(" midVGain="));           Serial.print(inaCal.midVGain, 5);
-    Serial.print(F(" midVOffset="));         Serial.print(inaCal.midVOffset, 4);
+    Serial.print(F("POWER CAL: packVoltageOffset=")); Serial.print(inaCal.packVoltageOffset, 4);
+    Serial.print(F(" midpointVoltageOffset="));      Serial.print(inaCal.midpointVoltageOffset, 4);
     Serial.print(F(" packShuntCal="));       Serial.println(inaCal.packShuntCal, 5);
 }
 
-static void inaPrintCalUsage()
+static void printPowerCalibrationUsage()
 {
-    Serial.println(F("INA CAL usage (leader bench only):"));
-    Serial.println(F("  K L <packRefV> <midRefV>  capture LOW two-point VBUS point"));
-    Serial.println(F("  K H <packRefV> <midRefV>  capture HIGH point; solve gain+offset, save"));
-    Serial.println(F("  K Z <packRefV> <midRefV>  single-point VBUS offset trim (gain kept)"));
-    Serial.println(F("  K S <knownAmps>           Pack shunt current trim, save"));
-    Serial.println(F("  K ?                        print current calibration"));
+    Serial.println(F("POWER CAL usage (leader bench only):"));
+    Serial.println(F("  P CAL VOLTAGE <packReferenceVolts> <midpointReferenceVolts>"));
+    Serial.println(F("  P CAL CURRENT <knownAmps>"));
+    Serial.println(F("  P CAL SHOW"));
+    Serial.println(F("  P CAL ?"));
 }
 
-static bool inaRefInRange(float packRef, float midRef)
-{
-    if (!isfinite(packRef) || packRef <= 0.0f || packRef > INA228_CAL_PACK_REF_MAX_V) return false;
-    if (!isfinite(midRef)  || midRef  <= 0.0f || midRef  > INA228_CAL_MID_REF_MAX_V)  return false;
-    return true;
-}
-
-static bool inaGainOk(float g)   { return isfinite(g) && g >= INA228_CAL_MIN_GAIN && g <= INA228_CAL_MAX_GAIN; }
-static bool inaOffsetOk(float o) { return isfinite(o) && fabs(o) <= INA228_CAL_MAX_VOFFSET_V; }
-
-// Parse and dispatch one 'K'-command line (the leading 'K' already consumed).
-static void handleInaCalCommand(const String& line)
+// Parse and dispatch one power command line (the leading 'P' already consumed).
+static void handlePowerCalibrationCommand(const String& line)
 {
     int idx = 0;
     const int len = line.length();
-    String mode = nextTok(line, idx, len);
-    mode.toUpperCase();
-
-    if (mode.length() == 0 || mode == "?")
+    String tokenStorage[5];
+    const char* tokens[5];
+    size_t tokenCount = 0;
+    while (tokenCount < 5)
     {
-        inaPrintCal();
-        inaPrintCalUsage();
+        tokenStorage[tokenCount] = nextTok(line, idx, len);
+        if (tokenStorage[tokenCount].length() == 0)
+            break;
+        tokens[tokenCount] = tokenStorage[tokenCount].c_str();
+        ++tokenCount;
+    }
+
+    PowerCalibrationCommand command = {
+        PowerCalibrationOperation::Invalid, 0.0f, 0.0f};
+    if (!parsePowerCalibrationCommand(tokenCount, tokens, command))
+    {
+        Serial.println(F("POWER CAL: invalid command; no write."));
+        printPowerCalibrationUsage();
         return;
     }
 
-    // Every capture reads the Pack monitor; the VBUS modes (L/H/Z) also read the
+    if (command.operation == PowerCalibrationOperation::Show ||
+        command.operation == PowerCalibrationOperation::Help)
+    {
+        if (command.operation == PowerCalibrationOperation::Show)
+            printPowerCalibration();
+        else
+            printPowerCalibrationUsage();
+        return;
+    }
+
+    // Every capture reads the Pack monitor; voltage calibration also reads the
     // Midpoint. Gate each on exactly what it touches so a Pack-only shunt trim
-    // (K S) still works when the Midpoint board is absent.
+    // still works when the Midpoint board is absent.
     if (!packValid)
     {
-        Serial.println(F("INA CAL: Pack monitor offline; aborting (no write)."));
+        Serial.println(F("POWER CAL: Pack monitor offline; aborting (no write)."));
         return;
     }
 
-    if (mode == "L" || mode == "H" || mode == "Z")
+    if (command.operation == PowerCalibrationOperation::Voltage)
     {
         if (!midValid)
         {
-            Serial.println(F("INA CAL: Midpoint offline; VBUS cal needs both; aborting (no write)."));
+            Serial.println(F("POWER CAL: Midpoint offline; voltage calibration needs both; aborting (no write)."));
             return;
         }
-        float packRef = nextTok(line, idx, len).toFloat();
-        float midRef  = nextTok(line, idx, len).toFloat();
-        if (!inaRefInRange(packRef, midRef))
+        VoltageOffsets offsets = {
+            Volts(inaCal.packVoltageOffset),
+            Volts(inaCal.midpointVoltageOffset)};
+        const VoltageCalibrationLimits limits = {
+            Volts(INA228_CAL_PACK_REF_MAX_V),
+            Volts(INA228_CAL_MID_REF_MAX_V),
+            Volts(INA228_CAL_MAX_VOFFSET_V)};
+        if (!captureVoltageOffsets(
+                inaPack,
+                inaMid,
+                Volts(command.firstReference),
+                Volts(command.secondReference),
+                limits,
+                offsets))
         {
-            Serial.println(F("INA CAL: reference out of range; aborting (no write)."));
-            return;
-        }
-        float packRaw = inaPack.readBusVoltage();  // uncorrected live VBUS
-        float midRaw  = inaMid.readBusVoltage();
-        if (!isfinite(packRaw) || !isfinite(midRaw))
-        {
-            Serial.println(F("INA CAL: bad live read; aborting (no write)."));
+            Serial.println(F("POWER CAL: invalid reference, reading, or solved offset; aborting (no write)."));
             return;
         }
 
-        if (mode == "L")
-        {
-            inaPendingPackRaw = packRaw; inaPendingMidRaw = midRaw;
-            inaPendingPackRef = packRef; inaPendingMidRef = midRef;
-            inaPendingLow = true;
-            Serial.println(F("INA CAL: LOW point captured. Apply HIGH voltage, then send 'K H <packRefV> <midRefV>'."));
-            return;
-        }
-
-        if (mode == "Z")
-        {
-            // Single-point offset: keep gain, solve offset so corrected == ref.
-            float packOff = packRef - packRaw * inaCal.packVGain;
-            float midOff  = midRef  - midRaw  * inaCal.midVGain;
-            if (!inaOffsetOk(packOff) || !inaOffsetOk(midOff))
-            {
-                Serial.println(F("INA CAL: solved offset out of range; aborting (no write)."));
-                return;
-            }
-            inaCal.packVOffset = packOff;
-            inaCal.midVOffset  = midOff;
-            inaPersistCal();
-            Serial.println(F("INA CAL: VBUS offset trim saved and applied."));
-            inaPrintCal();
-            return;
-        }
-
-        // mode == "H": solve two-point gain+offset from the LOW + this HIGH point.
-        // corrected = raw*gain + offset, fit through both (raw, ref) pairs.
-        if (!inaPendingLow)
-        {
-            Serial.println(F("INA CAL: no LOW point; send 'K L ...' first (no write)."));
-            return;
-        }
-        float packDenom = packRaw - inaPendingPackRaw;
-        float midDenom  = midRaw  - inaPendingMidRaw;
-        if (fabs(packDenom) < 0.5f || fabs(midDenom) < 0.25f)
-        {
-            Serial.println(F("INA CAL: LOW/HIGH points too close; aborting (no write)."));
-            return;
-        }
-        float packGain = (packRef - inaPendingPackRef) / packDenom;
-        float midGain  = (midRef  - inaPendingMidRef)  / midDenom;
-        float packOff  = inaPendingPackRef - inaPendingPackRaw * packGain;
-        float midOff   = inaPendingMidRef  - inaPendingMidRaw  * midGain;
-        if (!inaGainOk(packGain) || !inaGainOk(midGain) ||
-            !inaOffsetOk(packOff) || !inaOffsetOk(midOff))
-        {
-            Serial.println(F("INA CAL: solved gain/offset out of range; aborting (no write)."));
-            return;
-        }
-        inaCal.packVGain = packGain; inaCal.packVOffset = packOff;
-        inaCal.midVGain  = midGain;  inaCal.midVOffset  = midOff;
-        inaPendingLow = false;
+        inaCal.packVoltageOffset = offsets.packVoltageOffset.value();
+        inaCal.midpointVoltageOffset =
+            offsets.midpointVoltageOffset.value();
         inaPersistCal();
-        Serial.println(F("INA CAL: two-point VBUS gain+offset saved and applied."));
-        inaPrintCal();
+        Serial.println(F("POWER CAL: voltage offsets saved and applied."));
+        printPowerCalibration();
         return;
     }
 
-    if (mode == "S")
+    if (command.operation == PowerCalibrationOperation::Current)
     {
         // Shunt current trim: operator forces a known current through the pack
         // shunt (electronic load / bench supply), signed to match the sensor.
-        float knownAmps = nextTok(line, idx, len).toFloat();
-        if (!isfinite(knownAmps) || fabs(knownAmps) < INA228_CAL_MIN_SHUNT_TRIM_A)
+        const Amps knownCurrent(command.firstReference);
+        const Amps measuredCurrent =
+            toAmps(MilliAmps(inaPack.readCurrent()));
+        float trim = inaCal.packShuntCal;
+        if (!calculateShuntTrim(
+                knownCurrent,
+                measuredCurrent,
+                Amps(INA228_CAL_MIN_SHUNT_TRIM_A),
+                INA228_CAL_MIN_GAIN,
+                INA228_CAL_MAX_GAIN,
+                trim))
         {
-            Serial.println(F("INA CAL: known current too small; aborting (no write)."));
-            return;
-        }
-        float measured = inaPack.readCurrent() / 1000.0f;  // mA -> A, raw (untrimmed)
-        if (!isfinite(measured) || fabs(measured) < INA228_CAL_MIN_SHUNT_TRIM_A)
-        {
-            Serial.println(F("INA CAL: measured current too small; aborting (no write)."));
-            return;
-        }
-        float trim = knownAmps / measured;
-        if (!inaGainOk(trim))
-        {
-            Serial.println(F("INA CAL: solved shunt trim out of range; aborting (no write)."));
+            Serial.println(F("POWER CAL: invalid current pair or solved shunt trim; aborting (no write)."));
             return;
         }
         inaCal.packShuntCal = trim;
         inaPersistCal();
-        Serial.println(F("INA CAL: Pack shunt current trim saved and applied."));
-        inaPrintCal();
+        Serial.println(F("POWER CAL: Pack current calibration saved and applied."));
+        printPowerCalibration();
         return;
     }
-
-    Serial.println(F("INA CAL: unknown subcommand."));
-    inaPrintCalUsage();
 }
 
 // Append ";BATT pack_v pack_i pack_w pack_charge batt_a batt_b divergence
 // power_state" (V, A signed, W, C, V, V, 0/1, enum) to the open leader line.
-// Emitted only when BOTH monitors are up and the reads are plausible: the wire
-// frame is atomic (the parser needs all six values finite), so a down monitor
-// omits the whole segment and the host shows the IMU-style absence ("BATT: —")
-// rather than a garbage or half frame. Keep in sync with joint_telemetry.py.
+// Emitted only when BOTH monitors are up and the reads produce two plausible
+// battery voltages. The wire frame is atomic (the parser needs all six values
+// finite), so a down monitor omits the whole segment rather than fabricating a
+// balanced split. Keep in sync with joint_telemetry.py.
 static void battAppendTelemetry(Print& out)
 {
     // Pack is the essential monitor: no pack read -> no frame. Read + range-check;
     // an implausible read marks the Pack down for a quiet per-device re-begin.
     // Library units are mixed (verified in the ina228_read bench sketch):
     // readBusVoltage() V, readCurrent() mA, readPower() mW, readCharge() C.
-    float packV = packValid
-        ? inaPack.readBusVoltage() * inaCal.packVGain + inaCal.packVOffset : NAN;
-    if (!packValid || !isfinite(packV) || packV < 0.0f || packV > 40.0f)
+    const float packV = packValid
+        ? readCorrectedInaBusVoltage(
+            inaPack, Volts(inaCal.packVoltageOffset)).value()
+        : NAN;
+    if (!packValid || !batteryPackVoltageIsValid(packV))
     {
         packValid = false;
         inaRecoverPack();
@@ -781,43 +723,44 @@ static void battAppendTelemetry(Print& out)
     }
     inaPackBadTicks = 0;                 // a good pack read clears its counter
 
-    // Midpoint is OPTIONAL (single-battery bench, or a dead Midpoint board): if it
-    // is down or reads implausibly, still ship the frame with a balanced half-split
-    // so the host keeps pack V/I/P/charge (power-bus-safety.md §2.1) and try a quiet
-    // per-device re-begin — a good Pack tick no longer masks a wedged Midpoint.
-    bool midOk = midValid;
-    float battA = 0.0f;
-    if (midOk)
-    {
-        battA = inaMid.readBusVoltage() * inaCal.midVGain + inaCal.midVOffset;
-        if (!isfinite(battA) || battA < 0.0f || battA > 20.0f) midOk = false;
-    }
-    if (midOk)
-        inaMidBadTicks = 0;
-    else
+    // A complete BATT frame claims two measured battery voltages. If the
+    // Midpoint monitor is missing or the pack/midpoint pair cannot describe two
+    // plausible batteries, omit the atomic frame and recover the Midpoint
+    // independently. Never turn missing data into a synthetic balanced pack.
+    const float midpointV = midValid
+        ? readCorrectedInaBusVoltage(
+            inaMid, Volts(inaCal.midpointVoltageOffset)).value()
+        : NAN;
+    BatterySplit split;
+    if (!midValid ||
+        !calculateBatterySplit(
+            packV, midpointV, INA228_DIVERGENCE_THRESHOLD, split))
     {
         midValid = false;
         inaRecoverMid();
-        battA = packV * 0.5f;           // balanced split -> divergence reads 0
+        return;
     }
+    inaMidBadTicks = 0;
 
-    float packI = inaPack.readCurrent() / 1000.0f * inaCal.packShuntCal;  // mA -> A (signed), shunt-trimmed
-    float packW = inaPack.readPower() / 1000.0f * inaCal.packShuntCal;     // mW -> W, shunt-trimmed
-    float packQ = inaPack.readCharge();              // C, accumulated since boot
-    float battB = packV - battA;                     // upper battery = pack - lower
-    uint8_t divergence =
-        (midOk && fabs(battA - battB) > INA228_DIVERGENCE_THRESHOLD_V) ? 1 : 0;
-    uint8_t powerState = 0;  // NORMAL; Task 4 drives the protective transitions
+    const Amps packI = applyShuntTrim(
+        toAmps(MilliAmps(inaPack.readCurrent())), inaCal.packShuntCal);
+    const Watts packW = applyShuntTrim(
+        toWatts(MilliWatts(inaPack.readPower())), inaCal.packShuntCal);
+    const Coulombs packQ = applyShuntTrim(
+        Coulombs(inaPack.readCharge()), inaCal.packShuntCal);
+    uint8_t powerState = BATTERY_POWER_NORMAL;
 
-    out.print(";BATT ");
-    out.print(packV, 2); out.print(' ');
-    out.print(packI, 2); out.print(' ');
-    out.print(packW, 1); out.print(' ');
-    out.print(packQ, 1); out.print(' ');
-    out.print(battA, 2); out.print(' ');
-    out.print(battB, 2); out.print(' ');
-    out.print(divergence); out.print(' ');
-    out.print(powerState);
+    const BatteryTelemetryFrame frame = {
+        Volts(packV),
+        packI,
+        packW,
+        packQ,
+        Volts(split.batteryA),
+        Volts(split.batteryB),
+        split.diverged,
+        powerState
+    };
+    appendBatteryTelemetry(out, frame);
 }
 
 // ===========================================================================
@@ -845,15 +788,6 @@ static const int OLED_BAT_W = 18, OLED_BAT_H = 7, OLED_BAT_HGAP = 4;
 static const int OLED_BAT_X = 2, OLED_BAT_Y = 11;
 static const int OLED_BAT_NUB_W = 2, OLED_BAT_NUB_H = 3;
 static const int OLED_BAT_PITCH = OLED_BAT_W + OLED_BAT_NUB_W + OLED_BAT_HGAP;
-static const float OLED_BATT_EMPTY_V = 12.0f, OLED_BATT_FULL_V = 13.4f;  // full = rested-full 4S LiFePO4 (~3.35V/cell, Appendix C); 13.6 read a full pack as only ~88%
-
-static float oledBatteryFraction(float v) {
-  float f = (v - OLED_BATT_EMPTY_V) / (OLED_BATT_FULL_V - OLED_BATT_EMPTY_V);
-  if (f < 0.0f) f = 0.0f;
-  if (f > 1.0f) f = 1.0f;
-  return f;
-}
-
 static void oledGlyph(int cx, int cy, OledGlyph st) {
   drawOledActuatorGlyph(oled, cx, cy, st, OLED_GLYPH);
 }
@@ -889,7 +823,7 @@ static void oledRenderKrab(const OledKrabState &s) {
 
   oled.erase();
   oled.setFont(QW_FONT_5X7);
-  int dv = (int)lround(s.pack_v * 10.0f);
+  int dv = (int)lround(s.packVoltage * 10.0f);
   int roll = s.roll < -99 ? -99 : (s.roll > 99 ? 99 : s.roll);
   int pitch = s.pitch < -99 ? -99 : (s.pitch > 99 ? 99 : s.pitch);
   char top[24];
@@ -903,7 +837,9 @@ static void oledRenderKrab(const OledKrabState &s) {
     int bx = OLED_BAT_X + j * OLED_BAT_PITCH;
     oled.rectangle(bx, OLED_BAT_Y, OLED_BAT_W, OLED_BAT_H);
     oled.rectangleFill(bx + OLED_BAT_W, OLED_BAT_Y + nub_dy, OLED_BAT_NUB_W, OLED_BAT_NUB_H);
-    float frac = s.batt[j] < 0 ? 0 : (s.batt[j] > 1 ? 1 : s.batt[j]);
+    float frac = s.batteryLevels[j] < 0
+        ? 0
+        : (s.batteryLevels[j] > 1 ? 1 : s.batteryLevels[j]);
     int fw = (int)lround((OLED_BAT_W - 2) * frac);
     if (fw > 0) oled.rectangleFill(bx + 1, OLED_BAT_Y + 1, fw, fill_h);
   }
@@ -1014,20 +950,27 @@ static void oledRenderLive() {
   }
 
   float packV = 0.0f;
-  if (packValid) packV = inaPack.readBusVoltage() * inaCal.packVGain + inaCal.packVOffset;
-  s.pack_v = packV;
-  if (midValid) {
-    float battA = inaMid.readBusVoltage() * inaCal.midVGain + inaCal.midVOffset;
-    s.batt[0] = oledBatteryFraction(battA);
-    s.batt[1] = oledBatteryFraction(packV - battA);
-  } else if (packV < OLED_BATT_FULL_V + 2.0f) { // single-battery bench: VBUS IS one
-    float f = oledBatteryFraction(packV);       // battery -> map it straight to both bars
-    s.batt[0] = f;                               // (12.0 V=0% .. 13.4 V=100%)
-    s.batt[1] = f;
-  } else {                                       // ~24 V pack but Midpoint monitor is
-    float f = oledBatteryFraction(packV * 0.5f); // dead: half-split so the bars read the
-    s.batt[0] = f;                               // real state of charge, not a stuck FULL
-    s.batt[1] = f;
+  if (packValid)
+    packV = readCorrectedInaBusVoltage(
+        inaPack, Volts(inaCal.packVoltageOffset)).value();
+  s.packVoltage = packV;
+  const float midpointV = midValid
+      ? readCorrectedInaBusVoltage(
+          inaMid, Volts(inaCal.midpointVoltageOffset)).value()
+      : NAN;
+  BatterySplit split;
+  if (packValid && midValid &&
+      calculateBatterySplit(
+          packV, midpointV, INA228_DIVERGENCE_THRESHOLD, split)) {
+    s.batteryLevels[0] =
+        BatteryLevel::fromVoltage(Volts(split.batteryA)).value();
+    s.batteryLevels[1] =
+        BatteryLevel::fromVoltage(Volts(split.batteryB)).value();
+  } else {
+    // A missing Midpoint cannot truthfully produce two battery bars. Keep both
+    // at the unavailable baseline instead of inventing a balanced split.
+    s.batteryLevels[0] = 0.0f;
+    s.batteryLevels[1] = 0.0f;
   }
 
   oledRenderKrab(s);
@@ -1039,7 +982,7 @@ static void oledRenderLive() {
 // printed straight to mainSerial and never buffered here.
 //
 // Per-tick upstream byte budget (leader USB link, 8N1): BAUD_RATE/10 bytes/s
-// * TELEMETRY_INTERVAL_MS = 1250 B per 50 ms tick at 250000 baud. Each tick
+// * TELEMETRY_POLL_INTERVAL = 1250 B per 50 ms tick at 250000 baud. Each tick
 // carries three lines: the leader's own ("FRONT; " + 6 joint segments + IMU
 // segment [+ BATT in Task 3] + CRLF, 207-341 B derived per-field: each joint
 // segment 24-44 B (pos 6, pot/current 4, PWM 3, uint32 hall 10 worst); IMU
@@ -1385,13 +1328,13 @@ void loop()
                 mainSerial->print(KRABBY_FW_COMMIT); mainSerial->print("|"); mainSerial->print(lCommit); mainSerial->print("|"); mainSerial->println(rCommit);
             }
         }
-        else if (cmdType == 'K')
+        else if (cmdType == POWER_COMMAND_PREFIX)
         {
-            // INA228 bench calibration capture (AC 3i). Leader-only: the monitors
+            // Power-sensing bench calibration (AC 3i). Leader-only: the sensors
             // live on the leader bus, so this is NOT forwarded to followers.
             mainSerial->read();
             String payload = mainSerial->readStringUntil('\n');
-            handleInaCalCommand(payload);
+            handlePowerCalibrationCommand(payload);
         }
         else
         {
@@ -1426,9 +1369,10 @@ void loop()
         &followerRightGlyphs, &followerRightConnected);
     mainSerial->flush();
 
-    if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS)
+    const uint32_t telemetryNow = millis();
+    if (telemetryPollDue(telemetryNow, lastTelemetry))
     {
-        lastTelemetry = millis();
+        lastTelemetry = telemetryNow;
         mainSerial->print(roleName(currentRole));
         mainSerial->print(TELEMETRY_SEGMENT_DELIMITER);
         mainSerial->print(TELEMETRY_FIELD_DELIMITER);

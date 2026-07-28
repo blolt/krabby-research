@@ -301,7 +301,7 @@ CASES = [
     (KrabState(), GOLDEN_NOMINAL, "nominal"),
     (KrabState(legs=[('hold', 'extend', 'retract')] * 6), GOLDEN_WALKING, "walking"),
     (KrabState(controllers={'FRONT': True, 'LEFT': False, 'RIGHT': True}), GOLDEN_LEFT_DOWN, "left_down"),
-    (KrabState(controllers={'FRONT': True, 'LEFT': False, 'RIGHT': False}, legs=[('disc', 'disc', 'disc')] * 6, role='UNKWN', pack_v=19.2), GOLDEN_ONLY_FRONT, "only_front"),
+    (KrabState(controllers={'FRONT': True, 'LEFT': False, 'RIGHT': False}, legs=[('disc', 'disc', 'disc')] * 6, role='UNKWN', pack_volts=19.2), GOLDEN_ONLY_FRONT, "only_front"),
 ]
 
 

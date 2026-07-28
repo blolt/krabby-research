@@ -42,6 +42,17 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     test_board_pins
     test_disconnect_status
     test_oled_transfer_budget
+    test_battery_split
+    test_battery_telemetry
+    test_battery_level
+    test_ina_pack_config
+    test_ina_pack_lifecycle
+    test_ina_voltage
+    test_measurement_units
+    test_power_calibration_protocol
+    test_power_calibration_storage
+    test_shunt_calibration
+    test_telemetry_poll
 )
 
 foreach(test_name IN LISTS KRABBY_FIRMWARE_NATIVE_TESTS)

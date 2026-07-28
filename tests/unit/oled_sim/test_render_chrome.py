@@ -122,7 +122,7 @@ def test_from_battery_voltages_maps_first_arg_to_left_cell():
 
 # --- top text strip ----------------------------------------------------------
 def test_text_strip_renders():
-    """role + roll/pitch + pack_v draws lit pixels in the top strip (rows 0-8)."""
+    """role + roll/pitch + pack_volts draws lit pixels in the top strip (rows 0-8)."""
     d = render(KrabState())
     assert _lit(d, 0, WIDTH, 0, 9) > 0
     # the separator line at y=9 spans the full width
@@ -141,23 +141,23 @@ def test_text_strip_reflects_role():
 
 
 def test_text_strip_reflects_orientation_and_voltage():
-    """roll/pitch/pack_v values change the rendered text (rows 0-8)."""
-    base = render(KrabState(roll=0, pitch=0, pack_v=24.0)).to_rows()[0:9]
-    tilted = render(KrabState(roll=15, pitch=-9, pack_v=24.0)).to_rows()[0:9]
-    drained = render(KrabState(roll=0, pitch=0, pack_v=19.7)).to_rows()[0:9]
+    """roll/pitch/pack_volts values change the rendered text (rows 0-8)."""
+    base = render(KrabState(roll=0, pitch=0, pack_volts=24.0)).to_rows()[0:9]
+    tilted = render(KrabState(roll=15, pitch=-9, pack_volts=24.0)).to_rows()[0:9]
+    drained = render(KrabState(roll=0, pitch=0, pack_volts=19.7)).to_rows()[0:9]
     assert base != tilted
     assert base != drained
 
 
 def test_pack_voltage_rounds_half_away_from_zero():
-    """pack_v 24.25 is exactly 242.5 decivolts. The firmware uses C lround()
+    """pack_volts 24.25 is exactly 242.5 decivolts. The firmware uses C lround()
     (half away from zero -> 243 -> "24.3V"), NOT banker's rounding (242 ->
     "24.2V"), so the sim must too (krab._lround) or the sim string diverges from
     the panel at exact-half boundaries. Asserted via the rendered top strip:
     24.25 must render like 24.3, not like 24.2."""
-    at_boundary = render(KrabState(pack_v=24.25)).to_rows()[0:9]
-    rounds_up = render(KrabState(pack_v=24.3)).to_rows()[0:9]
-    rounds_down = render(KrabState(pack_v=24.2)).to_rows()[0:9]
+    at_boundary = render(KrabState(pack_volts=24.25)).to_rows()[0:9]
+    rounds_up = render(KrabState(pack_volts=24.3)).to_rows()[0:9]
+    rounds_down = render(KrabState(pack_volts=24.2)).to_rows()[0:9]
     assert at_boundary == rounds_up
     assert at_boundary != rounds_down
 

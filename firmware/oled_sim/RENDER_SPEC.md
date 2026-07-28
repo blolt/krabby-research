@@ -30,7 +30,7 @@ sim has a bug — fix the sim, do not paper over it in firmware.
 | `batt`        | `(float,float)` | 2 cell fill fractions, 0..1, from `battery_fraction(V)` (§7) | clamped 0..1 at draw  |
 | `role`        | `str`           | `roleLabel()`: `FRONT`/`LEFT`/`RIGHT`/`UNKWN`               | keep ≤5 glyphs        |
 | `roll,pitch`  | `int`           | degrees from IMU                                             | **clamped ±99** for display |
-| `pack_v`      | `float`         | pack voltage; firmware holds it as an **integer** (see §4)  | formatted from decivolts |
+| `pack_volts`  | `float`         | pack voltage; firmware holds it as an **integer** (see §4)  | formatted from decivolts |
 
 ## 3. Primitive semantics that constrain the design
 
@@ -133,19 +133,22 @@ LiFePO4 battery's voltage in the `BATT` telemetry frame (`batt_a_v`, `batt_b_v`)
   fractions (the goldens are unchanged), so the volts→fraction step lives in the
   ONE place the firmware OLED port **also** does it. NB: the firmware OLED port
   **exists in-tree** — `arduino.ino`'s `oledRenderLive()` reads the live pack /
-  per-battery volts and `oledBatteryFraction()` applies the identical
-  `(v-12.0)/(13.4-12.0)` clamp (`OLED_BATT_EMPTY_V`/`OLED_BATT_FULL_V`) before
+  per-battery volts and `BatteryLevel::fromVoltage()` applies the identical
+  `(v-12.0)/(13.4-12.0)` clamp (`BATTERY_LEVEL_EMPTY_VOLTS`/
+  `BATTERY_LEVEL_FULL_VOLTS`) before
   driving each bar, via `oledRenderKrab()`. This is a real C++ port of this Python
   path, not future work; the two must stay in **lockstep** — the volts→fraction
   window here (`krab.py`'s `battery_fraction()` / `BATT_EMPTY_V` / `BATT_FULL_V`)
-  and the firmware's `OLED_BATT_*` constants are duplicated on purpose and pinned
+  and the firmware's `BATTERY_LEVEL_*` constants are duplicated on purpose and pinned
   by a parity test (`tests/unit/firmware/test_oled_port_parity.py`); change one and
   the other must move with it.
 - Linear over a usable **resting** window: `BATT_EMPTY_V = 12.0` (~3.0 V/cell) →
   0%, `BATT_FULL_V = 13.4` (~3.35 V/cell, rested-full) → 100%, clamped.
 - **Coarse by design.** LiFePO4's curve is flat (~3.2 V/cell from ~90% to ~20%),
   so this is a glance-gauge, not a precise SoC, and it reads low under load (sag).
-  Coulomb counting off the INA228 charge register is the accurate upgrade (Task 4).
+  A future state-of-charge design may use the INA228 charge accumulator, but
+  still needs capacity, initialization/reconciliation, reset and brownout
+  behavior, and a representation for both batteries. That is outside this A/C.
 - Ports to firmware verbatim: `frac = clamp((v - 12.0) / (13.4 - 12.0), 0, 1)`.
 - Per-battery imbalance is surfaced separately by the frame's `divergence` flag,
   not by the bars.

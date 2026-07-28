@@ -70,18 +70,49 @@ class TestBatteryFromTokens:
     def test_parses_fully_valid_wire_segment(self):
         b = BatteryTelemetry.from_segment(BATT_SEG)
         assert b == BatteryTelemetry(
-            pack_v=24.13, pack_i=12.5, pack_w=301.6, pack_charge=1450.0,
-            batt_a_v=12.09, batt_b_v=12.04, divergence=False, power_state=0,
+            pack_volts=24.13,
+            pack_current_amperes=12.5,
+            pack_power_watts=301.6,
+            pack_charge_coulombs=1450.0,
+            battery_a_volts=12.09,
+            battery_b_volts=12.04,
+            divergence=False,
+            power_state=0,
         )
 
     def test_negative_current_parses_as_charging(self):
-        # pack_i is signed; a charging pack reads negative, not a parse failure.
+        # Pack current is signed; charging reads negative, not as a parse failure.
         b = BatteryTelemetry.from_segment(DIVERGE_BATT_SEG)
-        assert b is not None and b.pack_i == -3.2 and b.pack_w == -77.2
+        assert (
+            b is not None
+            and b.pack_current_amperes == -3.2
+            and b.pack_power_watts == -77.2
+        )
 
     def test_divergence_flag_and_power_state_parse(self):
         b = BatteryTelemetry.from_segment(DIVERGE_BATT_SEG)
         assert b.divergence is True and b.power_state == PowerState.SOFT_CUT
+
+    @pytest.mark.parametrize(
+        ("wire_value", "expected"),
+        [
+            pytest.param("0", PowerState.NORMAL, id="normal"),
+            pytest.param("1", PowerState.WARN, id="warn"),
+            pytest.param("2", PowerState.SOFT_CUT, id="soft-cut"),
+            pytest.param("3", PowerState.HARD_CUT, id="hard-cut"),
+            pytest.param("4", PowerState.OVER_VOLT, id="over-volt"),
+            pytest.param("5", PowerState.SLEEP, id="sleep"),
+            pytest.param("6", PowerState.RESUMING, id="resuming"),
+        ],
+    )
+    def test_each_defined_power_state_parses_as_its_named_enum(
+        self, wire_value, expected
+    ):
+        battery = BatteryTelemetry.from_segment(
+            f"BATT 24 12 300 1450 12 12 0 {wire_value}"
+        )
+        assert battery is not None
+        assert battery.power_state is expected
 
     def test_unknown_power_state_byte_is_kept_as_int(self):
         # Forward-compat: a byte outside the known enum is retained, not dropped.
@@ -140,7 +171,7 @@ class TestParseTelemetryLine:
         parsed = parse_telemetry_line(LEADER_LINE)
         assert len(parsed.joints) == 1
         assert parsed.imu is not None
-        assert parsed.battery is not None and parsed.battery.pack_v == 24.13
+        assert parsed.battery is not None and parsed.battery.pack_volts == 24.13
 
     def test_follower_line_has_no_battery(self):
         parsed = parse_telemetry_line(FOLLOWER_LINE)
@@ -171,7 +202,7 @@ class TestParseTelemetryLine:
     def test_good_then_malformed_battery_keeps_the_good_sample(self):
         line = f"FRONT; {JOINT_SEG};{BATT_SEG};BATT nope"
         parsed = parse_telemetry_line(line)
-        assert parsed.battery is not None and parsed.battery.pack_v == 24.13
+        assert parsed.battery is not None and parsed.battery.pack_volts == 24.13
 
 
 class TestFormatCompact:
@@ -195,7 +226,7 @@ class TestSdkBatteryStorage:
     def test_leader_line_populates_battery_and_joints(self):
         sdk = _bare_sdk()
         sdk._parse_joint_line(LEADER_LINE)
-        assert sdk.battery is not None and sdk.battery.pack_v == 24.13
+        assert sdk.battery is not None and sdk.battery.pack_volts == 24.13
         assert sdk.joints["FLHY"].pos == 0.123
 
     def test_battery_is_none_until_first_leader_sample(self):
@@ -213,7 +244,7 @@ class TestSdkBatteryStorage:
         sdk = _bare_sdk()
         sdk._parse_joint_line(LEADER_LINE)
         sdk._parse_joint_line(f"FRONT; {JOINT_SEG};BATT nope")
-        assert sdk.battery is not None and sdk.battery.pack_v == 24.13
+        assert sdk.battery is not None and sdk.battery.pack_volts == 24.13
 
 
 class TestSdkBatteryDivergence:
