@@ -104,15 +104,46 @@ class TestParseRejections:
     def test_non_power_or_incomplete_line_returns_none(self, line):
         assert PowerMessage.parse(line) is None
 
-    def test_unknown_schema_is_dropped_not_guessed(self):
-        # A future layout must not be misread under the current field meanings.
-        assert PowerMessage.parse("PWR 99 POWERING_DOWN under_voltage_soft") is None
-
-    def test_non_numeric_schema_returns_none(self):
-        assert PowerMessage.parse("PWR x POWERING_DOWN") is None
+    @pytest.mark.parametrize(
+        "schema_token",
+        ["-1", "0", "2", "255", "256", "x"],
+    )
+    def test_unsupported_or_malformed_schema_is_dropped_not_guessed(
+        self, schema_token
+    ):
+        # A future or malformed layout must not be interpreted under the
+        # current field meanings.
+        assert PowerMessage.parse(
+            f"PWR {schema_token} POWERING_DOWN under_voltage_soft"
+        ) is None
 
     def test_unknown_message_type_returns_none(self):
         assert PowerMessage.parse(f"PWR {POWER_MSG_SCHEMA} REBOOT_NOW") is None
+
+
+class TestProducerSchema:
+    @pytest.mark.parametrize(
+        "schema_version",
+        [-1, 0, 2, 255, 256, "1", True, None],
+    )
+    def test_unsupported_or_noninteger_schema_cannot_be_emitted(
+        self, schema_version
+    ):
+        with pytest.raises(ValueError, match="unsupported power-message schema"):
+            PowerMessage(
+                PowerMessageType.SHUTDOWN_ACK,
+                schema_version=schema_version,
+            )
+
+    def test_supported_schema_is_emitted_before_the_message_type(self):
+        message = PowerMessage(PowerMessageType.SHUTDOWN_ACK)
+
+        assert message.schema_version == POWER_MSG_SCHEMA
+        assert message.format_line().split()[:3] == [
+            "PWR",
+            str(POWER_MSG_SCHEMA),
+            "SHUTDOWN_ACK",
+        ]
 
 
 class TestReasonHierarchy:

@@ -8,6 +8,8 @@
 
 static_assert(!std::is_convertible<float, Volts>::value,
               "raw floats must not implicitly become volts");
+static_assert(sizeof(PowerMessageType) == sizeof(uint8_t),
+              "the internal power-message discriminant must remain one byte");
 
 void setUp() {}
 void tearDown() {}

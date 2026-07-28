@@ -63,6 +63,16 @@ class PowerMessage:
     schema_version: int = POWER_MSG_SCHEMA
 
     def __post_init__(self) -> None:
+        # Producers may emit only the schema implemented by this class. The
+        # decimal token is the ASCII wire encoding of this uint8-domain value;
+        # parsers independently reject unknown future schemas before dispatch.
+        if (
+            type(self.schema_version) is not int
+            or self.schema_version != POWER_MSG_SCHEMA
+        ):
+            raise ValueError(
+                f"unsupported power-message schema: {self.schema_version!r}"
+            )
         expected_reason_type = {
             PowerMessageType.POWERING_DOWN: PoweringDownReason,
             PowerMessageType.EMERGENCY_SHUTDOWN: EmergencyShutdownReason,
