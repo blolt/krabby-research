@@ -6,7 +6,8 @@ from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.sensors import ContactSensor
 from isaaclab.assets import Articulation
 from isaaclab.utils.math  import euler_xyz_from_quat, wrap_to_pi, quat_apply
-from parkour_isaaclab.envs.mdp.parkours import ParkourEvent 
+from parkour_isaaclab.envs.mdp.parkours import ParkourEvent
+from parkour_tasks.crab_hexapod_task.mdp.crab_hex_stride_reward import stride_length_reward_step
 from collections.abc import Sequence
 
 if TYPE_CHECKING:
@@ -878,5 +879,90 @@ def penalty_joint_deviation_when_in_contact(
     if num_joints != num_feet:
         load_frac = in_contact.float().sum(dim=1) / float(num_feet)
         return torch.sum(joint_sq, dim=1) * load_frac
-
     return torch.sum(joint_sq * in_contact.float(), dim=1)
+
+
+class PenaltyMotorDirectionReversal(ManagerTermBase):
+    """Penalize the cam-shaft motor changing rotational direction; encourages sustained
+    one-directional spin so the cam geometry -- not motor reversal -- produces the leg's
+    back-and-forth yaw motion."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        asset_cfg: SceneEntityCfg = cfg.params["asset_cfg"]
+        self.joint_ids = asset_cfg.joint_ids
+        self.prev_dir = torch.zeros(env.num_envs, len(self.joint_ids), device=self.device)
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        self.prev_dir[env_ids] = 0.0
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        vel_deadzone: float = 0.05,
+    ) -> torch.Tensor:
+        asset: Articulation = env.scene[asset_cfg.name]
+        vel = asset.data.joint_vel[:, self.joint_ids]
+        cur_dir = torch.sign(vel) * (vel.abs() > vel_deadzone).float()
+        reversed_mask = (self.prev_dir * cur_dir) < 0
+        penalty = reversed_mask.float().sum(dim=1)
+        nonzero = cur_dir != 0
+        self.prev_dir = torch.where(nonzero, cur_dir, self.prev_dir)
+        return penalty
+
+
+class RewardStrideLength(ManagerTermBase):
+    """Reward each leg's stance-phase contribution to real body progress along the commanded
+    direction -- only a planted foot can push the robot forward, so only stance counts, and only
+    the component of body motion actually moving in the desired direction (motion the wrong way
+    earns nothing). Convex in accumulated stance progress so one long productive stance outscores
+    several short ones covering the same net range, same anti-tippy-tap rationale as before. See
+    ``crab_hex_stride_reward.stride_length_reward_step`` for the pure math and the rationale for
+    dropping the earlier swing-phase reward (real training data showed a leg "snapping" through
+    its whole joint range in a single physics step to bank reward without moving the robot at
+    all -- measuring body progress rather than joint-space movement eliminates that structurally,
+    no separate velocity cost needed).
+
+    This is v3 of the term (v4, per-foot touchdown-to-touchdown displacement, was tried and
+    reverted back to this design -- see ``sim_fine_tuning/stride_length_v4/CHANGELOG.md``: v4
+    finally beat the target stride-length metric at 2b2 but at the cost of the worst tippy-tap in
+    the whole comparison series and broad regressions vs this design on training stability)."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        sensor_cfg: SceneEntityCfg = cfg.params["sensor_cfg"]
+        self.body_ids = sensor_cfg.body_ids
+        self.stance_progress = torch.zeros(env.num_envs, len(self.body_ids), device=self.device)
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        self.stance_progress[env_ids] = 0.0
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        sensor_cfg: SceneEntityCfg,
+        command_name: str,
+        power: float = 2.0,
+        min_phase_duration: float = 0.1,
+        min_cmd_norm: float = 0.12,
+    ) -> torch.Tensor:
+        asset: Articulation = env.scene[asset_cfg.name]
+        contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+        root_lin_vel_b_xy = asset.data.root_lin_vel_b[:, :2]
+        command_xy = env.command_manager.get_command(command_name)[:, :2]
+        in_contact = contact_sensor.data.current_contact_time[:, self.body_ids] > 0.0
+        first_contact = contact_sensor.compute_first_contact(env.step_dt)[:, self.body_ids]
+        first_air = contact_sensor.compute_first_air(env.step_dt)[:, self.body_ids]
+        last_contact_time = contact_sensor.data.last_contact_time[:, self.body_ids]
+        reward, self.stance_progress = stride_length_reward_step(
+            root_lin_vel_b_xy, command_xy, in_contact, first_contact, first_air,
+            last_contact_time, self.stance_progress, env.step_dt, power,
+            min_phase_duration, min_cmd_norm,
+        )
+        return reward

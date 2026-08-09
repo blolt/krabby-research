@@ -226,6 +226,17 @@ __marimo__/
 parkour/logs/
 parkour/outputs/
 
+# sim_fine_tuning/ comparison + short-run campaigns: keep CHANGELOG.md, curriculum_state.json
+# (a direct file under logs/rsl_rl/, not swept by the rule below), scenario_metrics.json,
+# summary.md, and gait diagrams (small, meaningful provenance); drop the per-experiment
+# checkpoint/tensorboard subdirectories under logs/rsl_rl/, Hydra bookkeeping (outputs/), and
+# per-episode raw npz arrays (gait_eval/**/raw/) and console logs (*.log) -- multi-GB per run,
+# regenerable from a checkpoint.
+sim_fine_tuning/**/logs/rsl_rl/*/
+sim_fine_tuning/**/outputs/
+sim_fine_tuning/**/gait_eval/**/raw/
+sim_fine_tuning/**/*.log
+
 # Crab hex local-only scripts (RSL runner, diagnostics; not committed)
 parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/tempscripts/
 

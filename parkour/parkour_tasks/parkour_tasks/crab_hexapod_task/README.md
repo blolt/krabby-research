@@ -398,6 +398,42 @@ SCRIPTS=parkour_tasks/parkour_tasks/crab_hexapod_task/scripts
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p "$SCRIPTS/verify_crab_joint_drive.py" --headless
 ```
 
+### 4.1b Gait metrics eval harness (Milestone 18, Task 0)
+
+Plays a checkpoint over a **fixed** command schedule (not random resampling) and scores the gait:
+a scalar tripod-phasing score (the machine-checkable number later tasks gate on — do the two
+tripod foot sets, `{FL,MR,RL}` and `{FR,ML,RR}`, alternate cleanly, or is the robot tippy-tapping /
+shuffling / skating), plus air-time, stride-length, swing-clearance, tracking-error, orientation,
+foot-slip, and per-joint-group action-smoothness distributions. A gait-diagram PNG per episode is
+the human debug view. Trains nothing, adds no rewards — pure measurement.
+
+| Script | What it does |
+| --- | --- |
+| `[eval_crab_hex_gait.py](scripts/eval_crab_hex_gait.py)` | The harness. Supports both teacher and student checkpoints. `--scenario <id>` runs one entry from a manifest (`--manifest`, default `eval/scenarios_v1.yaml`); `--task`/`--holds`/`--checkpoint` run an ad-hoc schedule instead. `--zero-actions` runs the pipeline with no policy (smoke test). Writes `run_meta.json`, per-episode raw `.npz` + metrics `.json`, `scenario_metrics.json`, `summary.md`, and (via `plot_crab_hex_gait.py`) gait-diagram PNGs to `logs/rsl_rl/gait_eval/v1/<scenario>/seed<N>/<timestamp>/` (`--output-root` to override). |
+| `[run_gait_eval_suite.py](scripts/run_gait_eval_suite.py)` | stdlib-only driver — runs every scenario in the manifest (or `--scenario` to filter), one `isaaclab.sh` process each (only one Isaac Sim process fits the GPU at a time). `--repeat N` reruns a scenario at different seeds to check the tripod-score determinism/noise floor. `--list`/`--dry-run` to inspect without running. |
+| `[plot_crab_hex_gait.py](scripts/plot_crab_hex_gait.py)` | Standalone (plain `python3`, no Isaac) — renders gait diagrams from a run's raw `.npz`. Called automatically by the harness (`--no-plot` to skip); rerun directly to restyle without touching the GPU. |
+| `[eval/scenarios_v1.yaml](eval/scenarios_v1.yaml)` | The versioned scenario manifest (AC 0b) — forward-speed holds on flat and 2b2-mixed terrain for both teacher and student, plus off-axis `vy`/`yaw` probes. Changing a scenario's meaning invalidates committed baselines; add `scenarios_v2.yaml` instead of editing in place. |
+| `[eval/baselines/v1/](eval/baselines/v1/README.md)` | Committed baseline reports (AC 0c) for the current-geometry teacher/student checkpoints — **not** the grant text's `model_6300.pt`/`model_9800.pt`, which predate the cam-mechanism migration and would load but produce meaningless gait (see that README for the full note). |
+
+```bash
+cd "$KRABBY_ROOT/krabby-research/parkour"
+SCRIPTS=parkour_tasks/parkour_tasks/crab_hexapod_task/scripts
+
+# one scenario from the manifest
+"$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p "$SCRIPTS/eval_crab_hex_gait.py" --headless --scenario teacher_2b2_forward
+
+# pipeline smoke test, no checkpoint needed
+"$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p "$SCRIPTS/eval_crab_hex_gait.py" --headless --zero-actions \
+  --task Isaac-Crab-Hex-Flat-Walk-v0 --episodes 2 --holds "0.45:4:low" --episode-length-s 10
+
+# the full committed scenario set
+python3 "$SCRIPTS/run_gait_eval_suite.py"
+```
+
+Unit tests for the scoring layer (`tests/unit/test_crab_hex_gait_{metrics,schedule}.py`) run under
+plain `pytest` — no Isaac Sim required, since `gait_eval/metrics.py` and `gait_eval/schedule.py`
+are pure numpy/stdlib.
+
 ### 4.2 Teacher training utilities (logs, TensorBoard, resume)
 
 **Curriculum path:** use [§4.0](#40-training-commands-curriculum) with the correct `KRABBY_HEX_TEACHER_MODE` and bundled resume checkpoints. The example below is a **generic** long teacher run (default/full MDP) — not the recommended path until stage 4.

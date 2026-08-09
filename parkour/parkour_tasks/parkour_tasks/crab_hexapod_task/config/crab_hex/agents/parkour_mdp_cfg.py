@@ -45,13 +45,26 @@ _CRAB_FOOT_BODY_NAMES = [
     "RR_Footpad",
 ]
 
+# NOTE(cam-mechanism-migration): the 18 actually-actuated joints. Excludes
+# *_Body_Hip_RevoluteJoint, which is now passive/kinematically-slaved to
+# *_Body_CamShaft_RevoluteJoint (see crab_hex_cam_mapping.py) and must not receive a
+# policy-commanded position target or appear in an unfiltered-sum reward (reward_dof_error,
+# reward_torques).
+_CRAB_ACTUATED_JOINT_NAMES = [
+    ".*_Body_CamShaft_RevoluteJoint",
+    ".*_Hip_Femur_RevoluteJoint",
+    ".*_Femur_Tibia_RevoluteJoint",
+]
+
 @configclass
 class CrabHexFlatWalkActionsCfg:
     """Flat-walk: scale 0.24 and ±1 raw clip (matches runner clip_actions)."""
 
     joint_pos = CrabHexDelayedJointPositionActionCfg(
         asset_name="robot",
-        joint_names=[".*"],
+        # NOTE(cam-mechanism-migration): see _CRAB_ACTUATED_JOINT_NAMES — excludes the now-passive
+        # FL_Body_Hip_RevoluteJoint. Keeps action_dim == 18.
+        joint_names=_CRAB_ACTUATED_JOINT_NAMES,
         scale=0.24,
         use_default_offset=True,
         action_delay_steps=[1, 1],
@@ -158,20 +171,58 @@ class CrabHexRewardsCfg:
             "parkour_name": "base_parkour",
         },
     )
+    # NOTE(cam-mechanism-migration): filtered to the 18 actuated joints -- excludes the now-passive
+    # *_Body_Hip_RevoluteJoint (kinematically-slaved to *_Body_CamShaft_RevoluteJoint, see
+    # crab_hex_cam_mapping.py), whose "torque"/dof-error is meaningless (not force/PD-commanded
+    # by the policy).
     reward_torques = RewTerm(
         func=mdp_rewards.reward_torques,
         weight=-0.00001,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_ACTUATED_JOINT_NAMES)},
     )
     reward_dof_error = RewTerm(
         func=mdp_rewards.reward_dof_error,
         weight=-0.04,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_ACTUATED_JOINT_NAMES)},
     )
     reward_hip_pos = RewTerm(
         func=mdp_rewards.reward_hip_pos,
         weight=-0.5,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_Body_Hip_RevoluteJoint"])},
+    )
+    # NOTE(cam-mechanism-migration): see CrabHexFlatWalkRewardsCfg.penalty_motor_direction_reversal
+    # for full rationale -- same medium-weight penalty, added here so it propagates to every
+    # teacher-stage subclass (Warmup/Bridge/2b1/2b2) that doesn't re-override it.
+    penalty_motor_direction_reversal = RewTerm(
+        func=mdp_rewards.PenaltyMotorDirectionReversal,
+        weight=-0.3,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_Body_CamShaft_RevoluteJoint"])},
+    )
+    # NOTE(stride-length): see CrabHexFlatWalkRewardsCfg.reward_stride_length for full rationale
+    # -- same starting weight/power, added here so it propagates to every teacher-stage subclass
+    # (Warmup/Bridge/2b1/2b2) that doesn't re-override it.
+    reward_stride_length = RewTerm(
+        func=mdp_rewards.RewardStrideLength,
+        weight=0.5,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=_CRAB_FOOT_BODY_NAMES, preserve_order=True),
+            "command_name": "base_velocity",
+            "power": 2.0,
+            # NOTE(stride-length-v3): redefined to reward stance-phase body progress along the
+            # commanded direction, not joint-space (hip-yaw) movement, and dropped swing-phase
+            # reward entirely -- a foot in the air can't push the robot, so it shouldn't be
+            # rewarded for moving. This also structurally eliminates the v2 snap exploit (a leg
+            # covering its whole joint range in a single 20ms physics step): that exploit relied on
+            # swing-phase joint displacement being rewarded regardless of whether the robot actually
+            # moved, and swing is no longer rewarded at all, so the earlier velocity_cost_weight/
+            # _power terms are no longer needed. min_phase_duration still guards against a spurious
+            # one-step contact reading being trusted as a real stance. (v4, per-foot signed
+            # touchdown displacement, was tried and reverted -- see
+            # sim_fine_tuning/stride_length_v4/CHANGELOG.md.)
+            "min_phase_duration": 0.1,
+            "min_cmd_norm": 0.12,
+        },
     )
     reward_ang_vel_xy = RewTerm(
         func=mdp_rewards.reward_ang_vel_xy,
@@ -416,12 +467,12 @@ class CrabHexStage2BPhase1RewardsCfg(CrabHexTeacherBridgeRewardsCfg):
     reward_dof_error = RewTerm(
         func=mdp_rewards.reward_dof_error,
         weight=-0.04,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_ACTUATED_JOINT_NAMES)},
     )
     reward_torques = RewTerm(
         func=mdp_rewards.reward_torques,
         weight=-0.00001,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_ACTUATED_JOINT_NAMES)},
     )
     reward_dof_acc = RewTerm(
         func=mdp_rewards.reward_dof_acc,
@@ -704,7 +755,9 @@ class CrabHexFlatWalkRewardsCfg:
     reward_dof_error = RewTerm(
         func=mdp_rewards.reward_dof_error,
         weight=0.0,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+        # NOTE(cam-mechanism-migration): filtered to the actuated joints so the (currently
+        # zero-weight, but still logged) sum doesn't include the passive FL_Body_Hip_RevoluteJoint.
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_ACTUATED_JOINT_NAMES)},
     )
     reward_feet_air_time_positive = RewTerm(
         func=mdp_rewards.reward_feet_air_time_positive,
@@ -713,6 +766,34 @@ class CrabHexFlatWalkRewardsCfg:
             "command_name": "base_velocity",
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
             "threshold": 0.05,
+        },
+    )
+    # NOTE(stride-length): rewards |hip-yaw diff|**power across every touchdown<->liftoff
+    # transition (both swing- and stance-phase leg movement) -- convex (power=2) so a single
+    # long stride outscores several short ones covering the same net range, directly targeting
+    # the "tippy-tap" micro-stepping pattern the gait-eval harness flags across every checkpoint
+    # tested so far. Starting weight/power, tune against the harness (Milestone 18 Task 1).
+    reward_stride_length = RewTerm(
+        func=mdp_rewards.RewardStrideLength,
+        weight=0.5,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=_CRAB_FOOT_BODY_NAMES, preserve_order=True),
+            "command_name": "base_velocity",
+            "power": 2.0,
+            # NOTE(stride-length-v3): redefined to reward stance-phase body progress along the
+            # commanded direction, not joint-space (hip-yaw) movement, and dropped swing-phase
+            # reward entirely -- a foot in the air can't push the robot, so it shouldn't be
+            # rewarded for moving. This also structurally eliminates the v2 snap exploit (a leg
+            # covering its whole joint range in a single 20ms physics step): that exploit relied on
+            # swing-phase joint displacement being rewarded regardless of whether the robot actually
+            # moved, and swing is no longer rewarded at all, so the earlier velocity_cost_weight/
+            # _power terms are no longer needed. min_phase_duration still guards against a spurious
+            # one-step contact reading being trusted as a real stance. (v4, per-foot signed
+            # touchdown displacement, was tried and reverted -- see
+            # sim_fine_tuning/stride_length_v4/CHANGELOG.md.)
+            "min_phase_duration": 0.1,
+            "min_cmd_norm": 0.12,
         },
     )
     penalty_tibia_deviation_in_stance = RewTerm(
@@ -786,6 +867,17 @@ class CrabHexFlatWalkRewardsCfg:
                 body_names=["body", ".*_Hip", ".*_Femur"],
             ),
         },
+    )
+    # NOTE(cam-mechanism-migration): penalizes the cam-shaft motor reversing rotational
+    # direction -- prioritizes driving it consistently one way and letting the cam geometry
+    # (Whitworth slotted-lever mapping, unlimited shaft range) produce the leg's back-and-forth
+    # yaw motion instead. Medium weight: between the small per-step shaping terms already active
+    # here (reward_action_rate=-0.1, penalty_foot_idle_when_forward=-0.12) and the larger posture
+    # terms used in later stages (reward_hip_pos=-0.5). Tunable starting point.
+    penalty_motor_direction_reversal = RewTerm(
+        func=mdp_rewards.PenaltyMotorDirectionReversal,
+        weight=-0.3,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_Body_CamShaft_RevoluteJoint"])},
     )
 
 

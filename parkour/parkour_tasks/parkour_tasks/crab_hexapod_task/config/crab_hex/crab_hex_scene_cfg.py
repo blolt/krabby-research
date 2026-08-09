@@ -6,6 +6,7 @@ from isaaclab.assets import ArticulationCfg
 from isaaclab.utils import configclass
 
 from parkour_isaaclab.actuators.parkour_actuator_cfg import ParkourDCMotorCfg
+from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import hip_to_cam_shaft_default
 from parkour_tasks.crab_hexapod_task.sensors import ParkourHexContactSensorCfg
 from parkour_tasks.default_cfg import CAMERA_CFG
 from parkour_tasks.extreme_parkour_task.config.go2.parkour_student_cfg import ParkourStudentSceneCfg
@@ -25,9 +26,35 @@ def _crab_simple_usd_path() -> str:
     return "/workspace/krabby-research/assets/crab_simple.usda"
 
 
-# All body hips share identical drive (USD joints are symmetric).
-# PD for ~104 kg; keep Kd ~0.02×Kp (very large Kd values crash Isaac).
-_BODY_HIP_STIFFNESS = {
+# NOTE(cam-mechanism-migration): CamShaft's own PD gains. NOT a reuse of the old Body_Hip
+# gains (495/9.9/600/738.5) -- those were tuned for a joint moving an entire ~2.8kg leg with
+# ~0.1+ kg*m^2 effective inertia. CamShaft is a tiny placeholder body (0.3kg, 2cm cube,
+# I ~= 2e-5 kg*m^2 about its own axis) with no leg physically attached (the leg is only
+# coupled via the software position-target link, see parkour_actions.py) -- reusing the old
+# stiffness against that much smaller inertia gives a natural frequency (~5000 rad/s) far too
+# fast for the simulation timestep to resolve, which was observed directly as wild,
+# effectively-chaotic drift in CamShaft's settled position across otherwise-identical runs.
+# These values target a natural frequency in the same conservative range the proven-stable
+# Femur_Tibia joint operates at (~75 rad/s), scaled down for CamShaft's actual inertia --
+# placeholder, tune further if lag/overshoot is visible during verification.
+_CAM_SHAFT_STIFFNESS = {
+    "FL_Body_CamShaft_RevoluteJoint": 1.0,
+    "FR_Body_CamShaft_RevoluteJoint": 1.0,
+    "ML_Body_CamShaft_RevoluteJoint": 1.0,
+    "MR_Body_CamShaft_RevoluteJoint": 1.0,
+    "RL_Body_CamShaft_RevoluteJoint": 1.0,
+    "RR_Body_CamShaft_RevoluteJoint": 1.0,
+}
+_CAM_SHAFT_DAMPING = {name: 0.05 for name in _CAM_SHAFT_STIFFNESS}
+_CAM_SHAFT_EFFORT = {name: 5.0 for name in _CAM_SHAFT_STIFFNESS}
+_CAM_SHAFT_SATURATION = {name: 6.0 for name in _CAM_SHAFT_STIFFNESS}
+
+# NOTE(cam-mechanism-migration): Body_Hip's own actuator -- it tracks a position target
+# computed from the cam-shaft's state each substep (CrabHexDelayedJointPositionAction.apply_actions),
+# not a policy action. Reuses the pre-migration Body_Hip gains (495/9.9/600/738.5), since the
+# downstream leg load this joint has to move is unchanged; tune if tracking lag/overshoot is
+# visible during verification.
+_HIP_TRACKING_STIFFNESS = {
     "FL_Body_Hip_RevoluteJoint": 495.0,
     "FR_Body_Hip_RevoluteJoint": 495.0,
     "ML_Body_Hip_RevoluteJoint": 495.0,
@@ -35,9 +62,9 @@ _BODY_HIP_STIFFNESS = {
     "RL_Body_Hip_RevoluteJoint": 495.0,
     "RR_Body_Hip_RevoluteJoint": 495.0,
 }
-_BODY_HIP_DAMPING = {name: 9.9 for name in _BODY_HIP_STIFFNESS}
-_BODY_HIP_EFFORT = {name: 600.0 for name in _BODY_HIP_STIFFNESS}
-_BODY_HIP_SATURATION = {name: 738.5 for name in _BODY_HIP_STIFFNESS}
+_HIP_TRACKING_DAMPING = {name: 9.9 for name in _HIP_TRACKING_STIFFNESS}
+_HIP_TRACKING_EFFORT = {name: 600.0 for name in _HIP_TRACKING_STIFFNESS}
+_HIP_TRACKING_SATURATION = {name: 738.5 for name in _HIP_TRACKING_STIFFNESS}
 
 _HIP_FEMUR_STIFFNESS = {name: 675.0 for name in [
     "FL_Hip_Femur_RevoluteJoint",
@@ -95,12 +122,28 @@ def _crab_simple_robot_cfg() -> ArticulationCfg:
             rot=(1.0, 0.0, 0.0, 0.0),
             joint_pos={
                 # Body–hip yaw (Z): front/rear splay; L/R mirrored (right-side signs verified in top view).
-                "FR_Body_Hip_RevoluteJoint": 0.6,
-                "FL_Body_Hip_RevoluteJoint": -0.6,
-                "ML_Body_Hip_RevoluteJoint": 0.25,
-                "MR_Body_Hip_RevoluteJoint": -0.25,
-                "RR_Body_Hip_RevoluteJoint": -0.6,
-                "RL_Body_Hip_RevoluteJoint": 0.6,
+                # NOTE(Phase E, Whitworth mechanism): the pre-Phase-E defaults (+/-0.6, +/-0.25 rad)
+                # were sized against the old, unverified +/-50 deg hard limit. The CAD-derived
+                # mechanism limit is only +/-28.54 deg (crab_hex_cam_mapping.THETA_HIP_MAX) --
+                # +/-0.6 rad (34.4 deg) alone EXCEEDS that and is not physically reachable. Rescaled
+                # by THETA_HIP_MAX / radians(50) = 0.5708 to preserve the original design's relative
+                # front/rear-vs-middle splay proportions (and the same fractional margin from the
+                # limit) under the corrected geometry, rather than picking new values from scratch.
+                "FR_Body_Hip_RevoluteJoint": 0.342492,
+                "FL_Body_Hip_RevoluteJoint": -0.342492,
+                "ML_Body_Hip_RevoluteJoint": 0.142705,
+                "MR_Body_Hip_RevoluteJoint": -0.142705,
+                "RR_Body_Hip_RevoluteJoint": -0.342492,
+                "RL_Body_Hip_RevoluteJoint": 0.342492,
+                # NOTE(cam-mechanism-migration): principal-value asin inverse of each leg's
+                # Body_Hip default above, computed in code (not hand-typed) to stay exactly
+                # consistent with crab_hex_cam_mapping.cam_shaft_to_hip (see plan Phase B).
+                "FR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.342492),
+                "FL_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(-0.342492),
+                "ML_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.142705),
+                "MR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(-0.142705),
+                "RR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(-0.342492),
+                "RL_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.342492),
                 # Hip–femur: same on all legs. Knee: sign flip on FR/MR/RR (180° Z in USD); left −0.07
                 # vs right +0.10 balances zero-action roll (~−0.14°) with splay unchanged.
                 ".*_Hip_Femur_RevoluteJoint": 0.30,
@@ -116,12 +159,23 @@ def _crab_simple_robot_cfg() -> ArticulationCfg:
         soft_joint_pos_limit_factor=0.9,
         actuators={
             "body_hip_yaw": ParkourDCMotorCfg(
-                joint_names_expr=[".*_Body_Hip_RevoluteJoint"],
-                effort_limit=_BODY_HIP_EFFORT,
-                saturation_effort=_BODY_HIP_SATURATION,
+                joint_names_expr=[".*_Body_CamShaft_RevoluteJoint"],
+                effort_limit=_CAM_SHAFT_EFFORT,
+                saturation_effort=_CAM_SHAFT_SATURATION,
                 velocity_limit=6.0,
-                stiffness=_BODY_HIP_STIFFNESS,
-                damping=_BODY_HIP_DAMPING,
+                stiffness=_CAM_SHAFT_STIFFNESS,
+                damping=_CAM_SHAFT_DAMPING,
+                friction=0.0,
+            ),
+            # NOTE(cam-mechanism-migration): tracks the position target computed each substep
+            # from the cam-shaft's state (see parkour_actions.py); not policy-actuated.
+            "body_hip_tracking": ParkourDCMotorCfg(
+                joint_names_expr=[".*_Body_Hip_RevoluteJoint"],
+                effort_limit=_HIP_TRACKING_EFFORT,
+                saturation_effort=_HIP_TRACKING_SATURATION,
+                velocity_limit=6.0,
+                stiffness=_HIP_TRACKING_STIFFNESS,
+                damping=_HIP_TRACKING_DAMPING,
                 friction=0.0,
             ),
             # Femur–tibia stiffer than hip–femur: knee chain dominates collapse under zero-action / gravity.
