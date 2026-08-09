@@ -1,9 +1,9 @@
-# Changelog: `sim_fine_tuning/stride_length_on`
+# Changelog: `sim_fine_tuning/2026-08-08_0950_stride_length_on`
 
 **Milestone 18, Task 1 item**: §2.2 "Stride length" -- "New reward on per-step footpad
 displacement at touchdown so fewer/longer steps beat shuffling."
 
-**Predecessor**: `sim_fine_tuning/motor_reversal_on` (this run keeps
+**Predecessor**: `sim_fine_tuning/2026-08-07_2303_motor_reversal_on` (this run keeps
 `penalty_motor_direction_reversal=-0.3` active and adds the stride-length term on top of it).
 
 ## Change (v2 design -- see Verdict; superseded by `stride_length_v3`)

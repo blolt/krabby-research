@@ -1,8 +1,8 @@
-# Changelog: `sim_fine_tuning/short_runs`
+# Changelog: `sim_fine_tuning/2026-08-09_0920_short_runs`
 
 **Milestone 18, Task 1 item**: §1f "Tippy-tap eliminated on the Task 0 eval set" and §1c "Stride-length term ... measured stride length improves against baseline" -- the reward-*tuning* phase of Task 1, following the reward-*shaping* series (`baseline` -> `motor_reversal_on` -> `stride_length_on` (v2, reverted) -> `stride_length_v3` (kept) -> `stride_length_v4` (tried, reverted)). With the stride-length term's definition settled at v3, this campaign tunes the existing reward weights against the v3 flat-walk checkpoint.
 
-**Predecessor**: `sim_fine_tuning/stride_length_v3` (flat-walk checkpoint `model_19999.pt`, unchanged reward code).
+**Predecessor**: `sim_fine_tuning/2026-08-08_1701_stride_length_v3` (flat-walk checkpoint `model_19999.pt`, unchanged reward code).
 
 ## Method
 

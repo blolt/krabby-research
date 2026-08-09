@@ -1,11 +1,11 @@
-# Changelog: `sim_fine_tuning/motor_reversal_on`
+# Changelog: `sim_fine_tuning/2026-08-07_2303_motor_reversal_on`
 
 **Milestone 18, Task 1 item**: adjacent to §2.5 "Energy/smoothness" (reversal suppression), though
 via a pre-existing term rather than the doc's suggested `reward_action_rate`/`reward_delta_torques`
 sweep. `penalty_motor_direction_reversal` already existed from the earlier cam-mechanism migration
 and was simply zeroed for `baseline`'s isolation; this run restores it to its original weight.
 
-**Predecessor**: `sim_fine_tuning/baseline`.
+**Predecessor**: `sim_fine_tuning/2026-08-07_1441_baseline`.
 
 ## Change
 

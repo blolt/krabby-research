@@ -1,9 +1,9 @@
-# Changelog: `sim_fine_tuning/stride_length_v3`
+# Changelog: `sim_fine_tuning/2026-08-08_1701_stride_length_v3`
 
 **Milestone 18, Task 1 item**: §2.2 "Stride length" (continued -- redesign of the term introduced
 in `stride_length_on`, after that run's data showed a net-negative effect).
 
-**Predecessor**: `sim_fine_tuning/stride_length_on` (v2 design, reverted).
+**Predecessor**: `sim_fine_tuning/2026-08-08_0950_stride_length_on` (v2 design, reverted).
 
 ## Change (v3 design)
 

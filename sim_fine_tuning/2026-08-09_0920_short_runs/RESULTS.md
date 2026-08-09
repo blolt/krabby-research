@@ -11,7 +11,7 @@ Autonomous weight/param sweep campaign, per the plan approved 2026-08-09 (revise
 | `v3_reference` | none (stride_length_v3 flat checkpoint, as-is) | -- | 19.09% | 0.178 m | 1.71% | 100% | 0.0 | REFERENCE -- every run below is scored against this row |
 | `baseline_anchor` | none (original baseline flat checkpoint) | -- | 13.52% | 0.120 m | 2.96% | 100% | 0.0 | ANCHOR ONLY -- Task 1 §1f target: tippy_tap ≤ this |
 
-Reference checkpoint: `sim_fine_tuning/stride_length_v3/logs/rsl_rl/crab_hex_flat_walk/2026-08-08_17-01-57/model_19999.pt`
+Reference checkpoint: `sim_fine_tuning/2026-08-08_1701_stride_length_v3/logs/rsl_rl/crab_hex_flat_walk/2026-08-08_17-01-57/model_19999.pt`
 
 **Campaign targets** (combined-winners run must clear all three): tippy_tap ≤ 13.5% AND stride ≥ 0.178m AND completion = 100%.
 

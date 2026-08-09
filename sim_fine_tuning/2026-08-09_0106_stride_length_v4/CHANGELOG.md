@@ -1,11 +1,11 @@
-# Changelog: `sim_fine_tuning/stride_length_v4`
+# Changelog: `sim_fine_tuning/2026-08-09_0106_stride_length_v4`
 
 **Milestone 18, Task 1 item**: §2.2 "Stride length" (continued -- redesign of the term after
 `stride_length_v3`'s own data showed neither v2 nor v3 actually beat `motor_reversal_on`'s
 *incidental* stride-length improvement on the harness's own literal metric, despite v3 being the
 strongest run in the series on every training-stability measure).
 
-**Predecessor**: `sim_fine_tuning/stride_length_v3` (v3 design, kept, but flagged with two open
+**Predecessor**: `sim_fine_tuning/2026-08-08_1701_stride_length_v3` (v3 design, kept, but flagged with two open
 threads: worse-than-baseline 2b2 stability, and an unexplained non-zero tripod score at 2b2).
 
 ## Change (v4 design)

@@ -1,4 +1,4 @@
-# Changelog: `sim_fine_tuning/baseline`
+# Changelog: `sim_fine_tuning/2026-08-07_1441_baseline`
 
 **Milestone 18 context**: this run is the Task 1 (Reward Shaping) starting point, not itself a
 reward-shaping change. It carries forward the CAD-derived Whitworth cam-mapping correction
