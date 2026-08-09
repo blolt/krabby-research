@@ -26,7 +26,7 @@ striding. ``min_phase_duration`` excludes stance phases too brief to be a trustw
 in the swing-phase version -- fast *body* progress during a real stance is exactly the desired
 outcome, not something to penalize).
 
-**v4 addendum (reverted, see `sim_fine_tuning/stride_length_v4/CHANGELOG.md`).** A later attempt
+**v4 addendum (reverted, see `sim_fine_tuning/2026-08-09_0106_stride_length_v4/CHANGELOG.md`).** A later attempt
 redefined this term as each foot's own signed touchdown-to-touchdown world-frame displacement.
 That version did finally beat `motor_reversal_on`'s measured 2b2 stride length (the metric this
 whole redesign chain has been chasing), but only by producing the *worst* tippy-tap fraction in

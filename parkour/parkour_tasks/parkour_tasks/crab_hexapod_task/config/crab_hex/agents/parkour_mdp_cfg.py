@@ -219,7 +219,7 @@ class CrabHexRewardsCfg:
             # _power terms are no longer needed. min_phase_duration still guards against a spurious
             # one-step contact reading being trusted as a real stance. (v4, per-foot signed
             # touchdown displacement, was tried and reverted -- see
-            # sim_fine_tuning/stride_length_v4/CHANGELOG.md.)
+            # sim_fine_tuning/2026-08-09_0106_stride_length_v4/CHANGELOG.md.)
             "min_phase_duration": 0.1,
             "min_cmd_norm": 0.12,
         },
@@ -759,9 +759,13 @@ class CrabHexFlatWalkRewardsCfg:
         # zero-weight, but still logged) sum doesn't include the passive FL_Body_Hip_RevoluteJoint.
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_ACTUATED_JOINT_NAMES)},
     )
+    # NOTE(short-run-campaign): weight raised 0.40 -> 0.8, the winning value from the Milestone 18
+    # Task 1 short-run tuning campaign (sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md) -- threshold=0.05
+    # itself was swept (0.10, 0.15) and found not to move gait quality on its own, so it stays at
+    # default. Improves tippy_tap and measured stride together vs the untouched v3 baseline.
     reward_feet_air_time_positive = RewTerm(
         func=mdp_rewards.reward_feet_air_time_positive,
-        weight=0.40,
+        weight=0.8,
         params={
             "command_name": "base_velocity",
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
@@ -791,7 +795,7 @@ class CrabHexFlatWalkRewardsCfg:
             # _power terms are no longer needed. min_phase_duration still guards against a spurious
             # one-step contact reading being trusted as a real stance. (v4, per-foot signed
             # touchdown displacement, was tried and reverted -- see
-            # sim_fine_tuning/stride_length_v4/CHANGELOG.md.)
+            # sim_fine_tuning/2026-08-09_0106_stride_length_v4/CHANGELOG.md.)
             "min_phase_duration": 0.1,
             "min_cmd_norm": 0.12,
         },
@@ -868,16 +872,41 @@ class CrabHexFlatWalkRewardsCfg:
             ),
         },
     )
-    # NOTE(cam-mechanism-migration): penalizes the cam-shaft motor reversing rotational
-    # direction -- prioritizes driving it consistently one way and letting the cam geometry
-    # (Whitworth slotted-lever mapping, unlimited shaft range) produce the leg's back-and-forth
-    # yaw motion instead. Medium weight: between the small per-step shaping terms already active
-    # here (reward_action_rate=-0.1, penalty_foot_idle_when_forward=-0.12) and the larger posture
-    # terms used in later stages (reward_hip_pos=-0.5). Tunable starting point.
+    # NOTE(cam-mechanism-migration, superseded by short-run-campaign): originally penalized the
+    # cam-shaft motor reversing rotational direction at weight=-0.3. The Milestone 18 Task 1
+    # short-run campaign (sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md) ran a 3-arm study testing this
+    # mechanism against general action-smoothness terms for the same goal (suppressing
+    # high-frequency reversals): retuning this weight alone (-0.15, -0.6) never beat the
+    # air-time-only baseline, but turning it OFF and using reward_action_rate/reward_delta_torques
+    # instead (below) was the single best result of the whole campaign -- best tippy_tap AND best
+    # measured stride simultaneously, at both 1000 and 2000 iterations. Weight zeroed accordingly;
+    # left registered (not deleted) so it can be reintroduced if the smoothness-only route proves
+    # insufficient once carried up the teacher stack, where reversal count remains a real
+    # hardware-longevity concern documented in motor_reversal_on/CHANGELOG.md.
     penalty_motor_direction_reversal = RewTerm(
         func=mdp_rewards.PenaltyMotorDirectionReversal,
-        weight=-0.3,
+        weight=0.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_Body_CamShaft_RevoluteJoint"])},
+    )
+    # NOTE(short-run-campaign): weights raised from 0.0 (previously inactive on flat-walk, only
+    # used in the teacher-stage rewards above) to the winning values from the 3-arm study
+    # described above -- see sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md for the full comparison.
+    # Combined with reward_feet_air_time_positive=0.8 and penalty_motor_direction_reversal=0.0,
+    # this config cleared every Task 1 §1c/§1f target at a 2000-iteration validation: tippy_tap
+    # 19.09%->13.39% (<= baseline's 13.5%), measured stride 0.178m->0.1975m (best of the entire
+    # Task 1 comparison series), schedule_completion_rate steady at 100%. Training-time tracking
+    # error was somewhat elevated in testing (policy trades a little velocity-tracking precision
+    # for smoother actions) but did not show up as a gait-eval regression on flat-walk -- worth
+    # watching if this config is carried up the teacher stack.
+    reward_action_rate = RewTerm(
+        func=mdp_rewards.reward_action_rate,
+        weight=-0.3,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
+    reward_delta_torques = RewTerm(
+        func=mdp_rewards.reward_delta_torques,
+        weight=-1e-6,
+        params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
 

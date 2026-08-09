@@ -927,7 +927,7 @@ class RewardStrideLength(ManagerTermBase):
     no separate velocity cost needed).
 
     This is v3 of the term (v4, per-foot touchdown-to-touchdown displacement, was tried and
-    reverted back to this design -- see ``sim_fine_tuning/stride_length_v4/CHANGELOG.md``: v4
+    reverted back to this design -- see ``sim_fine_tuning/2026-08-09_0106_stride_length_v4/CHANGELOG.md``: v4
     finally beat the target stride-length metric at 2b2 but at the cost of the worst tippy-tap in
     the whole comparison series and broad regressions vs this design on training stability)."""
 
