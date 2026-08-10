@@ -229,9 +229,13 @@ class CrabHexRewardsCfg:
         weight=-0.05,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+    # NOTE(teacher-carry-up): -0.1 -> -0.3, matching the flat-walk campaign's baked winner
+    # (sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md) after the T0/T1/T2 teacher-stack
+    # screening study picked T2 (this weight kept, reversal penalty unchanged) over the control
+    # and the full-mirror arm -- see sim_fine_tuning/gait_tuned/CHANGELOG.md.
     reward_action_rate = RewTerm(
         func=mdp_rewards.reward_action_rate,
-        weight=-0.1,
+        weight=-0.3,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     reward_dof_acc = RewTerm(
@@ -270,9 +274,10 @@ class CrabHexRewardsCfg:
         weight=0.5,
         params={"asset_cfg": SceneEntityCfg("robot"), "parkour_name": "base_parkour"},
     )
+    # NOTE(teacher-carry-up): -1e-7 -> -1e-6, see reward_action_rate's note above.
     reward_delta_torques = RewTerm(
         func=mdp_rewards.reward_delta_torques,
-        weight=-1.0e-7,
+        weight=-1.0e-6,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
@@ -459,9 +464,11 @@ class CrabHexStage2BPhase1RewardsCfg(CrabHexTeacherBridgeRewardsCfg):
         weight=-0.05,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+    # NOTE(teacher-carry-up): -0.1 -> -0.3, covers 2b1 and 2b2 (Stage2BPhase2RewardsCfg inherits
+    # from this class without re-declaring). See CrabHexRewardsCfg.reward_action_rate's note.
     reward_action_rate = RewTerm(
         func=mdp_rewards.reward_action_rate,
-        weight=-0.1,
+        weight=-0.3,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     reward_dof_error = RewTerm(
@@ -479,9 +486,10 @@ class CrabHexStage2BPhase1RewardsCfg(CrabHexTeacherBridgeRewardsCfg):
         weight=-2.5e-7,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+    # NOTE(teacher-carry-up): -1e-7 -> -1e-6, see reward_action_rate's note above.
     reward_delta_torques = RewTerm(
         func=mdp_rewards.reward_delta_torques,
-        weight=-1.0e-7,
+        weight=-1.0e-6,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
