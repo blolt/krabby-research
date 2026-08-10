@@ -64,30 +64,39 @@ held >0.6s without a confirmed swap. Registered at weight 0.0, swept here.
 | b1_tripod_reward_w0.15 | `reward_tripod_schedule.weight=0.15` | 1000 | 0.4115 (per-ep: 0.43,0.18,0.41,0.37,0.35,0.43,0.41,0.41,0.42,0.39) | 7.83% | 0.164 m | 2.44% | 100% | 0.2122 | REVERTED — essentially baseline-level (0.4115 vs 0.401/0.425), same pattern as every Phase A lever. The dense reward at this weight did not measurably reshape gait behavior within 1000 iterations. |
 | b2_tripod_reward_w0.3 | `reward_tripod_schedule.weight=0.3` (2× b1) | 1000 | 0.3884 (per-ep: 0.39,0.42,0.39,0.34,0.39,0.36,0.40,0.36,0.39,0.37) | 6.90% | 0.166 m | 2.18% | 100% | 0.2115 | REVERTED — *lower* than b1 despite double the weight (0.3884 vs 0.4115), no dose-response trend; still within the same ~0.38-0.42 noise band every run this campaign has landed in. Guardrails held (tippy/slip/stride/pitch all fine, if anything slightly better than baseline). |
 
+**Follow-up runs (b3/b4), per explicit user request to try 1-2 more variants before the accept-vs-from-scratch decision:**
+
+| b3_tripod_reward_w0.6 | `reward_tripod_schedule.weight=0.6` (4× b1) | 1000 | 0.3943 (per-ep: 0.37,0.39,0.40,0.39,0.40,0.37,0.40,0.39,0.41,0.41) | 7.17% | 0.167 m | 2.15% | 100% | 0.2123 | REVERTED — further weight escalation confirms no dose-response: 0.15→0.4115, 0.3→0.3884, 0.6→0.3943, no trend, all inside the same band. Guardrails held. |
+| b4_tripod_reward_w0.3_maxhold0.3 | `reward_tripod_schedule.weight=0.3`, `params.max_hold_s=0.3` (half default, forces alternation ≥2× more often to keep the reward flowing) | 1000 | 0.4116 (per-ep: 0.43,0.40,0.44,0.40,0.38,0.43,0.41,0.42,0.42,0.40) | 7.24% | 0.164 m | 2.31% | 100% | 0.2119 | REVERTED — the timing lever (not just weight) also fails to move tripod: still squarely in the ~0.38-0.43 band. This was the second of the two mechanistically-distinct remaining ideas (magnitude vs. required-alternation-frequency); both tested, neither worked. Guardrails held. |
+
 ## Campaign summary: complete negative result
 
-All 9 tripod-focused attempts this campaign (7 config-only levers + 2 new-reward weights), plus
-the two Step-0 baseline evals for reference:
+All 11 fine-tune attempts this campaign (7 config-only Phase A levers + 4 Phase B reward-weight/
+timing variants), plus the two Step-0 baseline evals for reference:
 
 | run | tripod | run | tripod |
 |---|---|---|---|
-| baseline (seed001) | 0.401 | a6_pitch_w-0.25 | 0.403 |
-| baseline (seed002, noise calib) | 0.425 | a7_angvel_w-0.05 | 0.412 |
-| a1_stance_bracket | 0.405 | b1_tripod_reward_w0.15 | 0.412 |
-| a3_airtime_w1.2 | 0.389 | b2_tripod_reward_w0.3 | 0.388 |
-| a4_airtime_thresh0.10 | 0.383 | | |
+| baseline (seed001) | 0.401 | a7_angvel_w-0.05 | 0.412 |
+| baseline (seed002, noise calib) | 0.425 | b1_tripod_reward_w0.15 | 0.412 |
+| a1_stance_bracket | 0.405 | b2_tripod_reward_w0.3 | 0.388 |
+| a3_airtime_w1.2 | 0.389 | b3_tripod_reward_w0.6 | 0.394 |
+| a4_airtime_thresh0.10 | 0.383 | b4_tripod_reward_w0.3_maxhold0.3 | 0.412 |
 | a5_pitch_w-0.1 | 0.393 | | |
+| a6_pitch_w-0.25 | 0.403 | | |
 
 **No run cleared the KEPT gate of 0.45, and none showed a real trend in either direction** — every
 value sits inside the ~0.38-0.43 band, indistinguishable from the baseline's own eval-to-eval
-noise (0.401 vs 0.425 on identical checkpoints). Stronger doses did not help: A6 (2.5× A5's pitch
-penalty) barely moved from A5; B2 (2× B1's tripod-reward weight) landed *below* B1. All guardrails
-held throughout — no completion failures, no tippy/stride/slip regressions, no stability
-regressions from any lever.
+noise (0.401 vs 0.425 on identical checkpoints). Neither of the two mechanistically distinct
+follow-up ideas worked: weight escalation up to 4× (B1→B2→B3: 0.4115→0.3884→0.3943, no trend) and
+tighter alternation timing (B4, `max_hold_s` halved: 0.4116, no different from B1's looser
+timing). All guardrails held throughout every one of the 11 runs — no completion failures, no
+tippy/stride/slip regressions, no stability regressions from any lever. The fine-tune track is
+genuinely exhausted: both magnitude and timing were tested as independent axes and neither moved
+the metric.
 
 **Combined with the earlier 14-fine-tune campaign** (a separate, prior campaign that also never
 moved tripod off 0.0 across 14 fine-tune attempts with a different reward-shaping approach), there
-are now **23 total fine-tune attempts across two independent campaigns and two different reward
+are now **25 total fine-tune attempts across two independent campaigns and two different reward
 designs**, none of which moved tripod score meaningfully — while a single from-scratch training
 run reliably reaches ~0.40 with zero reward-code changes. This is strong, repeated evidence that
 tripod-phasing quality is substantially determined by from-scratch training dynamics and does not
