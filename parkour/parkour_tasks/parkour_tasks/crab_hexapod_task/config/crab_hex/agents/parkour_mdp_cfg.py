@@ -747,6 +747,19 @@ class CrabHexFlatWalkRewardsCfg:
             "parkour_name": "base_parkour",
         },
     )
+    # NOTE(tripod-stability-campaign): registered at weight 0.0 (inert) so it's Hydra-sweepable.
+    # reward_orientation is direction-blind (roll^2+pitch^2); this term is signed and forward-gated,
+    # so it's the only lever that can target the sustained ~12deg nose-down lean measured on the
+    # baseline checkpoint (see sim_fine_tuning/2026-08-10_0058_tripod_stability/RESULTS.md).
+    penalty_base_pitch_forward_linear = RewTerm(
+        func=mdp_rewards.penalty_base_pitch_forward_linear,
+        weight=0.0,
+        params={
+            "command_name": "base_velocity",
+            "asset_cfg": SceneEntityCfg("robot"),
+            "min_forward_speed_cmd": 0.12,
+        },
+    )
     reward_lin_vel_z = RewTerm(
         func=mdp_rewards.reward_lin_vel_z,
         weight=-0.15,
