@@ -8,6 +8,11 @@ from isaaclab.assets import Articulation
 from isaaclab.utils.math  import euler_xyz_from_quat, wrap_to_pi, quat_apply
 from parkour_isaaclab.envs.mdp.parkours import ParkourEvent
 from parkour_tasks.crab_hexapod_task.mdp.crab_hex_stride_reward import stride_length_reward_step
+from parkour_tasks.crab_hexapod_task.mdp.crab_hex_tripod_reward import (
+    TRIPOD_A_IDX,
+    TRIPOD_B_IDX,
+    tripod_schedule_reward_step,
+)
 from collections.abc import Sequence
 
 if TYPE_CHECKING:
@@ -964,5 +969,56 @@ class RewardStrideLength(ManagerTermBase):
             root_lin_vel_b_xy, command_xy, in_contact, first_contact, first_air,
             last_contact_time, self.stance_progress, env.step_dt, power,
             min_phase_duration, min_cmd_norm,
+        )
+        return reward
+
+
+class RewardTripodSchedule(ManagerTermBase):
+    """Dense per-step reward for genuine tripod-gait alternation. See
+    ``crab_hex_tripod_reward.tripod_schedule_reward_step`` for the full math and rationale --
+    added per Task 1 §2.3 after the config-only weight/param sweep in
+    ``sim_fine_tuning/2026-08-10_0058_tripod_stability/`` found no existing term moves the
+    gait-eval harness's ``tripod_score`` metric."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        sensor_cfg: SceneEntityCfg = cfg.params["sensor_cfg"]
+        self.body_ids = sensor_cfg.body_ids
+        self.candidate_sign = torch.zeros(env.num_envs, device=self.device)
+        self.candidate_streak = torch.zeros(env.num_envs, device=self.device)
+        self.confirmed_sign = torch.zeros(env.num_envs, device=self.device)
+        self.time_since_confirmed_swap = torch.zeros(env.num_envs, device=self.device)
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        self.candidate_sign[env_ids] = 0.0
+        self.candidate_streak[env_ids] = 0.0
+        self.confirmed_sign[env_ids] = 0.0
+        self.time_since_confirmed_swap[env_ids] = 0.0
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        sensor_cfg: SceneEntityCfg,
+        command_name: str,
+        min_cmd_norm: float = 0.12,
+        debounce_s: float = 0.08,
+        min_swap_interval: float = 0.1,
+        max_hold_s: float = 0.6,
+    ) -> torch.Tensor:
+        contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+        current_contact_time = contact_sensor.data.current_contact_time[:, self.body_ids]
+        command_xy = env.command_manager.get_command(command_name)[:, :2]
+        (
+            reward,
+            self.candidate_sign,
+            self.candidate_streak,
+            self.confirmed_sign,
+            self.time_since_confirmed_swap,
+        ) = tripod_schedule_reward_step(
+            current_contact_time, command_xy, self.candidate_sign, self.candidate_streak,
+            self.confirmed_sign, self.time_since_confirmed_swap, env.step_dt,
+            TRIPOD_A_IDX, TRIPOD_B_IDX, min_cmd_norm, debounce_s, min_swap_interval, max_hold_s,
         )
         return reward

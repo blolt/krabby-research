@@ -760,6 +760,22 @@ class CrabHexFlatWalkRewardsCfg:
             "min_forward_speed_cmd": 0.12,
         },
     )
+    # NOTE(tripod-stability-campaign): the explicit contact-schedule reward from Task 1 §2.3,
+    # registered at weight 0.0 (inert). None of the config-only knobs tried in
+    # sim_fine_tuning/2026-08-10_0058_tripod_stability/ moved tripod_score, so this term rewards
+    # genuine tripod-set alternation directly -- see crab_hex_tripod_reward.py for the full math.
+    reward_tripod_schedule = RewTerm(
+        func=mdp_rewards.RewardTripodSchedule,
+        weight=0.0,
+        params={
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=_CRAB_FOOT_BODY_NAMES, preserve_order=True),
+            "command_name": "base_velocity",
+            "min_cmd_norm": 0.12,
+            "debounce_s": 0.08,
+            "min_swap_interval": 0.1,
+            "max_hold_s": 0.6,
+        },
+    )
     reward_lin_vel_z = RewTerm(
         func=mdp_rewards.reward_lin_vel_z,
         weight=-0.15,
