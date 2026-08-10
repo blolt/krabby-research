@@ -1,6 +1,26 @@
 # krabby-fleet
 
-Operator CLI for the Krabby fleet.
+Operator CLI for the Krabby fleet. Run it on an **operator machine** (laptop /
+workstation), not on the Orin — the Orin uses `krabby` / `krabby-agent` instead.
+
+## Install
+
+From the `krabby-research` repo root (venv recommended):
+
+```bash
+pip install ./fleet/cli
+```
+
+For editable / test installs:
+
+```bash
+pip install -e "./fleet/cli[dev]"
+```
+
+Confirm: `krabby-fleet --help`. Cognito pool/client IDs come from
+`FleetServiceStack` outputs (or SSM `/krabby/fleet/cognito-*`); see
+[`../OPERATORS.md`](../OPERATORS.md). For `krabby-fleet ssh`, also install
+`localproxy` and `ssh` on the same machine ([`../SSH-TUNNEL.md`](../SSH-TUNNEL.md)).
 
 ## Config
 
@@ -78,9 +98,8 @@ Requires `aws-iot-securetunneling-localproxy` (the `localproxy` binary) on
 ## Tests
 
 ```bash
-cd fleet/cli
-pip install -e ".[dev]"
-pytest tests/
+pip install -e "./fleet/cli[dev]"   # from krabby-research root
+pytest fleet/cli/tests/
 ```
 
 No real Cognito, AWS, or fleet-service access needed -- `test_auth.py`

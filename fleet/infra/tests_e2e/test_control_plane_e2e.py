@@ -105,9 +105,10 @@ def test_bench_get_thing_shadow_schema():
     reported = payload.get("state", {}).get("reported")
     assert isinstance(reported, dict), f"expected state.reported object, got {reported!r}"
     assert isinstance(reported.get("timestamp"), int), reported
-    # Key must be present; value may be null until an image is installed.
-    assert "reported_image" in reported, reported
-    image = reported["reported_image"]
+    # Agent may publish reported_image=null when no image is installed; AWS IoT
+    # Device Shadow treats null as delete, so the key is often absent until
+    # krabby install/update has written a ref.
+    image = reported.get("reported_image")
     assert image is None or isinstance(image, str), image
 
     age = time.time() - int(reported["timestamp"])

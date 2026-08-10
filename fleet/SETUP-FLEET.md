@@ -181,8 +181,13 @@ lists it via Fleet Indexing.
 
 ### Operator SSH source
 
+Install and configure the CLI on an operator machine (not the Orin):
+[`cli/README.md`](cli/README.md).
+
 ```bash
-# ~/.config/krabby-fleet/config.toml → service_url = https://<fleet-domain>/api
+# from krabby-research repo root
+pip install ./fleet/cli
+# ~/.config/krabby-fleet/config.toml → service_url + cognito IDs
 krabby-fleet list
 krabby-fleet teleop <thing-name-a>   # browser tab 1
 krabby-fleet teleop <thing-name-b>   # browser tab 2 (concurrent)

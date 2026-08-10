@@ -20,14 +20,16 @@ def cognito_idp():
 def scratch_user(operator: bool) -> Iterator[Cognito]:
     """Create a throwaway Cognito user; yield authenticated session; delete on exit."""
     idp = cognito_idp()
-    username = f"e2e-test-{secrets.token_hex(6)}"
+    # Pool uses email sign-in aliases; username must be a valid email.
+    # Avoid reserved TLDs Cognito rejects (e.g. .invalid).
+    username = f"e2e-test-{secrets.token_hex(6)}@example.com"
     password = f"E2eTest!{secrets.token_hex(8)}"
 
     idp.admin_create_user(
         UserPoolId=COGNITO_USER_POOL_ID,
         Username=username,
         UserAttributes=[
-            {"Name": "email", "Value": f"{username}@example.invalid"},
+            {"Name": "email", "Value": username},
             {"Name": "email_verified", "Value": "true"},
         ],
         MessageAction="SUPPRESS",

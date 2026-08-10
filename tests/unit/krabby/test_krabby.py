@@ -463,6 +463,18 @@ class TestGamepadCmd:
         assert "status=$?" in script
         assert "exit $status" in script
 
+    def test_starts_without_mcu_device(self, monkeypatch):
+        # Missing /dev/ttyACM0 must not abort the launcher; fleet telemetry reports
+        # mcu_present=false / mcu_missing while the stack stays up.
+        monkeypatch.setattr("krabby._docker.platform.machine", lambda: "aarch64")
+        cmd = gamepad_cmd("myimage:tag", [])
+        script = cmd[cmd.index("-c") + 1]
+        assert "MCU device not found" in script
+        assert "warning:" in script
+        assert "exit 1;" not in script
+        assert "krabby-hal-server-jetson" in script
+        assert script.index("krabby-hal-server-jetson") > script.index("warning:")
+
     def test_robot_value_injected_into_server(self, monkeypatch):
         monkeypatch.setattr("krabby._docker.platform.machine", lambda: "aarch64")
         cmd = gamepad_cmd("myimage:tag", ["--robot", "go2"])

@@ -10,7 +10,7 @@ the differences between modes are config-level only:
   skipped for gamepad (no observation inputs needed; test rigs often have no ZED)
 - In-process command source: ParkourInferenceClient for inference; none for
   portal/gamepad (commands arrive from WebRTC data channel or external TCP client)
-- MCU strictness: gamepad refuses to start without MCU; inference/portal warn
+- MCU: missing board is a warning in all modes (gamepad included); stack still starts
 """
 
 import argparse
@@ -228,14 +228,14 @@ def main():
         if args.control_source != "gamepad":
             hal_server.initialize_cameras()
 
-        # Gamepad mode strictly requires MCU connectivity — joint commands have no
-        # other destination. Other modes log a warning when the policy/portal first
-        # attempts apply_command, so we don't fail-fast here.
-        if args.control_source == "gamepad" and (
-            hal_server._mcusdk is None or not hal_server._mcusdk.is_connected()
-        ):
-            logger.error("MCU not available — check firmware and wiring. Exiting.")
-            sys.exit(1)
+        # Missing MCU is non-fatal: the stack still starts so fleet telemetry can
+        # report mcu_present=false / mcu_missing. Joint commands are no-ops until
+        # the board is connected (apply_command logs when the SDK is absent).
+        if hal_server._mcusdk is None or not hal_server._mcusdk.is_connected():
+            logger.warning(
+                "MCU not available — check firmware and wiring. "
+                "Continuing without MCU (joint commands will not be sent)."
+            )
 
         # ----- Teleop signaling (portal mode, or inference with --teleop-ip) -----
 
