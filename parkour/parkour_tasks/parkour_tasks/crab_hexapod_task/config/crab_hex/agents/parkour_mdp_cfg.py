@@ -232,7 +232,7 @@ class CrabHexRewardsCfg:
     # NOTE(teacher-carry-up): -0.1 -> -0.3, matching the flat-walk campaign's baked winner
     # (sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md) after the T0/T1/T2 teacher-stack
     # screening study picked T2 (this weight kept, reversal penalty unchanged) over the control
-    # and the full-mirror arm -- see sim_fine_tuning/gait_tuned/CHANGELOG.md.
+    # and the full-mirror arm -- see sim_fine_tuning/2026-08-09_1526_gait_tuned/CHANGELOG.md.
     reward_action_rate = RewTerm(
         func=mdp_rewards.reward_action_rate,
         weight=-0.3,
