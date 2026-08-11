@@ -68,6 +68,7 @@ held >0.6s without a confirmed swap. Registered at weight 0.0, swept here.
 
 | b3_tripod_reward_w0.6 | `reward_tripod_schedule.weight=0.6` (4× b1) | 1000 | 0.3943 (per-ep: 0.37,0.39,0.40,0.39,0.40,0.37,0.40,0.39,0.41,0.41) | 7.17% | 0.167 m | 2.15% | 100% | 0.2123 | REVERTED — further weight escalation confirms no dose-response: 0.15→0.4115, 0.3→0.3884, 0.6→0.3943, no trend, all inside the same band. Guardrails held. |
 | b4_tripod_reward_w0.3_maxhold0.3 | `reward_tripod_schedule.weight=0.3`, `params.max_hold_s=0.3` (half default, forces alternation ≥2× more often to keep the reward flowing) | 1000 | 0.4116 (per-ep: 0.43,0.40,0.44,0.40,0.38,0.43,0.41,0.42,0.42,0.40) | 7.24% | 0.164 m | 2.31% | 100% | 0.2119 | REVERTED — the timing lever (not just weight) also fails to move tripod: still squarely in the ~0.38-0.43 band. This was the second of the two mechanistically-distinct remaining ideas (magnitude vs. required-alternation-frequency); both tested, neither worked. Guardrails held. |
+| b5_tripod_v2_w0.15 (**v2 no-harm canary**, user-directed) | `reward_tripod_schedule.weight=0.15` with the **v2 in-band support bonus** (commit adcd68c: clip-immune reward-dual of Task 1 §2.3's stance-count band, support outside the anti-freeze gate) | 1000 | 0.4080 (per-ep: 0.44,0.41,0.43,0.42,0.38,0.41,0.40,0.40,0.42,0.38) | 6.11% | 0.164 m | 2.21% | 100% | 0.2104; signed mean pitch 0.2085 | **CANARY PASS** — every no-harm gate held (tippy actually improved vs baseline's 7.97%); tripod at baseline level as expected from a fine-tune. Cleared the gate for the v2 from-scratch test. |
 
 ## Campaign summary: complete negative result
 
@@ -144,3 +145,39 @@ the start of training. Combined with the fine-tune sweep's clean null result, **
 baked-config from-scratch checkpoint, no tripod-specific reward at all) remains the best tripod
 result found across this entire investigation** — 26 total training attempts across two campaigns,
 two reward-shaping approaches, and both fine-tune and from-scratch conditions.
+
+## From-scratch v2: support bonus fixes falls, not phasing (aborted at 62%)
+
+The v2 term (in-band stance-count support bonus, commit adcd68c — the clip-immune reward-dual of
+Task 1 §2.3's band penalty, designed after v1's unison-lunge collapse) passed its no-harm canary
+(b5 row above) and went to a from-scratch 20k test at weight 0.15. Training telemetry stayed
+superficially healthy throughout (crab_failure ~0%, episodes never terminating, the term earning
+steadily, forward progress at healthy-run levels) but `error_vel_xy` plateaued ~1.8× the healthy
+run's trajectory — and the user, watching the iteration-12300 checkpoint in the viewer, identified
+the truth behind that number: the policy had converged on a **tip-over-and-correct unison gait**,
+the same family as v1's lunge, just stabilized enough to never actually fall.
+
+Mid-training gait-eval at iteration 12300 (`gait_eval_midtrain/`), confirming the visual:
+
+| metric | v2 @ 12300 | v1 final | baseline |
+|---|---|---|---|
+| tripod | 0.0 (every episode) | 0.0 | 0.401 |
+| roll_rms | 0.014 (collapsed — unison legs) | 0.011 | 0.038 |
+| tippy_tap | 2.95% (depressed) | 2.1% | 7.97% |
+| stride | 0.207 m (inflated) | 0.488 m | 0.163 m |
+| completion | **100%** | 50% | 100% |
+| slip | 3.72% (guardrail breach) | — | 2.31% |
+
+Run aborted at user direction at ~iteration 13000 (62%), saving ~3h: with the degenerate family
+fully established and v1's precedent of no recovery by 20000 iterations, continuation had little
+information value.
+
+**Post-mortem**: the v2 support bonus achieved exactly what it measured — stance counts in the
+{3,4} band and no falls — but the exploit route it left open is now obvious in hindsight: the
+band constraint counts planted *feet*, not body *attitude*. A tipping robot passes through
+3-4-feet-down configurations and collects the full support bonus while rocking all six legs in
+unison; the shape reward's anti-phase channel never engages (tripod 0.0 throughout, roll_rms
+collapsed). Any v3 would need to gate the bonus on body stability (e.g. an upright-pitch/roll
+factor) — a design question deliberately left open rather than auto-iterated, given this
+investigation has now spent three from-scratch-scale attempts (plain 0.401, v1 regression, v2
+partial fix) and 27 fine-tune attempts without beating the plain baked config's emergent 0.401.
