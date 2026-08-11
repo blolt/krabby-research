@@ -1006,6 +1006,7 @@ class RewardTripodSchedule(ManagerTermBase):
         debounce_s: float = 0.08,
         min_swap_interval: float = 0.1,
         max_hold_s: float = 0.6,
+        support_scale: float = 1.0,
     ) -> torch.Tensor:
         contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
         current_contact_time = contact_sensor.data.current_contact_time[:, self.body_ids]
@@ -1020,5 +1021,6 @@ class RewardTripodSchedule(ManagerTermBase):
             current_contact_time, command_xy, self.candidate_sign, self.candidate_streak,
             self.confirmed_sign, self.time_since_confirmed_swap, env.step_dt,
             TRIPOD_A_IDX, TRIPOD_B_IDX, min_cmd_norm, debounce_s, min_swap_interval, max_hold_s,
+            support_scale,
         )
         return reward

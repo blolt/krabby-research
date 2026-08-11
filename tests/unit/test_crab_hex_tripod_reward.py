@@ -16,6 +16,12 @@ Pure torch -- no Isaac Sim needed. These pin down ``crab_hex_tripod_reward.py``'
    ``reward_forward_progress_along_command`` and the stride-length term.
 5. The tripod-A/tripod-B foot groupings are pinned to exactly the same convention the gait-eval
    harness scores against (``gait_eval/metrics.py``'s ``FOOT_ORDER``/``TRIPOD_A``/``TRIPOD_B``).
+6. (v2) The in-band stance-count support bonus: counts 3-4 earn the full ``support_scale``
+   bonus, graded down to exactly 0 at count 0 (flight) and count 6 (all-down) -- so the
+   unison-lunge gait that broke v1 in from-scratch training earns nothing from this term at any
+   phase, while any drift toward keeping one tripod planted earns strictly increasing reward
+   from the first step (support is NOT gated by the anti-freeze timer -- v1's coordination
+   cliff).
 """
 
 import sys
@@ -81,40 +87,49 @@ def _run(contact_time_seq, cmd, min_cmd_norm=0.12, debounce_s=0.08, min_swap_int
 
 
 def test_ideal_alternation_scores_near_max_mean_reward():
-    """A clean, fast tripod alternation (period well under max_hold_s) should score at the shape
-    reward's ceiling of 1.0 every step -- both tripods fully coherent and fully opposed, with
-    alternation frequent enough that the anti-freeze gate never engages."""
+    """A clean, fast tripod alternation (period well under max_hold_s) should score at the
+    term's ceiling of shape(1.0) + support(1.0) every step -- both tripods fully coherent and
+    fully opposed (stance count pinned at 3, squarely in the support band), with alternation
+    frequent enough that the anti-freeze gate never engages."""
     contact_time_seq = (([PHASE_A_PLANTED] * 6) + ([PHASE_B_PLANTED] * 6)) * 3
     rewards = _run(contact_time_seq, cmd=(1.0, 0.0))
     values = [r.item() for r in rewards]
-    assert min(values) == pytest.approx(1.0, abs=1e-6)
-    assert sum(values) / len(values) == pytest.approx(1.0, abs=1e-6)
+    assert min(values) == pytest.approx(2.0, abs=1e-6)
+    assert sum(values) / len(values) == pytest.approx(2.0, abs=1e-6)
 
 
 def test_static_all_six_planted_scores_zero():
     """All six feet planted the whole time is internally coherent for both tripods (a=b=3) but
-    not opposed at all -- must score exactly 0 throughout, not reward a non-gait 'statue'."""
+    not opposed at all -- must score exactly 0 throughout, not reward a non-gait 'statue'. This
+    also pins the v2 support bonus's asymmetric normalization: count 6 must earn support 0
+    exactly (a symmetric /3 normalization would leak +1/3 of the bonus to the all-down half of
+    the unison exploit)."""
     rewards = _run([ALL_PLANTED] * 20, cmd=(1.0, 0.0))
     assert all(r.item() == pytest.approx(0.0, abs=1e-9) for r in rewards)
 
 
-def test_frozen_dominant_tripod_decays_to_zero_past_max_hold():
-    """A tripod that establishes a dominant stance and never swaps again must keep paying out
-    while within max_hold_s of the confirmed swap, then decay to exactly 0 once the hold timer
-    exceeds it -- this is what forces genuine alternation instead of a static (if coherent)
-    stance."""
+def test_frozen_dominant_tripod_decays_to_support_floor_past_max_hold():
+    """A tripod that establishes a dominant stance and never swaps again must lose the shape
+    reward once the hold timer exceeds max_hold_s, decaying from shape+support (2.0) to the
+    support floor (1.0) -- NOT to zero. The support half is deliberately outside the anti-freeze
+    gate (v1 gated everything, which cut off the escape path from a unison gait -- a policy
+    drifting toward one-tripod-planted earned nothing until a full confirmed swap). The parked
+    stance still forfeits tracking/forward-progress reward elsewhere in the config; that, not
+    this term, is what makes parking a net loss."""
     rewards = _run([PHASE_A_PLANTED] * 60, cmd=(1.0, 0.0), max_hold_s=0.6)
     values = [r.item() for r in rewards]
-    assert values[10] == pytest.approx(1.0, abs=1e-6)  # well within the hold window
-    assert values[-1] == pytest.approx(0.0, abs=1e-9)  # 60 steps * 0.02s = 1.2s, well past 0.6s
-    # once it decays it must stay decayed (no spurious re-arming without a real swap)
-    assert all(v == pytest.approx(0.0, abs=1e-9) for v in values[45:])
+    assert values[10] == pytest.approx(2.0, abs=1e-6)  # shape + support, within the hold window
+    assert values[-1] == pytest.approx(1.0, abs=1e-6)  # support floor only, well past 0.6s
+    # once the shape half decays it must stay decayed (no spurious re-arming without a real swap)
+    assert all(v == pytest.approx(1.0, abs=1e-6) for v in values[45:])
 
 
 def test_debounce_rejects_contact_just_below_threshold():
     """A foot's ``current_contact_time`` must exceed ``debounce_s`` to count toward its tripod's
     stance count -- a reading just under the threshold must not move it, matching the
-    flicker-rejection role ``last_contact_time`` plays at liftoff in the stride-length reward."""
+    flicker-rejection role ``last_contact_time`` plays at liftoff in the stride-length reward.
+    Below-threshold contacts read as count 0 -> support 0 too, so a brief-contact pogo gait
+    earns nothing from either half of the term."""
     cmd = torch.tensor([[1.0, 0.0]])
     zero_state = torch.zeros(1)
 
@@ -128,7 +143,7 @@ def test_debounce_rejects_contact_just_below_threshold():
     reward_above, *_ = tripod_schedule_reward_step(
         above, cmd, zero_state, zero_state, zero_state, zero_state, DT, debounce_s=0.08,
     )
-    assert reward_above.item() == pytest.approx(1.0, abs=1e-6)
+    assert reward_above.item() == pytest.approx(2.0, abs=1e-6)  # shape 1.0 + support 1.0 (count 3)
 
 
 def test_min_cmd_norm_gates_reward_to_zero():
@@ -206,8 +221,8 @@ def test_batched_envs_are_independent():
         rewards_env0.append(reward[0].item())
         rewards_env1.append(reward[1].item())
 
-    assert rewards_env0 == pytest.approx([1.0] * 6, abs=1e-6)
-    assert rewards_env1 == pytest.approx([0.0] * 6, abs=1e-9)
+    assert rewards_env0 == pytest.approx([2.0] * 6, abs=1e-6)  # shape 1.0 + support 1.0
+    assert rewards_env1 == pytest.approx([0.0] * 6, abs=1e-9)  # all-six-down: shape 0, support 0
 
 
 def test_tripod_index_mapping_matches_gait_eval_metrics():
@@ -246,5 +261,129 @@ def test_batched_and_broadcastable():
         assert t.shape == (n_envs,)
         assert torch.isfinite(t).all()
     assert torch.isfinite(reward).all()
-    assert (reward >= 0).all()
-    assert (reward <= 1.0).all()
+    assert (reward >= 0).all()  # bonus-dual design: never negative (the manager clips totals at 0)
+    assert (reward <= 2.0).all()  # shape (<=1.0) + support (<=support_scale=1.0)
+
+
+# ------------------------------------------------------------------------------------------
+# v2 support-bonus tests: the unison-lunge exploit that broke v1 in from-scratch training
+# ------------------------------------------------------------------------------------------
+
+def _ramping_unison_lunge_seq(n_cycles=4, down_steps=8, flight_steps=6):
+    """The gait v1's from-scratch run converged on: all six feet slam down together (contact
+    times ramping realistically through the debounce window), then a full flight phase."""
+    seq = []
+    for _ in range(n_cycles):
+        for i in range(down_steps):
+            t = (i + 1) * DT  # contact time grows while planted; clears debounce_s=0.08 at step 4
+            seq.append([t] * 6)
+        for _ in range(flight_steps):
+            seq.append([0.0] * 6)
+    return seq
+
+
+def test_unison_lunge_earns_nothing_and_alternation_dominates():
+    """THE v1 regression test: the all-legs-together lunge gait must earn ~0 total (flight reads
+    count 0 -> support 0; stable all-down reads count 6 -> support 0; a==b throughout -> shape 0;
+    the only nonzero steps are the brief sub-debounce ramp moments, which cap at support 2/3),
+    while an ideal alternation over the same number of steps earns close to the 2.0/step ceiling
+    -- the differential is what gives training a consistent reason to prefer alternation."""
+    unison = _ramping_unison_lunge_seq()
+    rewards_unison = _run(unison, cmd=(1.0, 0.0))
+    total_unison = sum(r.item() for r in rewards_unison)
+
+    alternation = (([PHASE_A_PLANTED] * 7) + ([PHASE_B_PLANTED] * 7)) * 4
+    rewards_alt = _run(alternation[: len(unison)], cmd=(1.0, 0.0))
+    total_alt = sum(r.item() for r in rewards_alt)
+
+    # Unison: stable all-down and flight steps are exactly 0; only the 3 sub-debounce ramp steps
+    # per cycle are nonzero (counts pass 0->6 through the band), so the mean stays far below 1.
+    assert total_unison / len(unison) < 0.35
+    assert total_alt / len(unison) == pytest.approx(2.0, abs=1e-6)
+    assert total_alt > 5 * total_unison
+
+
+def test_partial_perturbation_toward_tripod_beats_pure_unison_from_step_one():
+    """Pins the support-outside-anti-freeze design (v1's coordination cliff): a policy that
+    merely keeps tripod A planted through the flight phase -- no confirmed swap, ever -- must
+    out-earn pure unison immediately, giving the escape path a slope from the first step."""
+    down_steps, flight_steps = 8, 6
+    pure, partial = [], []
+    for _ in range(4):
+        for i in range(down_steps):
+            t = (i + 1) * DT
+            pure.append([t] * 6)
+            partial.append([t] * 6)
+        for j in range(flight_steps):
+            pure.append([0.0] * 6)
+            # tripod A (indices 0, 3, 4) stays planted, contact time still accumulating
+            t_a = (down_steps + j + 1) * DT
+            partial.append([t_a, 0.0, 0.0, t_a, t_a, 0.0])
+    rewards_pure = _run(pure, cmd=(1.0, 0.0))
+    rewards_partial = _run(partial, cmd=(1.0, 0.0))
+
+    # During every flight step, partial reads count 3 (support 1.0) vs pure's count 0 (0.0).
+    flight_indices = [c * (down_steps + flight_steps) + down_steps + j
+                      for c in range(4) for j in range(flight_steps)]
+    for idx in flight_indices:
+        assert rewards_partial[idx].item() > rewards_pure[idx].item() + 0.5
+    assert sum(r.item() for r in rewards_partial) > sum(r.item() for r in rewards_pure) + 5.0
+
+
+def test_support_bonus_graded_counts():
+    """The graded ramp at intermediate counts is the mechanism (a binary in-band indicator would
+    recreate v1's flat-zero escape surface): counts 1/2/5/6 -> support 1/3, 2/3, 1/2, 0, and all
+    of these are shape-incoherent or non-opposed, so the reward is the support value alone."""
+    cmd = torch.tensor([[1.0, 0.0]])
+    zero = torch.zeros(1)
+    cases = [
+        ([999.0, 0.0, 0.0, 0.0, 0.0, 0.0], 1.0 / 3.0),          # count 1 (one A foot)
+        ([999.0, 0.0, 0.0, 999.0, 0.0, 0.0], 2.0 / 3.0),        # count 2 (two A feet)
+        ([999.0, 999.0, 999.0, 999.0, 999.0, 0.0], 0.5),        # count 5
+        ([999.0] * 6, 0.0),                                      # count 6 (all-down)
+    ]
+    for contact, expected in cases:
+        reward, *_ = tripod_schedule_reward_step(
+            torch.tensor([contact]), cmd, zero, zero, zero, zero, DT,
+        )
+        assert reward.item() == pytest.approx(expected, abs=1e-6), contact
+
+
+def test_support_bonus_gated_by_command():
+    """The support half obeys the same min_cmd_norm gate as the shape half -- an in-band stance
+    while commanded to stand still earns nothing (no bonus-farming while parked at zero cmd)."""
+    cmd_idle = torch.tensor([[0.01, 0.0]])
+    zero = torch.zeros(1)
+    in_band = torch.tensor([[999.0, 0.0, 0.0, 999.0, 999.0, 0.0]])  # count 3
+    reward, *_ = tripod_schedule_reward_step(
+        in_band, cmd_idle, zero, zero, zero, zero, DT, min_cmd_norm=0.12,
+    )
+    assert reward.item() == pytest.approx(0.0, abs=1e-9)
+
+
+def test_swap_window_dip_never_negative_and_recovers():
+    """A genuine tripod swap passes through a window where the total is 0 (old set lifted while
+    the new set's contacts haven't cleared debounce yet -> count 0) or 6 (double stance) -- the
+    reward may dip to 0 there but never goes negative (no per-swap tax, unlike a penalty form
+    under the manager's zero-clip), and recovers to the full ceiling once the new set is stable
+    and the swap confirms."""
+    seq = [PHASE_A_PLANTED] * 7
+    # A lifts, B ramping but below debounce: count 0 for 3 steps
+    for i in range(3):
+        t = (i + 1) * DT
+        seq.append([0.0, t, t, 0.0, 0.0, t])
+    # B stable from here on
+    seq += [PHASE_B_PLANTED] * 10
+    rewards = _run(seq, cmd=(1.0, 0.0))
+    values = [r.item() for r in rewards]
+    assert all(v >= -1e-9 for v in values)
+    assert min(values[7:10]) == pytest.approx(0.0, abs=1e-6)  # the dip window
+    assert values[-1] == pytest.approx(2.0, abs=1e-6)  # recovered: stable B + confirmed swap
+
+
+def test_episode_start_all_airborne_is_exactly_zero():
+    """Spawn transient (robot dropped in, no contacts registered yet): count 0 -> support 0 and
+    shape 0, so the term contributes exactly nothing -- the bonus form makes the episode-start
+    debounce window a non-issue rather than an unavoidable penalty."""
+    rewards = _run([[0.0] * 6] * 5, cmd=(1.0, 0.0))
+    assert all(r.item() == pytest.approx(0.0, abs=1e-9) for r in rewards)

@@ -764,6 +764,9 @@ class CrabHexFlatWalkRewardsCfg:
     # registered at weight 0.0 (inert). None of the config-only knobs tried in
     # sim_fine_tuning/2026-08-10_0058_tripod_stability/ moved tripod_score, so this term rewards
     # genuine tripod-set alternation directly -- see crab_hex_tripod_reward.py for the full math.
+    # v2 added the in-band stance-count support bonus (support_scale) after v1's from-scratch test
+    # collapsed into a unison lunging gait that v1 scored 0 (no gradient against it) -- see the v2
+    # addendum in crab_hex_tripod_reward.py and the campaign RESULTS.md.
     reward_tripod_schedule = RewTerm(
         func=mdp_rewards.RewardTripodSchedule,
         weight=0.0,
@@ -774,6 +777,7 @@ class CrabHexFlatWalkRewardsCfg:
             "debounce_s": 0.08,
             "min_swap_interval": 0.1,
             "max_hold_s": 0.6,
+            "support_scale": 1.0,
         },
     )
     reward_lin_vel_z = RewTerm(

@@ -41,6 +41,35 @@ Reward is zero whenever the commanded planar speed is below ``min_cmd_norm`` (ma
 ``reward_forward_progress_along_command`` and the stride-length term's gating -- no reward for
 standing still or pure in-place turning, where "tripod gait" isn't a meaningful concept).
 
+**v2 addendum (in-band stance-count support bonus).** v1 of this term -- just the shape reward
+and anti-freeze gate above -- caused a catastrophic regression when trained from scratch (see
+`sim_fine_tuning/2026-08-10_0058_tripod_stability/RESULTS.md`): the policy converged on a unison
+lunging gait (all legs moving together, flight phases, 0.488m strides, half the eval episodes
+ending in falls). Two structural flaws enabled that: (1) unison motion keeps ``a == b`` at all
+times, so ``|a - b| = 0`` and v1 scored it exactly 0 -- no gradient *away* from the exploit, only
+a failure to reward it; (2) the anti-freeze gate zeroes ``r_shape`` for any never-swapping policy
+within 0.6s of episode start, so even a policy drifting *toward* alternation earned nothing until
+it produced a full confirmed swap -- a coordination cliff v1 never climbed.
+
+v2 adds the Task 1 §2.3 stance-count band constraint ("penalize stance counts outside {3, 4}
+during commanded motion") -- but as its reward-dual, an in-band **support bonus**, because
+``ParkourRewardManager.compute`` clips the summed per-step reward at zero (legged-gym
+convention): a literal penalty would be silently clipped away exactly during the exploit's
+flight/all-down phases, where the other terms already sum non-positive. Under PPO advantage
+normalization the bonus is the same shaping as the penalty, but it survives the clip:
+
+    support = 1 - relu(3 - total)/3 - relu(total - 4)/2   (total = a + b, debounced)
+
+i.e. count 0 (flight) -> 0, 1 -> 1/3, 2 -> 2/3, counts 3-4 (proper tripod / double-stance) -> 1,
+5 -> 1/2, 6 (all-down) -> 0. The asymmetric normalization pins *both* halves of the unison
+exploit at exactly 0, and the graded ramp at counts 1/2/5 is the mechanism that gives the
+escape path a slope (a binary in-band indicator would recreate v1's flat-zero surface).
+Critically, the support term is **not** gated by the anti-freeze timer -- a policy drifting
+toward keeping one tripod planted earns strictly increasing reward from the first step, no
+confirmed swap required. The accepted trade-off is that a parked in-band stance earns
+``support_scale`` from this term indefinitely; the tracking/forward-progress/foot-idle terms
+are what make parking a net loss overall.
+
 See ``RewardTripodSchedule`` in ``parkour_isaaclab/envs/mdp/rewards.py`` for the stateful
 ``ManagerTermBase`` wrapper that drives this from real env/sensor data (specifically
 ``ContactSensor.data.current_contact_time``, which already gives the "seconds continuously in
@@ -77,6 +106,7 @@ def tripod_schedule_reward_step(
     debounce_s: float = 0.08,
     min_swap_interval: float = 0.1,
     max_hold_s: float = 0.6,
+    support_scale: float = 1.0,
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """One step of the tripod-alternation reward's state machine.
 
@@ -102,9 +132,15 @@ def tripod_schedule_reward_step(
             exceeds this -- rejects a single spurious contact-sensor step from moving the count.
         min_swap_interval: a new raw dominant sign must persist this long before it's accepted as
             a genuine swap (debounces swap detection separately from per-foot contact debounce).
-        max_hold_s: the reward is zeroed once the confirmed dominant set has held longer than this
-            without a new confirmed swap -- forces alternation rather than a static coherent
-            stance, mirroring the eval metric's degenerate-signal handling.
+        max_hold_s: the shape reward is zeroed once the confirmed dominant set has held longer
+            than this without a new confirmed swap -- forces alternation rather than a static
+            coherent stance, mirroring the eval metric's degenerate-signal handling. (The support
+            bonus is deliberately NOT gated by this timer -- see the v2 addendum.)
+        support_scale: weight of the in-band stance-count support bonus relative to the shape
+            reward (see the v2 addendum). The bonus is 1.0 at stance counts 3-4, graded down to
+            0.0 at counts 0 (flight) and 6 (all-down), so both halves of the unison-lunge exploit
+            earn nothing from this term while every step of a proper tripod gait earns the full
+            bonus.
 
     Returns:
         ``(reward[N], new_candidate_sign[N], new_candidate_streak[N], new_confirmed_sign[N],
@@ -140,9 +176,15 @@ def tripod_schedule_reward_step(
 
     anti_freeze = (new_time_since_swap <= max_hold_s).float()
 
+    # In-band stance-count support bonus (v2): 1.0 at counts 3-4, graded to 0.0 at both 0
+    # (flight) and 6 (all-down). Deliberately outside the anti-freeze gate so the escape path
+    # from a unison gait has a slope from the very first step.
+    total = a + b
+    support = 1.0 - torch.relu(3.0 - total) / 3.0 - torch.relu(total - 4.0) / 2.0
+
     cmd_norm = torch.norm(command_xy, dim=1)
     cmd_active = (cmd_norm > min_cmd_norm).float()
 
-    reward = r_shape * anti_freeze * cmd_active
+    reward = (r_shape * anti_freeze + support_scale * support) * cmd_active
 
     return reward, new_candidate_sign, new_candidate_streak, new_confirmed_sign, new_time_since_swap
