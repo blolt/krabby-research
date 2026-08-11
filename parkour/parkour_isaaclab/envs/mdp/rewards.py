@@ -988,6 +988,8 @@ class RewardTripodSchedule(ManagerTermBase):
         self.candidate_streak = torch.zeros(env.num_envs, device=self.device)
         self.confirmed_sign = torch.zeros(env.num_envs, device=self.device)
         self.time_since_confirmed_swap = torch.zeros(env.num_envs, device=self.device)
+        # v3 stability-gate state: EMA of |v_z_world|. Reset to 0 = gate fully open.
+        self.vertical_speed_ema = torch.zeros(env.num_envs, device=self.device)
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         if env_ids is None:
@@ -996,10 +998,12 @@ class RewardTripodSchedule(ManagerTermBase):
         self.candidate_streak[env_ids] = 0.0
         self.confirmed_sign[env_ids] = 0.0
         self.time_since_confirmed_swap[env_ids] = 0.0
+        self.vertical_speed_ema[env_ids] = 0.0
 
     def __call__(
         self,
         env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
         sensor_cfg: SceneEntityCfg,
         command_name: str,
         min_cmd_norm: float = 0.12,
@@ -1007,20 +1011,27 @@ class RewardTripodSchedule(ManagerTermBase):
         min_swap_interval: float = 0.1,
         max_hold_s: float = 0.6,
         support_scale: float = 1.0,
+        vz_ema_tau: float = 0.5,
+        vz_gate_lo: float = 0.20,
+        vz_gate_hi: float = 0.50,
     ) -> torch.Tensor:
+        asset: Articulation = env.scene[asset_cfg.name]
         contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
         current_contact_time = contact_sensor.data.current_contact_time[:, self.body_ids]
         command_xy = env.command_manager.get_command(command_name)[:, :2]
+        root_lin_vel_w_z = asset.data.root_lin_vel_w[:, 2]
         (
             reward,
             self.candidate_sign,
             self.candidate_streak,
             self.confirmed_sign,
             self.time_since_confirmed_swap,
+            self.vertical_speed_ema,
         ) = tripod_schedule_reward_step(
             current_contact_time, command_xy, self.candidate_sign, self.candidate_streak,
             self.confirmed_sign, self.time_since_confirmed_swap, env.step_dt,
             TRIPOD_A_IDX, TRIPOD_B_IDX, min_cmd_norm, debounce_s, min_swap_interval, max_hold_s,
-            support_scale,
+            support_scale, root_lin_vel_w_z, self.vertical_speed_ema,
+            vz_ema_tau, vz_gate_lo, vz_gate_hi,
         )
         return reward

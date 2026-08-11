@@ -70,6 +70,31 @@ confirmed swap required. The accepted trade-off is that a parked in-band stance 
 ``support_scale`` from this term indefinitely; the tracking/forward-progress/foot-idle terms
 are what make parking a net loss overall.
 
+**v3 addendum (body-stability gate on the support bonus).** v2's from-scratch test converged on
+a tip-over-and-correct unison gait (see the campaign RESULTS.md): the support bonus fixed v1's
+falls (100% completion) but counts planted *feet*, not body *attitude* -- a tipping robot passes
+through 3-4-feet-down configurations and farms the bonus while rocking all six legs in unison
+(tripod 0.0 throughout, roll_rms collapsed to 0.014 vs the healthy 0.038). v3 multiplies the
+support half (only) by a stability gate. The gate signal was chosen from measured eval data, not
+intuition -- pitch magnitude cannot discriminate (degenerate pitch_rms 0.2095 vs healthy 0.211,
+both dominated by the healthy gait's own sustained ~12deg lean) and body angular rates are
+*anti*-discriminative (healthy ``|w_xy|`` 0.72 vs degenerate 0.55 rad/s -- the rocking is
+smoother than walking's leg-cycle jitter). The clean separator is EMA-smoothed world-frame
+vertical speed: healthy episodes p95 <= 0.237 m/s vs v2-degenerate p05 >= 0.362 (no overlap;
+cross-validated against v1's lunge). Causally sound: every exploit found so far pumps the CoM
+vertically, while a tripod gait's whole point is keeping it level.
+
+    s = EMA(|v_z_world|, tau=0.5s);   gate = clamp((hi - s) / (hi - lo), 0, 1)
+
+with ``(lo, hi) = (0.20, 0.50)``: a clamped linear ramp, not a binary threshold (advantage-noise
+cliff + v1-style flat-zero surface) and not an exponential (which would apply shaping pressure
+inside the healthy band). The flat-1 shoulder above the healthy band means the healthy gait's
+own vertical dynamics are completely unpenalized (measured transmission 0.996), while the ramp
+keeps a nonzero slope across most of the degenerate EMA range (0.36-0.62) so an exploit that
+bounces less earns measurably more -- an escape slope, not a cliff. The EMA state must reset to
+0 (gate fully open) on episode reset, or freshly-reset envs would inherit a closed gate and
+healthy post-reset exploration would go unrewarded.
+
 See ``RewardTripodSchedule`` in ``parkour_isaaclab/envs/mdp/rewards.py`` for the stateful
 ``ManagerTermBase`` wrapper that drives this from real env/sensor data (specifically
 ``ContactSensor.data.current_contact_time``, which already gives the "seconds continuously in
@@ -107,7 +132,12 @@ def tripod_schedule_reward_step(
     min_swap_interval: float = 0.1,
     max_hold_s: float = 0.6,
     support_scale: float = 1.0,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    root_lin_vel_w_z: torch.Tensor | None = None,
+    vertical_speed_ema: torch.Tensor | None = None,
+    vz_ema_tau: float = 0.5,
+    vz_gate_lo: float = 0.20,
+    vz_gate_hi: float = 0.50,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """One step of the tripod-alternation reward's state machine.
 
     Args:
@@ -141,10 +171,20 @@ def tripod_schedule_reward_step(
             0.0 at counts 0 (flight) and 6 (all-down), so both halves of the unison-lunge exploit
             earn nothing from this term while every step of a proper tripod gait earns the full
             bonus.
+        root_lin_vel_w_z: ``[N]`` world-frame vertical velocity of the robot base (m/s). If
+            ``None`` (with ``vertical_speed_ema`` also ``None``), the v3 stability gate is
+            bypassed (gate = 1.0), preserving v2 behavior for callers that don't provide it.
+        vertical_speed_ema: ``[N]`` state in -- EMA of ``|root_lin_vel_w_z|`` (see the v3
+            addendum). Must be reset to 0 (gate fully open) on episode reset.
+        vz_ema_tau: EMA time constant (s) for the vertical-speed smoothing.
+        vz_gate_lo: EMA level at/below which the support gate is fully open (1.0) -- sits above
+            the healthy gait's measured band (p95 0.237) so normal walking is never penalized.
+        vz_gate_hi: EMA level at/above which the support gate is fully closed (0.0) -- sits
+            inside the measured degenerate band (p05 0.362, median ~0.49).
 
     Returns:
         ``(reward[N], new_candidate_sign[N], new_candidate_streak[N], new_confirmed_sign[N],
-        new_time_since_confirmed_swap[N])``.
+        new_time_since_confirmed_swap[N], new_vertical_speed_ema[N])``.
     """
     contact_stable = current_contact_time > debounce_s
     a = contact_stable[:, list(tripod_a_idx)].sum(dim=1).float()
@@ -182,9 +222,25 @@ def tripod_schedule_reward_step(
     total = a + b
     support = 1.0 - torch.relu(3.0 - total) / 3.0 - torch.relu(total - 4.0) / 2.0
 
+    # Body-stability gate (v3): clamped linear ramp on the EMA of world-frame vertical speed.
+    # Applies to the support half only -- a tipping/bouncing body loses the stance bonus even
+    # when 3-4 feet happen to be planted mid-rock. Flat-1 shoulder above the healthy band, so
+    # normal walking is never penalized; graded slope through the degenerate band, so "bounce
+    # less" always earns more (escape slope, not a cliff).
+    if root_lin_vel_w_z is not None and vertical_speed_ema is not None:
+        alpha = min(dt / vz_ema_tau, 1.0)
+        new_vertical_speed_ema = vertical_speed_ema + alpha * (root_lin_vel_w_z.abs() - vertical_speed_ema)
+        gate = torch.clamp((vz_gate_hi - new_vertical_speed_ema) / (vz_gate_hi - vz_gate_lo), 0.0, 1.0)
+    else:
+        new_vertical_speed_ema = torch.zeros_like(a)
+        gate = torch.ones_like(a)
+
     cmd_norm = torch.norm(command_xy, dim=1)
     cmd_active = (cmd_norm > min_cmd_norm).float()
 
-    reward = (r_shape * anti_freeze + support_scale * support) * cmd_active
+    reward = (r_shape * anti_freeze + support_scale * support * gate) * cmd_active
 
-    return reward, new_candidate_sign, new_candidate_streak, new_confirmed_sign, new_time_since_swap
+    return (
+        reward, new_candidate_sign, new_candidate_streak, new_confirmed_sign,
+        new_time_since_swap, new_vertical_speed_ema,
+    )

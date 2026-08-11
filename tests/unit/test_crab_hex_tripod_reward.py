@@ -56,13 +56,16 @@ PHASE_B_PLANTED = [0.0, 999.0, 999.0, 0.0, 0.0, 999.0]  # tripod B fully planted
 ALL_PLANTED = [999.0] * 6
 
 
-def _run(contact_time_seq, cmd, min_cmd_norm=0.12, debounce_s=0.08, min_swap_interval=0.1, max_hold_s=0.6):
+def _run(contact_time_seq, cmd, min_cmd_norm=0.12, debounce_s=0.08, min_swap_interval=0.1,
+         max_hold_s=0.6, vz_seq=None, vz_gate_lo=0.20, vz_gate_hi=0.50, vz_ema_tau=0.5):
     """Drive the pure function across a sequence of steps for a single env.
 
     Args:
         contact_time_seq: list of length-6 sequences, ``current_contact_time`` per foot
             (FOOT_ORDER) at each step.
         cmd: ``(cx, cy)`` commanded planar velocity, held constant across the sequence.
+        vz_seq: optional list of world-frame vertical velocities, one per step. ``None`` keeps
+            the v3 stability gate bypassed (gate = 1.0, pre-v3 semantics).
 
     Returns:
         list of per-step reward tensors (shape ``[1]``), one per step.
@@ -71,16 +74,21 @@ def _run(contact_time_seq, cmd, min_cmd_norm=0.12, debounce_s=0.08, min_swap_int
     candidate_streak = torch.zeros(1)
     confirmed_sign = torch.zeros(1)
     time_since_confirmed_swap = torch.zeros(1)
+    vertical_speed_ema = torch.zeros(1) if vz_seq is not None else None
     command_xy = torch.tensor([[cmd[0], cmd[1]]], dtype=torch.float32)
     rewards = []
-    for contact_time in contact_time_seq:
+    for i, contact_time in enumerate(contact_time_seq):
         ct = torch.tensor([contact_time], dtype=torch.float32)
+        vz = torch.tensor([vz_seq[i]], dtype=torch.float32) if vz_seq is not None else None
         (
             reward, candidate_sign, candidate_streak, confirmed_sign, time_since_confirmed_swap,
+            vertical_speed_ema,
         ) = tripod_schedule_reward_step(
             ct, command_xy, candidate_sign, candidate_streak, confirmed_sign,
             time_since_confirmed_swap, DT, min_cmd_norm=min_cmd_norm, debounce_s=debounce_s,
             min_swap_interval=min_swap_interval, max_hold_s=max_hold_s,
+            root_lin_vel_w_z=vz, vertical_speed_ema=vertical_speed_ema if vz_seq is not None else None,
+            vz_ema_tau=vz_ema_tau, vz_gate_lo=vz_gate_lo, vz_gate_hi=vz_gate_hi,
         )
         rewards.append(reward)
     return rewards
@@ -174,6 +182,7 @@ def test_reset_clears_accumulated_state():
         ct = torch.tensor([contact_time], dtype=torch.float32)
         (
             _, candidate_sign, candidate_streak, confirmed_sign, time_since_confirmed_swap,
+            _ema,
         ) = tripod_schedule_reward_step(
             ct, command_xy, candidate_sign, candidate_streak, confirmed_sign,
             time_since_confirmed_swap, DT,
@@ -191,6 +200,7 @@ def test_reset_clears_accumulated_state():
         ct = torch.tensor([contact_time], dtype=torch.float32)
         (
             reward, candidate_sign, candidate_streak, confirmed_sign, time_since_confirmed_swap,
+            _ema,
         ) = tripod_schedule_reward_step(
             ct, command_xy, candidate_sign, candidate_streak, confirmed_sign,
             time_since_confirmed_swap, DT,
@@ -214,6 +224,7 @@ def test_batched_envs_are_independent():
         ct = torch.tensor([PHASE_A_PLANTED, ALL_PLANTED], dtype=torch.float32)
         (
             reward, candidate_sign, candidate_streak, confirmed_sign, time_since_confirmed_swap,
+            _ema,
         ) = tripod_schedule_reward_step(
             ct, command_xy, candidate_sign, candidate_streak, confirmed_sign,
             time_since_confirmed_swap, DT,
@@ -252,6 +263,7 @@ def test_batched_and_broadcastable():
 
     (
         reward, new_candidate_sign, new_candidate_streak, new_confirmed_sign, new_time_since_swap,
+        _new_ema,
     ) = tripod_schedule_reward_step(
         current_contact_time, command_xy, candidate_sign, candidate_streak, confirmed_sign,
         time_since_confirmed_swap, DT,
@@ -387,3 +399,75 @@ def test_episode_start_all_airborne_is_exactly_zero():
     debounce window a non-issue rather than an unavoidable penalty."""
     rewards = _run([[0.0] * 6] * 5, cmd=(1.0, 0.0))
     assert all(r.item() == pytest.approx(0.0, abs=1e-9) for r in rewards)
+
+
+# ------------------------------------------------------------------------------------------
+# v3 body-stability gate tests: the tip-over-and-correct exploit that survived v2
+# ------------------------------------------------------------------------------------------
+
+ALTERNATION_36 = (([PHASE_A_PLANTED] * 6) + ([PHASE_B_PLANTED] * 6)) * 3
+
+
+def test_stability_gate_open_for_level_body():
+    """A level-walking body (|v_z| well under vz_gate_lo) must keep the full v2 payout --
+    the flat-1 shoulder means healthy gait dynamics see zero shaping pressure from the gate."""
+    rewards = _run(ALTERNATION_36, cmd=(1.0, 0.0), vz_seq=[0.10] * len(ALTERNATION_36))
+    values = [r.item() for r in rewards]
+    assert min(values) == pytest.approx(2.0, abs=1e-6)
+
+
+def test_fresh_env_starts_gate_open():
+    """EMA state starts at 0 (gate fully open): even with a violently bouncing body, the very
+    first step after reset pays the full bonus -- a closed post-reset gate would bias against
+    healthy exploration (the v3 implementation-trap the design review flagged)."""
+    rewards = _run(ALTERNATION_36, cmd=(1.0, 0.0), vz_seq=[0.80] * len(ALTERNATION_36))
+    assert rewards[0].item() == pytest.approx(2.0, abs=1e-2)
+
+
+def test_stability_gate_closes_on_bouncing_body_but_shape_unaffected():
+    """A bouncing body (|v_z| above vz_gate_hi once the EMA converges) must lose the support
+    bonus -- but the shape (anti-phase) half is deliberately ungated, so genuine alternation
+    still pays 1.0/step even while bouncing. The gate targets the support channel that the
+    tip-and-correct exploit farmed, not the alternation signal itself."""
+    seq = ALTERNATION_36 * 3  # 108 steps, plenty for the EMA to converge past vz_gate_hi
+    rewards = _run(seq, cmd=(1.0, 0.0), vz_seq=[0.80] * len(seq))
+    values = [r.item() for r in rewards]
+    # EMA(0.8): exceeds hi=0.50 after ~24 steps (alpha=0.04); late steps are shape-only.
+    assert values[-1] == pytest.approx(1.0, abs=1e-3)
+    assert min(values[40:]) == pytest.approx(1.0, abs=1e-3)
+    # early steps still paid the full bonus while the EMA was low
+    assert values[0] == pytest.approx(2.0, abs=1e-2)
+
+
+def test_stability_gate_graded_between_thresholds():
+    """The ramp is linear between lo and hi: a body hovering at EMA ~0.35 (gap midpoint) keeps
+    ~half the support bonus -- an escape slope for exploits, not a binary cliff."""
+    seq = ALTERNATION_36 * 5  # 180 steps for tight EMA convergence to 0.35
+    rewards = _run(seq, cmd=(1.0, 0.0), vz_seq=[0.35] * len(seq))
+    # gate -> (0.50 - 0.35) / 0.30 = 0.5; reward -> shape 1.0 + support 0.5
+    assert rewards[-1].item() == pytest.approx(1.5, abs=2e-2)
+
+
+def test_stability_gate_reopens_when_bouncing_stops():
+    """The EMA decays once the body levels out -- the gate is a running assessment, not a
+    latched punishment; a policy that stops bouncing gets its bonus back within ~tau seconds."""
+    n_bounce, n_calm = 48, 132
+    seq = ALTERNATION_36 * 5
+    vz = [0.80] * n_bounce + [0.0] * n_calm
+    rewards = _run(seq[: len(vz)], cmd=(1.0, 0.0), vz_seq=vz)
+    values = [r.item() for r in rewards]
+    assert min(values[40:n_bounce]) == pytest.approx(1.0, abs=1e-2)  # gate closed while bouncing
+    assert values[-1] == pytest.approx(2.0, abs=1e-2)  # fully reopened after calming
+
+
+def test_unison_lunge_with_realistic_vz_earns_less_than_without():
+    """The v2-exploit regression test, upgraded: the unison lunge's band-transit crumbs (the
+    only nonzero steps v2 left it) shrink further once its own vertical bouncing closes the
+    gate. The gate must only ever reduce the exploit's take, never increase it."""
+    unison = _ramping_unison_lunge_seq()
+    # Bouncing profile: high |v_z| during the slam-down and flight transitions.
+    vz = ([0.6] * 8 + [0.7] * 6) * 4
+    r_without = sum(r.item() for r in _run(unison, cmd=(1.0, 0.0)))
+    r_with = sum(r.item() for r in _run(unison, cmd=(1.0, 0.0), vz_seq=vz[: len(unison)]))
+    assert r_with <= r_without + 1e-6
+    assert r_with / len(unison) < 0.2
