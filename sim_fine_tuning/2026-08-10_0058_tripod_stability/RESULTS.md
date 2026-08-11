@@ -102,3 +102,45 @@ run reliably reaches ~0.40 with zero reward-code changes. This is strong, repeat
 tripod-phasing quality is substantially determined by from-scratch training dynamics and does not
 respond to reward shaping applied on top of an already-converged checkpoint within a short
 fine-tune window.
+
+## From-scratch confirmation: reward_tripod_schedule active from training start
+
+Per explicit user request (option 2 of the accept/from-scratch-retrain/more-fine-tune-variants
+choice): tested whether the new reward helps when active *from the start* of training, rather
+than fine-tuned on top of an already-converged policy. 20000-iter from-scratch flat-walk run,
+`env.rewards.reward_tripod_schedule.weight=0.15` (the weight with the tightest per-episode
+spread in the fine-tune sweep), otherwise the baked default config. Training completed all 20000
+iterations without crashing (`crab_failure` 3.12% in the final windowed block), but training-time
+`error_vel_xy` was elevated (0.91 vs. the typical 0.17-0.21 range) — a warning sign that showed up
+clearly in the held-out eval.
+
+Checkpoint: `fromscratch_tripod_reward_w0.15/logs/rsl_rl/crab_hex_flat_walk/2026-08-10_20-08-53/model_19999.pt`.
+
+| metric | this run | no-reward from-scratch baseline | fine-tune sweep best |
+|---|---|---|---|
+| tripod (median) | **0.0** (per-ep: 0,0,0,0,0,0,0,None,0,0) | 0.401 / 0.425 | 0.412 (a7) |
+| completion | **50%** (5/10 episodes ended in **fall**) | 100% | 100% |
+| tippy_tap | 2.11% | 7.97% | ~7-8% |
+| stride (pooled) | **0.488 m** (vs ~0.16-0.17m everywhere else) | 0.163 m | ~0.16 m |
+| pitch_rms | 0.260 rad (worse) | 0.211 rad | ~0.21 rad |
+| roll_rms | 0.011 rad (much lower) | 0.038 rad | ~0.037-0.038 rad |
+| signed mean pitch | 0.243 rad (worse) | 0.209 rad | ~0.21 rad |
+
+**This is a genuine regression, not a null result.** Tripod is exactly 0.0 in every scored episode
+— worse than the untrained series' historical 0.0-0.025 range, and half the episodes end in a
+fall. The unusually low tippy_tap combined with an unusually large pooled stride and low roll_rms
+is consistent with the policy finding a degenerate exploit: rather than learning tripod
+alternation, it appears to have converged on an unstable, high-displacement gait pattern
+(plausibly moving multiple/all legs together rather than alternating tripods, which would score
+exactly 0 on this reward term since `a == b` whenever legs move in unison — the term provides no
+gradient signal away from that degenerate solution, and may have interacted badly with the
+already-registered `reward_stride_length` term's incentive for long, infrequent stance-phase
+displacement). Training-time `error_vel_xy` being 4-5x the typical range was an early warning
+sign of exactly this kind of divergence.
+
+**Consequence**: `reward_tripod_schedule` should NOT be enabled (stays at its registered default
+of weight=0.0, harmless/inert) — not just "doesn't help" but "actively harmful" when active from
+the start of training. Combined with the fine-tune sweep's clean null result, **0.401 (the plain
+baked-config from-scratch checkpoint, no tripod-specific reward at all) remains the best tripod
+result found across this entire investigation** — 26 total training attempts across two campaigns,
+two reward-shaping approaches, and both fine-tune and from-scratch conditions.
