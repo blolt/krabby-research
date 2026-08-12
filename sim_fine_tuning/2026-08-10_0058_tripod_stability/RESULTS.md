@@ -491,3 +491,20 @@ historic noise band (0.38-0.42; the baseline itself measured 0.425 once), so unc
 b7b (pitch −0.25) skipped — Phase A proved that axis inert. Confirmation probe: **b7c** =
 extend b7 +3000 iters; ≥0.43 clean → real trend (bake-proposal path); ≤0.41 → noise →
 campaign-decision stop.
+
+## b7c: +3000 — trend CONFIRMED real; eval determinism discovered
+
+b7c (model_24997): tripod **0.4248**, completion 100%, slip 2.30%, roll 0.0382, EMA **0.1252**
+(campaign best), tippy 7.2%, swaps 214, pitch +0.208 (still unmoved). Sequence 0.401 → 0.418 →
+0.425 over the b7 arm.
+
+**Methodology fix**: re-evaluating b7's model_21998 reproduced 0.4181258685592313 bit-for-bit —
+the eval harness is deterministic for a fixed checkpoint. "Eval noise" does not exist on this
+protocol; the correct yardstick is within-family checkpoint spread, which for the b6 series was
+±0.003 (0.400/0.403/0.405). b7's +0.017 and b7c's +0.024 are 5-8× that spread: the combo gain
+is REAL. (Step-0's 0.425 baseline reading must have come from a different checkpoint/protocol —
+on this exact protocol the baseline measures 0.401-0.405.)
+
+Continuing: b7d = +3000 more. If ≥0.43 → bake proposal (v5@0.3 + pitch −0.1). If plateau ~0.425
+→ bake proposal anyway with the plateau documented (+0.02-0.024 real tripod, slip −0.3pp, EMA
+−0.01, +200 swaps, zero degradation across 5 runs of the family).
