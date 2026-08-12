@@ -181,3 +181,39 @@ collapsed). Any v3 would need to gate the bonus on body stability (e.g. an uprig
 factor) — a design question deliberately left open rather than auto-iterated, given this
 investigation has now spent three from-scratch-scale attempts (plain 0.401, v1 regression, v2
 partial fix) and 27 fine-tune attempts without beating the plain baked config's emergent 0.401.
+
+## v3: body-stability gate — short-run screen (FAIL)
+
+v3 (commit a7fd480) multiplies the support bonus by a clamped ramp on EMA(|v_z_world|, τ=0.5s)
+with (lo, hi) = (0.20, 0.50) — signal chosen from measured data after pitch magnitude (identical
+between healthy/degenerate) and angular rates (anti-discriminative) were refuted. Screened per
+the new iterative protocol: 3000-iter from-scratch run (~1h), two-point gait-eval against the
+healthy baseline's own 2000/3000-iter checkpoints (evaluated once as references).
+
+| | H2000 (healthy ref) | H3000 (healthy ref) | v3@2000 | v3@2999 |
+|---|---|---|---|---|
+| tripod | 0.358 | 0.335 | 0.0 (all eps) | 0.0 (all eps) |
+| tippy_tap | 6.43% | 6.48% | **33.1%** (inflated) | **28.9%** (inflated) |
+| slip | 2.59% | 2.72% | **7.46%** | **8.42%** (FAIL >4.07%) |
+| stride | 0.158 m | 0.157 m | 0.138 m | 0.140 m |
+| roll_rms | 0.0397 | 0.0387 | **0.0113** (FAIL <0.0194) | **0.0117** (FAIL) |
+| EMA(v_z) median | 0.120 | 0.134 | 0.226 | **0.247** (FAIL >0.234) |
+| completion | 100% | 100% | 100% | 100% |
+| r_shape anti-phase steps | 1309/9750 | 1358/9750 | 0/9750 (54 partial swaps) | 0/9750 (45 partial swaps) |
+
+**Verdict: FAIL** on three axes (slip, roll_rms, EMA), worsening 2000→2999. Notably the healthy
+references show the baseline already had tripod 0.335-0.358 by iteration 2000-3000 and visits
+coherent anti-phase states ~13-14% of steps — while v3 never produced a single coherent
+anti-phase step.
+
+**Post-mortem — the gate worked, the policy went around it**: EMA(v_z) dropped from v2's
+0.36-0.49 band to ~0.23-0.25, i.e. the gate successfully suppressed the tip-and-rock/lunge
+family and the policy demonstrably responds to it (it parks its vertical motion just above the
+ramp's shoulder, keeping ~84-92% transmission — gate-skirting). But the income moved into the
+**dragging-shuffle** exploit the v3 design review explicitly predicted as the most likely
+residual: feet sliding while planted (slip 3× healthy, rising), short choppy contacts (tippy
+inflated to 29-33% — a new signature, opposite of v1/v2's depressed tippy), deflated stride,
+legs still roughly in unison (roll collapsed). The v_z gate structurally cannot see sliding — a
+skating body stays level. Two small positives: the first partial dominant-set swaps ever
+observed (45-54 per run vs 0 in v1/v2), and training-time telemetry (error_vel_xy 0.70 at 1000
+iters) was misleadingly healthy — reinforcing that only gait-eval verdicts count.
