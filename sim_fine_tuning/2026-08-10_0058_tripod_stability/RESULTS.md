@@ -397,3 +397,30 @@ fine-tune nulls (b1-b4) do not contradict this: replay proved v1 paid the health
 those fine-tunes had no signal; v5 is the first version that pays the target behavior. Protocol:
 2000-iter fine-tune at weight 0.15 (`b6_tripod_v5_ft_w0.15/`); success = tripod up meaningfully
 with no degradation; inert at 0.15 -> escalate weight (0.5); degradation -> v7 rethink.
+
+## v6 (b6): v5 term fine-tuned from healthy baseline @0.15 — INERT on tripod, structurally live
+
+2000 iters from model_19999 (tripod 0.401). The term fired throughout training (0.0017-0.0020
+per log, vs exactly 0 in every prior variant's training) — first version to deliver gradient.
+
+| | baseline 19999 | v6 final (21998) |
+|---|---|---|
+| tripod | 0.401 | 0.400 (INERT) |
+| completion / slip / roll / EMA | 100% / 2.6% / 0.039 / 0.13 | 100% / **2.30%** / 0.037 / 0.136 |
+| stride / tippy / signed pitch | 0.163 / 6.5% / +0.209 | 0.167 / 7.0% / +0.211 |
+| v5 replay income | 1.4-1.9/min | **5.31/min (3×)** |
+| detectable dominant-set swaps | ~0-6 | **212** |
+
+Decomposition of the tripod metric (both runs, force>1N, steady): coh_A 0.75/0.74, coh_B
+0.59/0.61, pearson −0.606/−0.605, duty_A 0.146/0.147, duty_B 0.556/0.556 — statistically
+IDENTICAL. The policy tripled its crossing income by sharpening exchange *timing*
+(synchronized full-set transitions; credit/crossing 0.10→0.25) without touching the
+time-averaged duty asymmetry (A still carries support only ~15% of the time) that caps the
+score at 0.5·(coh_A+coh_B)·|pearson| ≈ 0.40. No degradation anywhere; slip improved.
+
+Verdict: INERT → escalate weight to **0.3** (b6b, running). Not 0.5: at 0.5 the ideal-
+alternation event income (~2/s weighted) would exceed tracking income (~1-1.5/s), making
+march-in-place alternation economically competitive with walking; 0.3 keeps locomotion
+strictly dominant while doubling the pressure on the duty-rebalance slope (min(prev,peak)
+already binds on the weak A-side swing). If 0.3 is still inert → v7 targets duty symmetry
+directly rather than more weight.
