@@ -39,3 +39,5 @@ completion 100% | slip 2.6% | roll 0.0387 | EMA 0.134 | stride 0.163 m | tippy 6
 | L6 | best lean-mover + v5 reward_tripod_schedule @0.3 | only if a single knob moves pitch; b7 evidence: v5 amplifies structure when active (peak tripod 0.425) |
 
 ## Runs
+
+| L1 | reward_orientation −0.7→−2.0 | mid/final: pitch **+0.2089/+0.2091** (baseline +0.209 — zero movement), tripod 0.389/0.397, completion 100/100%, slip 2.5/2.2%, roll 0.037, EMA 0.140/0.130, stride 0.160/0.166 | **INERT on pitch** — the policy pays the tripled tilt cost (0.086/step at 12°) rather than adjust posture. L2 escalation skipped per protocol (0.000 movement at 3× dose). All guardrails clean. |
