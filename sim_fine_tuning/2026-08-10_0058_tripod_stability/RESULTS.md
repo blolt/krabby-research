@@ -522,3 +522,16 @@ weights alone don't pin it.
 
 **Campaign stop point reached** — bake proposal presented to user (see chat). Loop halted per
 the standing rule (bake decisions are user review).
+
+## Campaign closed — user decision: (d) drop everything
+
+Decision 2026-08-12: no bake, no checkpoint adoption. The baseline
+(`2026-08-09_1526_gait_tuned/.../model_19999.pt`, tripod 0.401) remains the reference flat-walk
+checkpoint and both campaign terms stay registered at weight 0.0 (dormant; a plain training run
+is identical to baseline). The campaign closes as a documented negative result for reward-shaped
+tripod improvement, with the durable outputs being: the v1-v5 design history and its two
+structural lessons (state income gets farmed; event income must be trace-validated), the offline
+replay gate (`offline_replay/replay_gate.py`, now mandatory for any future reward term), the
+deterministic-eval discovery (checkpoint selection by eval is exact), and the diagnosis that the
+duty asymmetry (0.14/0.56) and +12° lean are postural — tripod >0.45 is a morphology/CoM
+problem, not a reward-shaping one.
