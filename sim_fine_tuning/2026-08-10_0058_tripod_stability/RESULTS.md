@@ -254,3 +254,38 @@ gate set — because the support bonus pays for holdable **states**. The healthy
 reaches tripod 0.34-0.40 with **no** tripod-specific reward, earns its income from **motion**
 (tracking, forward progress). The state-vs-event distinction, not any particular gate, looks
 like the root cause.
+
+## v4: event-based swap credit — short-run screen (GRAY → resumed to 5000)
+
+v4 (commit 04f1f9d) is the structural rethink after the four-version state-holding pattern:
+the support bonus and its v_z gate are **removed entirely**. Income is now event-based — a
+`swap_credit` lump (15.0, scaled by opposition quality |a−b|/3) paid only on the step a
+dominant-set swap is confirmed by the existing debounced detector, plus the unchanged per-step
+shape channel (r_shape · anti_freeze). No static configuration produces confirmed swaps, so no
+holdable state earns anything; earning faster *is* tripod alternation. 3000-iter screen at
+weight 0.15 (run `fromscratch_tripod_v4_swap_short/`, 2026-08-11_22-23-46).
+
+| | H2000 (healthy ref) | H3000 (healthy ref) | v4@2000 | v4@2999 |
+|---|---|---|---|---|
+| tripod | 0.358 | 0.335 | 0.230 | 0.255 (rising) |
+| tippy_tap | 6.43% | 6.48% | 8.93% | 8.68% |
+| slip | 2.59% | 2.72% | 3.40% | 3.14% (PASS ≤3.53%) |
+| stride | 0.158 m | 0.157 m | 0.182 m | 0.191 m (PASS ∈[0.110,0.219]) |
+| roll_rms | 0.0397 | 0.0387 | 0.0292 | 0.0302 (PASS ≥0.0271) |
+| EMA(v_z) median | 0.120 | 0.134 | 0.182 | **0.179** (GRAY: >0.174, ≪0.234) |
+| completion | 100% | 100% | 100% | 100% |
+| signed mean pitch | — | — | +0.199 rad | +0.209 rad |
+| r_shape anti-phase steps | 1309/9750 | 1358/9750 | 1047/9750 | 1031/9750 |
+| confirmed swaps (eval) | — | — | 2 | 4 |
+
+**Verdict: GRAY** — the first screen in the campaign with **zero FAIL conditions**. Five of six
+PASS axes met; EMA(v_z) misses the pass bound by 0.005 (0.179 vs 0.174) and improves 2000→2999.
+Per protocol (never abort on gray): resumed the same run to 5000 for one re-eval.
+
+**Reading**: this is the healthy gait family, not a fifth exploit. Anti-phase engagement is
+back (10.6-10.7% of steps vs 13-14% healthy, vs 0% for v2/v3/v3b), tripod 0.23-0.26 and rising,
+roll/stride/slip all in the healthy band, and confirmed swaps appear in eval for the first
+time. Training-time income from the term stayed a trickle (~0.002/episode) — nothing farmable,
+exactly as designed; the policy earns from locomotion. The residual gap vs the H refs (slightly
+bouncier, tippier, lower tripod) is consistent with the term paying too rarely to shape phase
+yet, not with an exploit basin.
