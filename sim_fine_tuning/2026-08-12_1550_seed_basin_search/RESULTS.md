@@ -32,3 +32,4 @@ tripod 0.0, pitch +0.131 — counts as seed-1's v5-active sample.
 | seed | family | tripod@2999 | pitch | duty_A/B | completion | notes |
 |---|---|---|---|---|---|---|
 | 2 | bouncy, **A-handed** | 0.078 | +0.182 | **0.633/0.148** (mirror of baseline!) | 80% (2 falls) | slip 9.8%, tippy 23.5%, EMA 0.247; anti-phase 8.9%, 91 swaps. NOT winner-grade, but proves handedness direction is lottery, not plant bias. |
+| 3 | tippy-shuffle (skate family) | 0.0 | +0.193 | 0.524/0.504 (balanced but no alternation) | 100% | tippy 38.8%, slip 9.9%, roll collapsed 0.010; anti-phase 0%. Not winner-grade. |
