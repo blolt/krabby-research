@@ -45,3 +45,5 @@ taking (predicted split ~12% A — income can never fully balance while duty is 
 income mechanically follows duty; the test is whether marginal-A-incentive changes duty). S3
 therefore runs unconditionally after S2; the original "only if singles move" condition was
 mis-calibrated against this arithmetic.
+
+| S2 | power 2.0→1.0 + weight 0.5→0.05 (scale-matched) | mid/final: pitch +0.211/+0.209, tripod 0.395/0.420, tippy 7.8/7.0%, completion 100/100%, slip 2.5/2.3%, duty 0.144/0.556 | **INERT as the S1 arithmetic predicted** — with the 0.1s floor still excluding A participation, the exponent has nothing to rebalance. Guardrails clean. Singles complete; S3 (floor+power) is the hypothesis test. |
