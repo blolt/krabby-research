@@ -289,3 +289,39 @@ time. Training-time income from the term stayed a trickle (~0.002/episode) — n
 exactly as designed; the policy earns from locomotion. The residual gap vs the H refs (slightly
 bouncier, tippier, lower tripod) is consistent with the term paying too rarely to shape phase
 yet, not with an exploit basin.
+
+### v4 gray re-eval at 5000: FAIL (falls), plus a new healthy reference
+
+Per the gray protocol the run was resumed 2999→4998 and re-evaluated once. A new H5000
+reference (baseline model_5000.pt) was also evaluated to rule out "falls are normal at 5000."
+
+| | H3000 | H5000 (new ref) | v4@2999 | v4@4998 |
+|---|---|---|---|---|
+| tripod | 0.335 | 0.343 | 0.255 | **0.181** (regressing) |
+| tippy_tap | 6.48% | 7.58% | 8.68% | **11.13%** |
+| slip | 2.72% | 2.49% | 3.14% | 3.85% |
+| stride | 0.157 m | 0.167 m | 0.191 m | 0.196 m |
+| roll_rms | 0.0387 | 0.0387 | 0.0302 | 0.0306 |
+| EMA(v_z) median | 0.134 | 0.134 | 0.179 | 0.176 |
+| completion | 100% | 100% | 100% | **70% (3 falls — hard FAIL)** |
+| r_shape anti-phase steps | 1358/9750 | 1243/9750 | 1031/9750 | 756/8601 |
+| confirmed swaps (eval) | 6 | 0 | 4 | 2 |
+
+**Verdict: FAIL.** H5000 is spotless, so the three falls are attributable to the v4 trajectory,
+not early-training variance. Everything except EMA(v_z) regressed 3000→5000 while training
+telemetry improved (mean reward 21.0→21.8) — telemetry misled for the third time.
+
+**Post-mortem — the exploit is dead, but the reward never pays the target behavior**:
+v4 achieved its anti-exploit goal: no farmable channel, no fifth degenerate basin, the gait
+stayed in the walking family. But the swap-credit channel is economically inert on *real*
+gaits: the healthy baseline triggers the confirmed-swap detector only 0-6 times per 10
+episodes (~195 s) — healthy tripod exchanges pass through mixed-contact states too quickly for
+a debounced |a−b|≥2 window to persist 0.1 s and flip sign cleanly. A reward whose event the
+target gait essentially never emits cannot shape toward that gait. What remained active was
+r_shape (~5% of income) — still state-pay for held coherent 3-leg configurations — and the run
+drifted into a bouncier, tippier family that falls by 5000 (n=1 caveat: same seed, but the
+reward delta is the only intervention vs the clean baseline trajectory).
+
+**Design lesson (new mandatory gate)**: no candidate reward term goes to a training screen
+until it is replayed OFFLINE over existing eval npz traces and shown to (a) pay the healthy
+gait strongly and (b) pay all four degenerate gaits ≈0. v1-v4 all skipped (a); v4 fails it.
