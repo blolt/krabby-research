@@ -764,26 +764,21 @@ class CrabHexFlatWalkRewardsCfg:
     # registered at weight 0.0 (inert). None of the config-only knobs tried in
     # sim_fine_tuning/2026-08-10_0058_tripod_stability/ moved tripod_score, so this term rewards
     # genuine tripod-set alternation directly -- see crab_hex_tripod_reward.py for the full math.
-    # v2 added the in-band stance-count support bonus (support_scale) after v1's from-scratch test
-    # collapsed into a unison lunging gait that v1 scored 0 (no gradient against it). v3 gates the
-    # support bonus by a body-stability ramp on EMA(|v_z_world|) after v2's from-scratch test
-    # converged on a tip-over-and-correct unison gait (feet counted, body attitude didn't) -- see
-    # the v2/v3 addenda in crab_hex_tripod_reward.py and the campaign RESULTS.md.
+    # v4 replaced all state-based income (v2's support bonus, v3's v_z stability gate) with an
+    # event-based swap credit after four from-scratch failures showed every state-paying variant
+    # gets farmed by a cheap state-holding gait (lunge/tip-rock/skate/drag) -- see the v1-v4
+    # addenda in crab_hex_tripod_reward.py and the campaign RESULTS.md.
     reward_tripod_schedule = RewTerm(
         func=mdp_rewards.RewardTripodSchedule,
         weight=0.0,
         params={
-            "asset_cfg": SceneEntityCfg("robot"),
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=_CRAB_FOOT_BODY_NAMES, preserve_order=True),
             "command_name": "base_velocity",
             "min_cmd_norm": 0.12,
             "debounce_s": 0.08,
             "min_swap_interval": 0.1,
             "max_hold_s": 0.6,
-            "support_scale": 1.0,
-            "vz_ema_tau": 0.5,
-            "vz_gate_lo": 0.20,
-            "vz_gate_hi": 0.50,
+            "swap_credit": 15.0,
         },
     )
     reward_lin_vel_z = RewTerm(

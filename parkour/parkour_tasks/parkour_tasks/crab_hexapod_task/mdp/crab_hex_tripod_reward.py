@@ -95,6 +95,32 @@ bounces less earns measurably more -- an escape slope, not a cliff. The EMA stat
 0 (gate fully open) on episode reset, or freshly-reset envs would inherit a closed gate and
 healthy post-reset exploration would go unrewarded.
 
+**v4 addendum (event-based swap credit; support bonus and v_z gate REMOVED).** Four consecutive
+from-scratch failures told one story (see the campaign RESULTS.md): v1 -> unison lunge, v2 ->
+tip-and-correct rock, v3 -> level-bodied skate-shuffle, v3b (v3 + a feet_slide penalty) ->
+near-stationary drag. Each version's gate eliminated its target behavior, and each time the
+policy relocated to the cheapest remaining **state-holding** strategy that satisfied the current
+gate set -- because the support bonus paid for holdable *states*, and its clip-immune income
+stream was the constant across every exploit (while penalties like feet_slide were muted by the
+manager's zero-floor clip exactly in those basins). Meanwhile the plain baked config reaches
+tripod 0.34-0.40 emergently, earning its income from *motion* (tracking, forward progress).
+
+v4 therefore abandons state-based income entirely. The support bonus and its v_z stability gate
+are removed (nothing worth gating remains), and the term's income becomes **event-based**: a
+lump credit is paid exactly on the step a dominant-set swap is *confirmed* (the same debounced
+detection the anti-freeze timer already uses -- sign(a-b) with |a-b| >= 2 persisting
+``min_swap_interval``), scaled by the opposition quality ``|a-b|/3`` at the confirm step. A swap
+physically requires lifting one tripod set and planting the other; no static configuration --
+frozen stance, all-down statue, flight, level drag -- produces confirmed swaps, so no holdable
+state earns anything. And "farming" swap events faster is not an exploit: rapid genuine
+alternation of the tripod sets *is* the target behavior. The per-step shape channel
+(``r_shape * anti_freeze``) is kept unchanged -- it pays during sustained coherent alternation
+and remains worth 0 to every degenerate family observed. ``swap_credit`` (default 15.0) sizes
+the lump so that at a healthy alternation cadence (~3 swaps/s) the event income is comparable to
+what the shape channel pays during perfect alternation. Unlike v1-v3, this term no longer tries
+to *create* phasing from nothing; it amplifies and sharpens the alternation the base config
+already produces emergently.
+
 See ``RewardTripodSchedule`` in ``parkour_isaaclab/envs/mdp/rewards.py`` for the stateful
 ``ManagerTermBase`` wrapper that drives this from real env/sensor data (specifically
 ``ContactSensor.data.current_contact_time``, which already gives the "seconds continuously in
@@ -131,13 +157,8 @@ def tripod_schedule_reward_step(
     debounce_s: float = 0.08,
     min_swap_interval: float = 0.1,
     max_hold_s: float = 0.6,
-    support_scale: float = 1.0,
-    root_lin_vel_w_z: torch.Tensor | None = None,
-    vertical_speed_ema: torch.Tensor | None = None,
-    vz_ema_tau: float = 0.5,
-    vz_gate_lo: float = 0.20,
-    vz_gate_hi: float = 0.50,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    swap_credit: float = 15.0,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     """One step of the tripod-alternation reward's state machine.
 
     Args:
@@ -164,27 +185,17 @@ def tripod_schedule_reward_step(
             a genuine swap (debounces swap detection separately from per-foot contact debounce).
         max_hold_s: the shape reward is zeroed once the confirmed dominant set has held longer
             than this without a new confirmed swap -- forces alternation rather than a static
-            coherent stance, mirroring the eval metric's degenerate-signal handling. (The support
-            bonus is deliberately NOT gated by this timer -- see the v2 addendum.)
-        support_scale: weight of the in-band stance-count support bonus relative to the shape
-            reward (see the v2 addendum). The bonus is 1.0 at stance counts 3-4, graded down to
-            0.0 at counts 0 (flight) and 6 (all-down), so both halves of the unison-lunge exploit
-            earn nothing from this term while every step of a proper tripod gait earns the full
-            bonus.
-        root_lin_vel_w_z: ``[N]`` world-frame vertical velocity of the robot base (m/s). If
-            ``None`` (with ``vertical_speed_ema`` also ``None``), the v3 stability gate is
-            bypassed (gate = 1.0), preserving v2 behavior for callers that don't provide it.
-        vertical_speed_ema: ``[N]`` state in -- EMA of ``|root_lin_vel_w_z|`` (see the v3
-            addendum). Must be reset to 0 (gate fully open) on episode reset.
-        vz_ema_tau: EMA time constant (s) for the vertical-speed smoothing.
-        vz_gate_lo: EMA level at/below which the support gate is fully open (1.0) -- sits above
-            the healthy gait's measured band (p95 0.237) so normal walking is never penalized.
-        vz_gate_hi: EMA level at/above which the support gate is fully closed (0.0) -- sits
-            inside the measured degenerate band (p05 0.362, median ~0.49).
+            coherent stance, mirroring the eval metric's degenerate-signal handling.
+        swap_credit: lump reward paid on the step a dominant-set swap is confirmed, scaled by
+            the opposition quality ``|a - b| / 3`` at that step (see the v4 addendum). Sized so
+            that at a healthy alternation cadence (~3 swaps/s) the event income is comparable to
+            the shape channel's payout during perfect alternation. Event income cannot be farmed
+            by any static configuration -- a confirmed swap physically requires lifting one
+            tripod set and planting the other.
 
     Returns:
         ``(reward[N], new_candidate_sign[N], new_candidate_streak[N], new_confirmed_sign[N],
-        new_time_since_confirmed_swap[N], new_vertical_speed_ema[N])``.
+        new_time_since_confirmed_swap[N])``.
     """
     contact_stable = current_contact_time > debounce_s
     a = contact_stable[:, list(tripod_a_idx)].sum(dim=1).float()
@@ -216,31 +227,20 @@ def tripod_schedule_reward_step(
 
     anti_freeze = (new_time_since_swap <= max_hold_s).float()
 
-    # In-band stance-count support bonus (v2): 1.0 at counts 3-4, graded to 0.0 at both 0
-    # (flight) and 6 (all-down). Deliberately outside the anti-freeze gate so the escape path
-    # from a unison gait has a slope from the very first step.
-    total = a + b
-    support = 1.0 - torch.relu(3.0 - total) / 3.0 - torch.relu(total - 4.0) / 2.0
-
-    # Body-stability gate (v3): clamped linear ramp on the EMA of world-frame vertical speed.
-    # Applies to the support half only -- a tipping/bouncing body loses the stance bonus even
-    # when 3-4 feet happen to be planted mid-rock. Flat-1 shoulder above the healthy band, so
-    # normal walking is never penalized; graded slope through the degenerate band, so "bounce
-    # less" always earns more (escape slope, not a cliff).
-    if root_lin_vel_w_z is not None and vertical_speed_ema is not None:
-        alpha = min(dt / vz_ema_tau, 1.0)
-        new_vertical_speed_ema = vertical_speed_ema + alpha * (root_lin_vel_w_z.abs() - vertical_speed_ema)
-        gate = torch.clamp((vz_gate_hi - new_vertical_speed_ema) / (vz_gate_hi - vz_gate_lo), 0.0, 1.0)
-    else:
-        new_vertical_speed_ema = torch.zeros_like(a)
-        gate = torch.ones_like(a)
+    # Event-based swap credit (v4): a lump paid exactly when a dominant-set swap is confirmed,
+    # scaled by the opposition quality at that step. No static configuration produces confirmed
+    # swaps, so no holdable state earns anything -- and rapid genuine alternation earning more
+    # credit is the target behavior, not an exploit. (The state-based support bonus and its v_z
+    # gate were removed after four from-scratch failures; see the v4 addendum.)
+    swap_quality = diff.abs() / 3.0
+    swap_lump = swap_credit * swap_quality * do_confirm.float()
 
     cmd_norm = torch.norm(command_xy, dim=1)
     cmd_active = (cmd_norm > min_cmd_norm).float()
 
-    reward = (r_shape * anti_freeze + support_scale * support * gate) * cmd_active
+    reward = (r_shape * anti_freeze + swap_lump) * cmd_active
 
     return (
         reward, new_candidate_sign, new_candidate_streak, new_confirmed_sign,
-        new_time_since_swap, new_vertical_speed_ema,
+        new_time_since_swap,
     )
