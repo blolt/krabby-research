@@ -445,3 +445,26 @@ implicit. Two parallel probes:
   q_duty ≈ 0.64, at balance 1.0 — a persistent +56% income differential for rebalancing that
   compounds with the amplitude slope, while timing-sharpening alone no longer raises income.
   Offline gate (incl. degenerates + ideal) before any run, as always.
+
+## v7 offline study: duty/balance factors cannot price the asymmetry — it isn't economic
+
+Two candidate credit multipliers were prototyped offline (no GPU, no code committed):
+- **q_duty** = 4·d_A·d_B/(d_A+d_B)² on EMA contact duties: at ANY window (0.6-3.0s), the factor
+  reads ≈1.0 at crossing moments even though the aggregate duty is 0.14/0.56 — crossings only
+  exist inside exchange bursts, and bursts transiently pump d_A, so sampling at crossings
+  self-selects balanced readings. Design lesson: **any quality factor sampled at an event
+  correlates with the transient that produces the event.**
+- **q_bal** = 4·f_A·(1−f_A) on the dominance fraction f_A = EMA(1[x>0], τ=2s): passes the gate
+  (healthy 1.45-2.01/min, degen ≤0.076, ideal 65.6) and reads 0.73 unweighted at b6b's paid
+  crossings — but the CREDIT-weighted mean is ≈1.0: b6b's income already comes from its
+  balanced stretches. The factor would barely discount the current gait.
+
+Conclusion: the policy already earns 2-3× the baseline's term income and still does not extend
+sustained A-support. The binding constraint is not reward economics but posture/feasibility:
+the +12° forward lean with B-diagonal loading (duty 0.14/0.56) makes A-side support physically
+expensive, and no contact-schedule price fixes a posture. v7-as-reward-code is therefore
+skipped (no commit). Next probe **b7** (config-only): v5@0.3 + the already-registered
+`penalty_base_pitch_forward_linear` at −0.1, fine-tuned from healthy 19999 — attack the lean
+that anchors the loading, with v5's live alternation gradient present to exploit any freed
+mobility (Phase A tested the pitch penalty standalone, with no alternation incentive to
+unlock — null then is not null now). Pending b6c (time-extension) verdict first.
