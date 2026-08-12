@@ -47,3 +47,24 @@ therefore runs unconditionally after S2; the original "only if singles move" con
 mis-calibrated against this arithmetic.
 
 | S2 | power 2.0→1.0 + weight 0.5→0.05 (scale-matched) | mid/final: pitch +0.211/+0.209, tripod 0.395/0.420, tippy 7.8/7.0%, completion 100/100%, slip 2.5/2.3%, duty 0.144/0.556 | **INERT as the S1 arithmetic predicted** — with the 0.1s floor still excluding A participation, the exponent has nothing to rebalance. Guardrails clean. Singles complete; S3 (floor+power) is the hypothesis test. |
+
+| S3 | floor 0.05 + power 1.0 + weight 0.05 | mid/final: pitch +0.2087/+0.2082, tripod 0.406/**0.4255**, tippy 5.9/7.2%, slip 2.1/2.3%, EMA 0.136/**0.128**, completion 100/100%, duty 0.142/0.564 | **Income split moved exactly as predicted (1.9%→12.0% A, 768 A-stances paid) — duty and pitch did not.** Guardrails clean, several axes marginally better than baseline. S4 not launched: its premise (income moves duty) is refuted. |
+
+## Campaign summary: income follows duty — CLOSED
+
+The S-series answered its question in three steps: S1 proved the payment floor was the
+participation gate (A paid stances 3.5%→43%); S2 proved the exponent alone changes nothing
+while the floor gates; S3 removed both gates, delivered the predicted 6× income rebalance
+(12.0% A) — and the gait did not move a millimeter of duty or a milliradian of pitch.
+
+**The stride reward finances the asymmetry only in the accounting sense; it does not cause
+it.** Three campaigns now triangulate the same diagnosis from independent directions:
+1. Rewarding alternation directly (tripod campaign, v1-v5 + b6/b7): timing sharpens, duty immune.
+2. Taxing the lean (L-series): pitch invariant to every penalty at up to 5× doses.
+3. Defunding the asymmetry (S-series): accounting moves, behavior doesn't.
+
+The 14%/56% duty split and +12° lean are plant-side: CoM placement, cam-mechanism foot-path
+geometry, and/or default posture. Reward configuration — functions, weights, and params alike —
+is exhausted as a route to tripod >0.45. Recommended next: (a) spawn/default-posture experiment
+(cheapest), (b) CoM shift in the model, (c) cam-geometry workspace analysis; the eval pipeline,
+deterministic checkpoint selection, and these ledgers carry over unchanged.
