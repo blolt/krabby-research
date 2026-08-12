@@ -468,3 +468,11 @@ skipped (no commit). Next probe **b7** (config-only): v5@0.3 + the already-regis
 that anchors the loading, with v5's live alternation gradient present to exploit any freed
 mobility (Phase A tested the pitch penalty standalone, with no alternation incentive to
 unlock — null then is not null now). Pending b6c (time-extension) verdict first.
+
+## b6c: +4000 iters @0.3 — INERT; time is not the constraint
+
+tripod 0.405 (sequence 0.401 → 0.400 → 0.403 → 0.405 across baseline/b6/b6b/b6c — noise band),
+completion 100%, slip 2.20%, roll 0.0367, EMA 0.136, swaps 188, signed pitch +0.209 unchanged.
+Six thousand fine-tune iterations at double weight leave the duty asymmetry untouched. Combined
+with the v7 offline study, the campaign's remaining hypothesis is postural: probe b7 (config-only)
+= v5@0.3 + penalty_base_pitch_forward_linear at −0.1 from healthy 19999.
