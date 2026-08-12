@@ -217,3 +217,40 @@ legs still roughly in unison (roll collapsed). The v_z gate structurally cannot 
 skating body stays level. Two small positives: the first partial dominant-set swaps ever
 observed (45-54 per run vs 0 in v1/v2), and training-time telemetry (error_vel_xy 0.70 at 1000
 iters) was misleadingly healthy — reinforcing that only gait-eval verdicts count.
+
+## v3b: v3 + feet_slide=-0.1 (config-only probe) — short-run screen (FAIL)
+
+User-approved option (B): same v3 term (weight 0.15, default gate params) plus the existing
+`feet_slide` penalty activated at -0.1 — pure Hydra overrides, no code changes. 3000-iter screen.
+
+| | H3000 (healthy ref) | v3@2999 (prior) | v3b@2000 | v3b@2999 |
+|---|---|---|---|---|
+| tripod | 0.335 | 0.0 | 0.0 | 0.0 |
+| slip | 2.72% | 8.42% | **42.7%** | **44.4%** (FAIL, worsening) |
+| stride | 0.157 m | 0.140 m | **0.034 m** | **0.039 m** (~1/4 healthy) |
+| tippy_tap | 6.48% | 28.9% | 24.4% | 21.8% |
+| roll_rms | 0.0387 | 0.0117 | 0.0116 (FAIL) | 0.0105 (FAIL) |
+| EMA(v_z) median | 0.134 | 0.247 | 0.124 | 0.132 (3 eps ≈ 0 — standing) |
+| completion | 100% | 100% | 90% (1 fall) | 100% |
+| r_shape anti-phase | 1358/9750 | 0/9750 | 0/8815 | 0/9750 |
+
+**Verdict: FAIL** — slip and roll_rms breached decisively at both points; the trend worsens.
+
+**Post-mortem — the penalty failed, the bonus kept paying**: the (B) probe answered its question
+cleanly. Adding the `feet_slide` penalty did not stop sliding; the policy converged on a
+near-stationary, level-bodied drag: stride collapsed to ~3.5-4cm (a quarter of healthy), slip
+*rose* to 43-44%, and the body went perfectly level (EMA 0.12-0.13, several episodes at ~0.0 —
+standing) so the v_z gate pays the full support bonus continuously. Two mechanisms, both
+consistent with the data and with the v2 design analysis that originally argued against penalty
+forms: (i) the manager's zero-floor clip mutes the penalty exactly in this basin (drag steps
+where the other terms sum ≤ 0 lose nothing to the penalty), and (ii) -0.1 is small against the
+support+survival income. Either way, the asymmetry the whole design history predicted held: the
+clip-immune bonus dominated the clippable penalty.
+
+**The four-version pattern is now unmistakable**: v1 lunge → v2 tip-rock → v3 skate-shuffle →
+v3b near-stationary drag. Each version's gate eliminated its target behavior, and each time the
+policy relocated to the cheapest remaining *state-holding* strategy that satisfies the current
+gate set — because the support bonus pays for holdable **states**. The healthy baseline, which
+reaches tripod 0.34-0.40 with **no** tripod-specific reward, earns its income from **motion**
+(tracking, forward progress). The state-vs-event distinction, not any particular gate, looks
+like the root cause.
