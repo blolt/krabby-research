@@ -43,3 +43,29 @@ completion 100% | slip 2.6% | roll 0.0387 | EMA 0.134 | stride 0.163 m | tippy 6
 | L1 | reward_orientation −0.7→−2.0 | mid/final: pitch **+0.2089/+0.2091** (baseline +0.209 — zero movement), tripod 0.389/0.397, completion 100/100%, slip 2.5/2.2%, roll 0.037, EMA 0.140/0.130, stride 0.160/0.166 | **INERT on pitch** — the policy pays the tripled tilt cost (0.086/step at 12°) rather than adjust posture. L2 escalation skipped per protocol (0.000 movement at 3× dose). All guardrails clean. |
 
 | L3 | penalty_base_pitch_forward_linear 0.0→−0.5 | mid/final: pitch **+0.2098/+0.2095** (baseline +0.209 — zero movement at 2× Phase A max dose), tripod 0.404/0.378, completion 100/100%, slip 2.5/2.2%, roll 0.037, EMA 0.135/0.144, stride 0.164/0.164 | **INERT on pitch** — dose-response flat across −0.1→−0.5 (5× range, Phase A + this arm). L4 (−1.0) skipped per protocol. Guardrails clean. |
+
+| L5 | reward_forward_progress_along_command 0.6→0.3 | mid/final: pitch **+0.2098/+0.2094** (zero movement), tripod 0.397/0.418, completion 100/100%, slip 2.4/2.3%, roll 0.037, EMA 0.142/0.135, stride 0.164/0.164 (gait didn't even slow) | **INERT on pitch** — halving speed pressure changes neither posture nor stride; the momentum-posture hypothesis is refuted. Guardrails clean. |
+
+## Campaign summary: the lean is invariant to every existing config lever — CLOSED
+
+Signed mean pitch measured +0.209 rad (±0.001) at every checkpoint of every arm:
+
+| lever | dose vs prior max | pitch response |
+|---|---|---|
+| L1 reward_orientation (quadratic, direction-blind) | 3× baked weight | 0.000 |
+| L3 penalty_base_pitch_forward_linear (signed, targeted) | 5× total range incl. Phase A | 0.000 |
+| L5 forward-progress (speed pressure) | halved | 0.000 (stride also unchanged) |
+
+Combined with the tripod campaign (v5 shaping at 2 weights, pitch −0.1 in combo, 6k-iter
+extensions) and Phase A (pitch −0.1/−0.25, ang-vel damping), the +12° forward lean has now
+survived every reward-side perturbation available in the config at doses up to 5× beyond
+previous maxima — while the policy demonstrably responds to these same weights on other axes
+(slip, swaps, timing all move). L6 not launched (precondition failed: no pitch-mover to
+combine with v5).
+
+**Conclusion**: the lean — and the duty asymmetry it anchors, which caps tripod at ~0.40 — is
+structurally locked: CoM placement relative to the foot workspace, the cam mechanism's
+sinusoidal foot paths, and/or the default/spawn posture. Reward weights price behavior; they
+cannot buy a posture the plant makes expensive. The route to tripod >0.45 and load-ready
+stability is morphology/CoM/cam-geometry work (or spawn-posture and curriculum experiments),
+reusing this campaign's eval pipeline unchanged.
