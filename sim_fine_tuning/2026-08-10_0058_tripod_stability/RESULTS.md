@@ -476,3 +476,18 @@ completion 100%, slip 2.20%, roll 0.0367, EMA 0.136, swaps 188, signed pitch +0.
 Six thousand fine-tune iterations at double weight leave the duty asymmetry untouched. Combined
 with the v7 offline study, the campaign's remaining hypothesis is postural: probe b7 (config-only)
 = v5@0.3 + penalty_base_pitch_forward_linear at −0.1 from healthy 19999.
+
+## b7: v5@0.3 + pitch penalty −0.1 — first upward tripod signal of the campaign (unconfirmed)
+
+| | baseline | b6c (@0.3, 6k iters) | b7 (combo, 2k iters) |
+|---|---|---|---|
+| tripod | 0.401 (0.425 2nd eval) | 0.405 | **0.418** (all 10 eps ≥0.402) |
+| signed pitch | +0.209 | +0.209 | +0.209 (penalty bit at −0.021/log but no posture change — consistent with Phase A: ≤1% pitch leverage even at −0.25) |
+| anti-phase steps / swaps | 13.9% / ~6 | 13.9% / 188 | **15.0% / 262** (both campaign records) |
+| completion / slip / roll / EMA / tippy | 100% / 2.6% / 0.039 / 0.13 / 6.5% | 100% / 2.20% / 0.037 / 0.136 / 6.9% | 100% / 2.27% / 0.037 / 0.135 / 6.5% |
+
+The tripod gain came from term synergy, not posture (pitch unmoved). 0.418 is inside the
+historic noise band (0.38-0.42; the baseline itself measured 0.425 once), so unconfirmed.
+b7b (pitch −0.25) skipped — Phase A proved that axis inert. Confirmation probe: **b7c** =
+extend b7 +3000 iters; ≥0.43 clean → real trend (bake-proposal path); ≤0.41 → noise →
+campaign-decision stop.
