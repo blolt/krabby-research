@@ -362,3 +362,38 @@ correlation window missed the fast healthy alternation entirely while resonating
 Unit tests rewritten for v5 (17 tests; static/unison/tip-rock/slow/chatter/shallow all pinned to
 exactly 0; suite 77/77). Next: 3000-iter from-scratch screen at weight 0.15 per the standing
 protocol — verdicts autonomous from here per user (v5, v6, ... loop).
+
+## v5 short-run screen: FAIL — but the term never fired; the screen tested the basin lottery, not v5
+
+| | H3000 | v5@2000 | v5@2999 |
+|---|---|---|---|
+| tripod | 0.335 | 0.0 | 0.0 |
+| tippy_tap | 6.48% | 6.73% | 6.21% |
+| slip | 2.72% | 2.04% | **1.94%** (best of campaign) |
+| stride | 0.157 m | 0.215 m | 0.215 m |
+| roll_rms | 0.0387 | **0.0133** (FAIL) | **0.0138** (FAIL) |
+| EMA(v_z) | 0.134 | 0.187 | 0.190 |
+| signed pitch | +0.211 | +0.130 | **+0.131** (least lean of campaign) |
+| completion | 100% | 100% | **90% (1 fall — FAIL)** |
+| anti-phase steps | 13.9% | 0 | 0 |
+
+Verdict: FAIL (completion + roll collapse). The gait is a new family — a low-slip, low-lean,
+long-stride **unison glide** — but it is NOT a v5 exploit: replaying v5 over these very eval
+traces yields 0.000/min, and the training log shows the term paid exactly 0.0000 for all 3000
+iterations. **v5 supplied zero gradient the whole run.**
+
+**Post-mortem — the from-scratch screen cannot test this class of term.** Basin selection
+happens in the first ~1000 iterations under the *other* terms plus GPU-sim nondeterminism (the
+plain baked config with the same seed went to the alternating basin in the baseline run; six
+from-scratch runs since have landed elsewhere 6/6 times while their shaping terms were silent or
+near-silent early). A term whose income requires alternation to already exist cannot influence
+that lottery — chicken-and-egg. The screen verdicts for v4/v5 measured basin luck, not term
+quality.
+
+**v6 = the unchanged v5 term, fine-tuned from the healthy baseline** (model_19999, tripod
+0.401), where the offline replay shows it pays 1.4-1.9/min immediately and the amplitude slope
+(ideal = 36.6/min) can pull the gait toward deeper, symmetric alternation. The old B-series
+fine-tune nulls (b1-b4) do not contradict this: replay proved v1 paid the healthy gait ZERO, so
+those fine-tunes had no signal; v5 is the first version that pays the target behavior. Protocol:
+2000-iter fine-tune at weight 0.15 (`b6_tripod_v5_ft_w0.15/`); success = tripod up meaningfully
+with no degradation; inert at 0.15 -> escalate weight (0.5); degradation -> v7 rethink.
