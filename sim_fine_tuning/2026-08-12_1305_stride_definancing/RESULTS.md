@@ -35,3 +35,13 @@ tripod 0.401 | pitch +0.209 | duty 0.146/0.556 | pearson −0.606 | stride-incom
 | S4 | best mover + reward_tripod_schedule 0.3 | v5 amplifier combo, only if duty/pitch shifts |
 
 ## Runs
+
+| S1 | min_phase_duration 0.1→0.05 | mid/final: pitch +0.211/+0.210, tripod 0.405/0.387, tippy 7.0/**6.5%** (NO relapse), duty 0.142/0.557, completion 100/100%, slip 2.3/2.3% | **INERT on structure, instrument validated**: A-set paid stances 3.5%→**43%** (748/1730) — the floor was the participation gate exactly as attributed — but income split only 1.9→4.6% A because power=2 pays an A tap (~0.03m²) 9× less than a B stance (~0.09m²). Floor gates participation; convexity gates income. |
+
+**Sequence adjustment (analysis-driven)**: S2 alone (power=1, floor 0.1) predictably cannot move
+the split either — baseline traces at power=1 measure 2.6% A (participation still floor-gated).
+S3 (floor 0.05 + power 1.0 + weight 0.05) is the only rule where a marginal A stance is worth
+taking (predicted split ~12% A — income can never fully balance while duty is 0.14/0.56, since
+income mechanically follows duty; the test is whether marginal-A-incentive changes duty). S3
+therefore runs unconditionally after S2; the original "only if singles move" condition was
+mis-calibrated against this arithmetic.
