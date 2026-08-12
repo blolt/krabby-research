@@ -9,9 +9,12 @@ from isaaclab.utils.math  import euler_xyz_from_quat, wrap_to_pi, quat_apply
 from parkour_isaaclab.envs.mdp.parkours import ParkourEvent
 from parkour_tasks.crab_hexapod_task.mdp.crab_hex_stride_reward import stride_length_reward_step
 from parkour_tasks.crab_hexapod_task.mdp.crab_hex_tripod_reward import (
+    RESET_T_SINCE,
+    S_T_SINCE,
+    STATE_DIM,
     TRIPOD_A_IDX,
     TRIPOD_B_IDX,
-    tripod_schedule_reward_step,
+    tripod_swap_crossing_reward_step,
 )
 from collections.abc import Sequence
 
@@ -974,28 +977,23 @@ class RewardStrideLength(ManagerTermBase):
 
 
 class RewardTripodSchedule(ManagerTermBase):
-    """Dense per-step reward for genuine tripod-gait alternation. See
-    ``crab_hex_tripod_reward.tripod_schedule_reward_step`` for the full math and rationale --
-    added per Task 1 §2.3 after the config-only weight/param sweep in
-    ``sim_fine_tuning/2026-08-10_0058_tripod_stability/`` found no existing term moves the
-    gait-eval harness's ``tripod_score`` metric."""
+    """Event credit for genuine tripod-support alternation (v5 crossing credit). See
+    ``crab_hex_tripod_reward.tripod_swap_crossing_reward_step`` for the full math and the
+    campaign history (v1-v4 addenda) that led to it. Uses *raw* per-foot contact -- the healthy
+    gait's stance bouts are shorter than any useful debounce window."""
 
     def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
         super().__init__(cfg, env)
         sensor_cfg: SceneEntityCfg = cfg.params["sensor_cfg"]
         self.body_ids = sensor_cfg.body_ids
-        self.candidate_sign = torch.zeros(env.num_envs, device=self.device)
-        self.candidate_streak = torch.zeros(env.num_envs, device=self.device)
-        self.confirmed_sign = torch.zeros(env.num_envs, device=self.device)
-        self.time_since_confirmed_swap = torch.zeros(env.num_envs, device=self.device)
+        self.state = torch.zeros(env.num_envs, STATE_DIM, device=self.device)
+        self.state[:, S_T_SINCE] = RESET_T_SINCE
 
     def reset(self, env_ids: Sequence[int] | None = None) -> None:
         if env_ids is None:
             env_ids = slice(None)
-        self.candidate_sign[env_ids] = 0.0
-        self.candidate_streak[env_ids] = 0.0
-        self.confirmed_sign[env_ids] = 0.0
-        self.time_since_confirmed_swap[env_ids] = 0.0
+        self.state[env_ids] = 0.0
+        self.state[env_ids, S_T_SINCE] = RESET_T_SINCE
 
     def __call__(
         self,
@@ -1003,24 +1001,20 @@ class RewardTripodSchedule(ManagerTermBase):
         sensor_cfg: SceneEntityCfg,
         command_name: str,
         min_cmd_norm: float = 0.12,
-        debounce_s: float = 0.08,
-        min_swap_interval: float = 0.1,
-        max_hold_s: float = 0.6,
-        swap_credit: float = 15.0,
+        ema_tau: float = 0.06,
+        corr_tau: float = 0.20,
+        min_period: float = 0.10,
+        max_period: float = 0.60,
+        min_amp: float = 0.15,
+        var_min: float = 0.01,
+        credit_scale: float = 1.0,
     ) -> torch.Tensor:
         contact_sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
-        current_contact_time = contact_sensor.data.current_contact_time[:, self.body_ids]
+        contact = contact_sensor.data.current_contact_time[:, self.body_ids] > 0.0
         command_xy = env.command_manager.get_command(command_name)[:, :2]
-        (
-            reward,
-            self.candidate_sign,
-            self.candidate_streak,
-            self.confirmed_sign,
-            self.time_since_confirmed_swap,
-        ) = tripod_schedule_reward_step(
-            current_contact_time, command_xy, self.candidate_sign, self.candidate_streak,
-            self.confirmed_sign, self.time_since_confirmed_swap, env.step_dt,
-            TRIPOD_A_IDX, TRIPOD_B_IDX, min_cmd_norm, debounce_s, min_swap_interval, max_hold_s,
-            swap_credit,
+        reward, self.state = tripod_swap_crossing_reward_step(
+            contact, command_xy, self.state, env.step_dt,
+            TRIPOD_A_IDX, TRIPOD_B_IDX, min_cmd_norm, ema_tau, corr_tau,
+            min_period, max_period, min_amp, var_min, credit_scale,
         )
         return reward

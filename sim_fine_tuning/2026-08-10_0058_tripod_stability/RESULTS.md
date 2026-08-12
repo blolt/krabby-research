@@ -325,3 +325,40 @@ reward delta is the only intervention vs the clean baseline trajectory).
 **Design lesson (new mandatory gate)**: no candidate reward term goes to a training screen
 until it is replayed OFFLINE over existing eval npz traces and shown to (a) pay the healthy
 gait strongly and (b) pay all four degenerate gaits ≈0. v1-v4 all skipped (a); v4 fails it.
+
+## v5: amplitude- and anti-correlation-qualified crossing credit (offline gate PASSED)
+
+Step 1 of the autonomous loop: the offline replay gate is now a tool in `offline_replay/replay_gate.py`
+(imports the real repo function; run it before every future screen). Trace measurements that drove
+the design: healthy stride period ~0.30s with raw contact bouts of median 0.10s (any useful debounce
+erases the gait — v4's blindness); and the baseline gait is one-sided — set B planted (b≥2) ~62% of
+steady steps while set A is fully airborne ~75% and fully planted only 0.6%. That one-sidedness IS
+the "not stably supported" problem the campaign targets.
+
+v5 (commit follows): credit per zero-crossing of x = s_A − s_B (raw contacts, EMA τ=0.06s), scaled
+by min(prev_peak, peak) — both sets must genuinely take and give up support, deeper alternation pays
+more — times q_anti² (anti-correlation from stride-matched EMA moments, τ=0.20s; kills the v3 skate
+whose sets chatter *together*), paid only when the inter-crossing period ∈ [0.10, 0.60]s (kills both
+chatter and the v3b drag's slow 0.67s weight-shift). Statics produce no crossings; unison keeps x≈0.
+
+Gate results (real repo function, weighted income/min at weight 0.15, steady steps only):
+
+| trace | income/min | | trace | income/min |
+|---|---|---|---|---|
+| H2000 | 1.468 | | v1-lunge | 0.000 |
+| H3000 | 1.325 | | v2-tiprock | 0.000 |
+| H5000 | 1.817 | | v3-skate | 0.013 |
+| IDEAL synthetic tripod | **36.601** | | v3b-drag | 0.013 |
+| | | | v4-falls | 0.111 |
+
+Healthy-min : degenerate-max = 104:1; the optimum sits at the target behavior at ~20-28× healthy
+income, with a smooth amplitude slope from the baseline's shallow A-taps toward full alternation.
+Event conditioning: frequent small lumps (~0.07 credit at ~2 Hz on the baseline; ≤1.0 max) vs v4's
+rare 15.0 spikes. Failed intermediate forms recorded for the ledger: crossing credit without the
+anti-correlation factor let v3-skate earn at healthy parity (3.2 vs 3.1/min); an absolute-velocity
+slip factor favored the near-stationary drag (its feet move slowly in absolute terms); a τ=1.0s
+correlation window missed the fast healthy alternation entirely while resonating with the drag.
+
+Unit tests rewritten for v5 (17 tests; static/unison/tip-rock/slow/chatter/shallow all pinned to
+exactly 0; suite 77/77). Next: 3000-iter from-scratch screen at weight 0.15 per the standing
+protocol — verdicts autonomous from here per user (v5, v6, ... loop).

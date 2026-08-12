@@ -764,10 +764,12 @@ class CrabHexFlatWalkRewardsCfg:
     # registered at weight 0.0 (inert). None of the config-only knobs tried in
     # sim_fine_tuning/2026-08-10_0058_tripod_stability/ moved tripod_score, so this term rewards
     # genuine tripod-set alternation directly -- see crab_hex_tripod_reward.py for the full math.
-    # v4 replaced all state-based income (v2's support bonus, v3's v_z stability gate) with an
-    # event-based swap credit after four from-scratch failures showed every state-paying variant
-    # gets farmed by a cheap state-holding gait (lunge/tip-rock/skate/drag) -- see the v1-v4
-    # addenda in crab_hex_tripod_reward.py and the campaign RESULTS.md.
+    # v5 pays an event credit per zero-crossing of the smoothed support difference between the
+    # two tripod sets, scaled by swing amplitude and anti-correlation quality, inside a 0.10-0.60s
+    # period band. Chosen after the offline npz replay gate showed v4's debounced swap detector
+    # never fires on the healthy gait (stance bouts ~0.10s < any useful debounce) while paying
+    # the slow degenerates -- see the v1-v5 addenda in crab_hex_tripod_reward.py and the campaign
+    # RESULTS.md / offline_replay/ for the gate numbers.
     reward_tripod_schedule = RewTerm(
         func=mdp_rewards.RewardTripodSchedule,
         weight=0.0,
@@ -775,10 +777,13 @@ class CrabHexFlatWalkRewardsCfg:
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=_CRAB_FOOT_BODY_NAMES, preserve_order=True),
             "command_name": "base_velocity",
             "min_cmd_norm": 0.12,
-            "debounce_s": 0.08,
-            "min_swap_interval": 0.1,
-            "max_hold_s": 0.6,
-            "swap_credit": 15.0,
+            "ema_tau": 0.06,
+            "corr_tau": 0.20,
+            "min_period": 0.10,
+            "max_period": 0.60,
+            "min_amp": 0.15,
+            "var_min": 0.01,
+            "credit_scale": 1.0,
         },
     )
     reward_lin_vel_z = RewTerm(

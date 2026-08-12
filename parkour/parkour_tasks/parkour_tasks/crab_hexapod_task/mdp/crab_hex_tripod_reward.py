@@ -121,12 +121,56 @@ what the shape channel pays during perfect alternation. Unlike v1-v3, this term 
 to *create* phasing from nothing; it amplifies and sharpens the alternation the base config
 already produces emergently.
 
+**v5 addendum (amplitude- and anti-correlation-qualified crossing credit; v4 machinery
+REPLACED).** v4's screen produced falls by iteration 5000 -- but the decisive autopsy came from a
+new mandatory gate: replaying the reward function offline over saved gait-eval npz traces
+(``sim_fine_tuning/2026-08-10_0058_tripod_stability/offline_replay/``). That replay showed v4's
+income structure was *inverted*: the healthy baseline earned exactly 0.000/min (its ~0.30s-period
+gait has raw contact bouts of median 0.10s, so the 0.08s debounce erased its stance sets, the
+swap detector never fired, and the never-fed anti-freeze timer kept ``r_shape`` at zero too),
+while the only traces earning anything were the v2 tip-rock (1.2/min) and v3 skate (1.8/min),
+whose slow deliberate unison transitions are precisely what a 0.1s-persistence detector can see.
+A parameter grid over debounce/persistence found no robust operating point: every setting either
+stays blind to the healthy gait or pays the slow degenerates.
+
+Trace measurements that drove the v5 design: the healthy gait's alternation is *fast* (stride
+period ~0.30s) and *one-sided* -- tripod set B carries the body (b >= 2 for ~62% of steady
+steps) while set A is fully airborne ~75% of the time and fully planted only ~0.6%, which is
+exactly the "not stably supported by its planted legs" problem this campaign targets. So the
+reward must (a) operate at the stride timescale on *raw* contacts, no debounce; (b) pay the
+baseline's real-but-shallow alternation something; and (c) place its maximum at deep, symmetric,
+full-set alternation. v5 does this with an **event credit per zero-crossing** of the smoothed
+support difference ``x = s_A - s_B`` (fast EMA, ``ema_tau``): a crossing is the moment support
+duty actually transfers between the sets. Credit per crossing is
+
+    min(prev_peak, peak) * q_anti^2        (0 if the swing peak < ``min_amp``)
+
+where ``prev_peak``/``peak`` are the max ``|x|`` reached on either side of the crossing (both
+sets must genuinely take and give up support -- deeper swings pay more, with the maximum at full
+alternation), and ``q_anti = clamp(-corr(s_A, s_B), 0, 1)`` from EMA moments at ``corr_tau``
+(stride-matched, NOT slower): the two sets must move in *opposition*, which is what separates
+walking from the v3 skate whose sets chatter *together* (its |a-b| noise still crosses zero, but
+its correlation is positive, so q_anti == 0). Credit is paid only when the time since the
+previous crossing lies in ``[min_period, max_period]`` -- a band-pass on gait period that
+excludes both contact chatter and the slow (~0.67s) weight-shift oscillation of the v3b drag.
+Static configurations produce no crossings at all; unison motion keeps ``x ~ 0`` (fails
+``min_amp`` and q_anti); tip-rock moves the sets together (q_anti == 0). Replay-gate result:
+healthy refs earn 1.4-1.9/min (weighted, at weight 0.15), all four degenerate basins earn
+<= 0.013/min except the semi-healthy v4-falls trace at 0.111/min, and an ideal synthetic tripod
+(0.30s period, full sets, brief double-support) earns 36.6/min -- the optimum sits at the target
+behavior with a smooth amplitude slope from the baseline's shallow taps toward it. Event
+conditioning is also better than v4's: frequent small lumps (~0.07 credit at ~2.5 Hz on the
+baseline) rather than rare 15.0 spikes.
+
+State is packed in a single ``[N, STATE_DIM]`` tensor (see the ``S_*`` index constants); reset
+must zero every column and then set the ``S_T_SINCE`` column to ``RESET_T_SINCE`` so the first
+crossing after a reset is never in-band (no free credit at episode start).
+
 See ``RewardTripodSchedule`` in ``parkour_isaaclab/envs/mdp/rewards.py`` for the stateful
-``ManagerTermBase`` wrapper that drives this from real env/sensor data (specifically
-``ContactSensor.data.current_contact_time``, which already gives the "seconds continuously in
-contact" signal this module debounces against, the same sensor derivative
-``RewardStrideLength`` uses); this module stays free of any ``isaaclab`` import so it can be
-unit-tested without Isaac Sim, matching ``crab_hex_stride_reward.py``'s own isolation pattern.
+``ManagerTermBase`` wrapper that drives this from real env/sensor data (raw per-foot contact
+from the contact sensor -- v5 deliberately uses undebounced contact, see above); this module
+stays free of any ``isaaclab`` import so it can be unit-tested without Isaac Sim, matching
+``crab_hex_stride_reward.py``'s own isolation pattern.
 """
 
 from __future__ import annotations
@@ -142,105 +186,120 @@ TRIPOD_A_IDX: tuple[int, ...] = (0, 3, 4)
 TRIPOD_B_IDX: tuple[int, ...] = (1, 2, 5)
 """Index positions of tripod set B = {FR, ML, RR} within the 6-foot ``FOOT_ORDER`` convention."""
 
+# v5 state-tensor layout: one row per env, columns indexed by the S_* constants below.
+S_SA, S_SB = 0, 1  #: fast EMAs of the two sets' support fractions (a/3, b/3)
+S_MA, S_MB, S_MAA, S_MBB, S_MAB = 2, 3, 4, 5, 6  #: stride-timescale EMA moments of (s_A, s_B)
+S_SIGN = 7  #: sign of x = s_A - s_B at the last step it was nonzero (-1/0/+1)
+S_T_SINCE = 8  #: seconds since the last zero-crossing of x
+S_PEAK = 9  #: running max |x| since the last crossing
+S_PREV_PEAK = 10  #: max |x| over the swing before the last crossing
+STATE_DIM = 11
+RESET_T_SINCE = 1.0e6
+"""Post-reset value for ``S_T_SINCE``: large, so the first crossing is never in the period band."""
 
-def tripod_schedule_reward_step(
-    current_contact_time: torch.Tensor,
+
+def tripod_swap_crossing_reward_step(
+    contact: torch.Tensor,
     command_xy: torch.Tensor,
-    candidate_sign: torch.Tensor,
-    candidate_streak: torch.Tensor,
-    confirmed_sign: torch.Tensor,
-    time_since_confirmed_swap: torch.Tensor,
+    state: torch.Tensor,
     dt: float,
     tripod_a_idx: Sequence[int] = TRIPOD_A_IDX,
     tripod_b_idx: Sequence[int] = TRIPOD_B_IDX,
     min_cmd_norm: float = 0.12,
-    debounce_s: float = 0.08,
-    min_swap_interval: float = 0.1,
-    max_hold_s: float = 0.6,
-    swap_credit: float = 15.0,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
-    """One step of the tripod-alternation reward's state machine.
+    ema_tau: float = 0.06,
+    corr_tau: float = 0.20,
+    min_period: float = 0.10,
+    max_period: float = 0.60,
+    min_amp: float = 0.15,
+    var_min: float = 0.01,
+    credit_scale: float = 1.0,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """One step of the v5 crossing-credit reward (see the v5 addendum in the module docstring).
 
     Args:
-        current_contact_time: ``[N, 6]`` seconds each foot has been continuously in contact (0.0
-            if not currently in contact), in ``FOOT_ORDER`` -- e.g.
-            ``ContactSensor.data.current_contact_time``.
+        contact: ``[N, 6]`` bool -- raw per-foot contact this step, in ``FOOT_ORDER``. v5
+            deliberately uses undebounced contact: the healthy gait's stance bouts (median
+            ~0.10s) are shorter than any useful debounce window.
         command_xy: ``[N, 2]`` commanded planar velocity (body frame).
-        candidate_sign: ``[N]`` state in -- the most recently observed raw dominant-set sign
-            (``-1``, ``0``, or ``1``), before this step's debounce update.
-        candidate_streak: ``[N]`` state in -- seconds ``candidate_sign`` has persisted
-            continuously.
-        confirmed_sign: ``[N]`` state in -- the last *confirmed* dominant-set sign (only updates
-            once a candidate has persisted ``min_swap_interval``).
-        time_since_confirmed_swap: ``[N]`` state in -- seconds since ``confirmed_sign`` last
-            changed to a new confirmed value.
+        state: ``[N, STATE_DIM]`` state in, laid out per the ``S_*`` constants. Fresh envs must
+            be all-zero except ``S_T_SINCE = RESET_T_SINCE``.
         dt: physics step duration (s).
         tripod_a_idx: index positions (into the 6-foot axis) of tripod set A.
         tripod_b_idx: index positions (into the 6-foot axis) of tripod set B.
         min_cmd_norm: below this commanded planar speed there's no defined gait direction, so no
-            reward (matches ``reward_forward_progress_along_command``).
-        debounce_s: a foot counts as "in stable contact" only once ``current_contact_time`` for it
-            exceeds this -- rejects a single spurious contact-sensor step from moving the count.
-        min_swap_interval: a new raw dominant sign must persist this long before it's accepted as
-            a genuine swap (debounces swap detection separately from per-foot contact debounce).
-        max_hold_s: the shape reward is zeroed once the confirmed dominant set has held longer
-            than this without a new confirmed swap -- forces alternation rather than a static
-            coherent stance, mirroring the eval metric's degenerate-signal handling.
-        swap_credit: lump reward paid on the step a dominant-set swap is confirmed, scaled by
-            the opposition quality ``|a - b| / 3`` at that step (see the v4 addendum). Sized so
-            that at a healthy alternation cadence (~3 swaps/s) the event income is comparable to
-            the shape channel's payout during perfect alternation. Event income cannot be farmed
-            by any static configuration -- a confirmed swap physically requires lifting one
-            tripod set and planting the other.
+            credit (matches ``reward_forward_progress_along_command``).
+        ema_tau: smoothing timescale for the per-set support fractions -- just enough to reject
+            single-step contact chatter without hiding the ~0.30s stride rhythm.
+        corr_tau: timescale of the EMA moments behind ``q_anti``. Stride-matched on purpose: a
+            slower window (the 1.0s tried first in the offline gate) averages the fast healthy
+            alternation away entirely while resonating with slow degenerate weight-shifts.
+        min_period: crossings closer together than this earn nothing (contact chatter).
+        max_period: crossings farther apart than this earn nothing (slow weight-shift
+            oscillations, e.g. the v3b drag at ~0.67s).
+        min_amp: if the swing peak ``|x|`` since the last crossing is below this, the crossing
+            earns nothing (rejects unison gaits whose support difference only wiggles).
+        var_min: if either set's support variance (EMA moments) is below this, ``q_anti`` is 0 --
+            a degenerate constant signal has no defined correlation (mirrors the eval metric's
+            ``degenerate_anti_phase`` handling).
+        credit_scale: multiplier on the per-crossing credit; the natural credit is already in
+            ``[0, 1]`` (``min(prev_peak, peak) * q_anti^2``).
 
     Returns:
-        ``(reward[N], new_candidate_sign[N], new_candidate_streak[N], new_confirmed_sign[N],
-        new_time_since_confirmed_swap[N])``.
+        ``(reward[N], new_state[N, STATE_DIM])``. Reward is nonzero only on crossing steps.
     """
-    contact_stable = current_contact_time > debounce_s
-    a = contact_stable[:, list(tripod_a_idx)].sum(dim=1).float()
-    b = contact_stable[:, list(tripod_b_idx)].sum(dim=1).float()
+    a = contact[:, list(tripod_a_idx)].float().sum(dim=1) / 3.0
+    b = contact[:, list(tripod_b_idx)].float().sum(dim=1) / 3.0
 
-    coherence_a = ((a == 0.0) | (a == 3.0)).float()
-    coherence_b = ((b == 0.0) | (b == 3.0)).float()
-    diff = a - b
-    r_shape = coherence_a * coherence_b * diff.abs() / 3.0
+    alpha = dt / ema_tau
+    alpha_c = dt / corr_tau
+    s_a = state[:, S_SA] + alpha * (a - state[:, S_SA])
+    s_b = state[:, S_SB] + alpha * (b - state[:, S_SB])
+    m_a = state[:, S_MA] + alpha_c * (s_a - state[:, S_MA])
+    m_b = state[:, S_MB] + alpha_c * (s_b - state[:, S_MB])
+    m_aa = state[:, S_MAA] + alpha_c * (s_a * s_a - state[:, S_MAA])
+    m_bb = state[:, S_MBB] + alpha_c * (s_b * s_b - state[:, S_MBB])
+    m_ab = state[:, S_MAB] + alpha_c * (s_a * s_b - state[:, S_MAB])
 
-    raw_sign = torch.sign(diff)
-    raw_sign = torch.where(diff.abs() >= 2.0, raw_sign, torch.zeros_like(raw_sign))
+    x = s_a - s_b
+    t_since = state[:, S_T_SINCE] + dt
+    sign_prev = state[:, S_SIGN]
+    peak = state[:, S_PEAK]
+    prev_peak = state[:, S_PREV_PEAK]
 
-    same_as_candidate = raw_sign == candidate_sign
-    new_candidate_streak = torch.where(
-        same_as_candidate, candidate_streak + dt, torch.full_like(candidate_streak, dt)
+    s = torch.sign(x)
+    crossing = (s != 0.0) & (sign_prev != 0.0) & (s != sign_prev)
+
+    # Anti-correlation quality from the stride-timescale moments; zero when either signal is
+    # (near-)constant, where correlation is undefined and a frozen stance must not earn.
+    var_a = m_aa - m_a * m_a
+    var_b = m_bb - m_b * m_b
+    cov = m_ab - m_a * m_b
+    denom = torch.sqrt(torch.clamp(var_a, min=1e-8) * torch.clamp(var_b, min=1e-8))
+    q_anti = torch.clamp(-cov / denom, min=0.0, max=1.0)
+    q_anti = torch.where(
+        (var_a < var_min) | (var_b < var_min), torch.zeros_like(q_anti), q_anti
     )
-    new_candidate_sign = torch.where(same_as_candidate, candidate_sign, raw_sign)
 
-    do_confirm = (
-        (new_candidate_streak >= min_swap_interval)
-        & (new_candidate_sign != 0.0)
-        & (new_candidate_sign != confirmed_sign)
+    # Both swings around the crossing must be real: the smaller of the two peaks scales the
+    # credit (deeper, more symmetric alternation pays more, maxing out at full-set exchange).
+    amp_ok = peak >= min_amp
+    credit = torch.minimum(prev_peak, peak) * q_anti * q_anti * credit_scale
+    credit = torch.where(amp_ok, credit, torch.zeros_like(credit))
+
+    in_band = (t_since >= min_period) & (t_since <= max_period)
+    cmd_active = torch.norm(command_xy, dim=1) > min_cmd_norm
+    reward = credit * (crossing & in_band & cmd_active).float()
+
+    # Crossing bookkeeping happens regardless of whether the credit was paid (an out-of-band or
+    # low-quality crossing still starts a new swing).
+    new_prev_peak = torch.where(crossing, peak, prev_peak)
+    new_peak = torch.where(crossing, torch.zeros_like(peak), peak)
+    new_t_since = torch.where(crossing, torch.zeros_like(t_since), t_since)
+    new_sign = torch.where(s != 0.0, s, sign_prev)
+    new_peak = torch.maximum(new_peak, x.abs())
+
+    new_state = torch.stack(
+        [s_a, s_b, m_a, m_b, m_aa, m_bb, m_ab, new_sign, new_t_since, new_peak, new_prev_peak],
+        dim=1,
     )
-    new_confirmed_sign = torch.where(do_confirm, new_candidate_sign, confirmed_sign)
-    new_time_since_swap = torch.where(
-        do_confirm, torch.zeros_like(time_since_confirmed_swap), time_since_confirmed_swap + dt
-    )
-
-    anti_freeze = (new_time_since_swap <= max_hold_s).float()
-
-    # Event-based swap credit (v4): a lump paid exactly when a dominant-set swap is confirmed,
-    # scaled by the opposition quality at that step. No static configuration produces confirmed
-    # swaps, so no holdable state earns anything -- and rapid genuine alternation earning more
-    # credit is the target behavior, not an exploit. (The state-based support bonus and its v_z
-    # gate were removed after four from-scratch failures; see the v4 addendum.)
-    swap_quality = diff.abs() / 3.0
-    swap_lump = swap_credit * swap_quality * do_confirm.float()
-
-    cmd_norm = torch.norm(command_xy, dim=1)
-    cmd_active = (cmd_norm > min_cmd_norm).float()
-
-    reward = (r_shape * anti_freeze + swap_lump) * cmd_active
-
-    return (
-        reward, new_candidate_sign, new_candidate_streak, new_confirmed_sign,
-        new_time_since_swap,
-    )
+    return reward, new_state
