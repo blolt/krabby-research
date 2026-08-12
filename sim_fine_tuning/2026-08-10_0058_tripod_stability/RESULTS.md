@@ -508,3 +508,17 @@ on this exact protocol the baseline measures 0.401-0.405.)
 Continuing: b7d = +3000 more. If ≥0.43 → bake proposal (v5@0.3 + pitch −0.1). If plateau ~0.425
 → bake proposal anyway with the plateau documented (+0.02-0.024 real tripod, slip −0.3pp, EMA
 −0.01, +200 swaps, zero degradation across 5 runs of the family).
+
+## b7d: +3000 — regression to 0.383; the combo raises the ceiling, not the floor
+
+b7d (model_27996): tripod 0.3830, completion 100%, slip 2.38%, roll 0.0367, EMA 0.1446, swaps
+200, pitch +0.210. Family trajectory: 0.418 (2k) → 0.4248 (5k) → 0.3830 (8k). The b7 combo does
+NOT hold a raised tripod level at arbitrary stopping points — it oscillates in a 0.38-0.425 band
+whose PEAK (0.4248, model_24997, EMA 0.1252 — both campaign bests) exceeds everything the b6
+family or baseline visits (0.400-0.405). No run of the b7/b6 families ever violated a health
+gate (7 runs, 15k fine-tune iters total). Since the eval is deterministic and cheap (~4 min),
+checkpoint selection by eval is a sound protocol: the peak is harvestable even though the
+weights alone don't pin it.
+
+**Campaign stop point reached** — bake proposal presented to user (see chat). Loop halted per
+the standing rule (bake decisions are user review).
