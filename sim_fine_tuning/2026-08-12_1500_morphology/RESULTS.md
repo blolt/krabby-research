@@ -25,3 +25,34 @@ Search over default joint angles (per-leg knee, then hip-femur if needed) via th
 script's override flag — target all six feet at 165±15 N with pitch/roll ≤1°. Found values then
 baked into crab_hex_scene_cfg.py (revertable commit) and validated by M5: fine-tune healthy
 19999 on the symmetrized plant, standard two-point eval — watch duty_A, pitch, tripod.
+
+## M4: static-load symmetrization — ABANDONED (objective ill-posed); M4b statistics decisive
+
+The knee-angle Newton solver diverged (rms 44→61 N, steps flip-flopping at clamps) and exposed
+why: the hyperstatic 6-foot force distribution is **path-dependent** — feet stick where friction
+catches them during settle, so per-settle force maps are a landing lottery (probes swung A-share
+33-65% on ±0.02 rad knee changes). Equalizing one settle's map is meaningless.
+
+**M4b (decisive)**: A-share over 20 jittered zero-action settles = **51.0% ± 2.1%**. The plant
+is statically A/B-balanced; M1b's 57/43 was one lottery draw. (Systematic structure exists but
+is A/B-neutral: settles consistently rest on a FL/ML/MR/RR tetrapod with FR+RL floating at
+~35 N — one floater from each tripod set; a front/mid cam-phase effect, not a set bias.)
+
+## Campaign conclusion: the anchor is the BASIN, not the plant
+
+| suspected anchor | measurement | verdict |
+|---|---|---|
+| default posture leans | equilibrium +0.55° | plant stands level |
+| CoM forward | −3.3 mm | centered |
+| static A/B load bias | 51.0% ± 2.1% | balanced |
+
+Combined with the reward campaigns: the +12° lean and B-duty preference are neither
+plant-forced nor reward-priced — they are **learned symmetry-breaking locked into the baseline
+policy's basin** (a tripod gait must elect a lead set; the original 20k run's basin chose B and
+a leaned carry). Supporting evidence: from-scratch runs in other basins show different leans
+(v5's unison-glide: +0.13 rad vs 0.209), and 2000-iter fine-tunes never escape a basin.
+The previous "morphology-locked" conclusion is REPLACED by direct measurement: morphology is
+innocent; history is guilty. The route to tripod ≥0.45 is **basin selection at from-scratch
+time** — a deliberate multi-seed from-scratch search (the basin lottery run as a search, scored
+by the deterministic eval, with v5 active to amplify any alternating basin found) or
+symmetry-enforced training. Proposal presented to user; campaign closed.

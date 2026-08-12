@@ -24,6 +24,12 @@ parser.add_argument("--task", type=str, default="Isaac-Crab-Hex-Flat-Walk-Play-v
 parser.add_argument("--num_envs", type=int, default=1)
 parser.add_argument("--steps", type=int, default=300, help="Zero-action settle steps (6 s at dt=0.02).")
 parser.add_argument("--output", type=str, default=None)
+parser.add_argument(
+    "--joint_overrides",
+    type=str,
+    default=None,
+    help='JSON dict of init_state.joint_pos overrides, e.g. \'{"MR_Femur_Tibia_RevoluteJoint": 0.05}\'.',
+)
 
 _PARKOUR_ROOT = Path("/home/nickmagus/krabby/krabby-research/parkour")
 sys.path.insert(0, str(_PARKOUR_ROOT / "scripts" / "rsl_rl"))
@@ -62,6 +68,10 @@ def signed_pitch_roll(quat_w: torch.Tensor) -> tuple[float, float]:
 
 def main() -> None:
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs)
+    overrides = json.loads(args_cli.joint_overrides) if args_cli.joint_overrides else {}
+    if overrides:
+        env_cfg.scene.robot.init_state.joint_pos.update(overrides)
+        print(f"[INFO] joint_pos overrides applied: {overrides}")
     env = gym.make(args_cli.task, cfg=env_cfg)
     uenv = env.unwrapped
     robot = uenv.scene["robot"]
