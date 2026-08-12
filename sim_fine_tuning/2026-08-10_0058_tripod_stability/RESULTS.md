@@ -424,3 +424,24 @@ march-in-place alternation economically competitive with walking; 0.3 keeps loco
 strictly dominant while doubling the pressure on the duty-rebalance slope (min(prev,peak)
 already binds on the weak A-side swing). If 0.3 is still inert → v7 targets duty symmetry
 directly rather than more weight.
+
+## b6b: v5 term @0.3 fine-tune — INERT again; duty asymmetry immune to price pressure
+
+| | baseline | b6 (@0.15) | b6b (@0.3) |
+|---|---|---|---|
+| tripod | 0.401 | 0.400 | 0.403 |
+| completion / slip / roll / EMA | 100% / 2.6% / 0.039 / 0.13 | 100% / 2.30% / 0.037 / 0.136 | 100% / 2.27% / 0.038 / 0.131 |
+| duty_A / duty_B | 0.146 / 0.556 | 0.147 / 0.556 | 0.140 / 0.557 |
+| pearson | −0.606 | −0.605 | −0.609 |
+| v5 income (ref w=0.15) | 1.4-1.9/min | 5.31/min | 4.76/min |
+
+Doubling the weight left every structural number unchanged. Conclusion: the 15%/56% duty split
+is not price-sensitive through the min-peak channel — either an exploration barrier (the weight
+shift passes through worse-income intermediate postures) or the credit's duty signal is too
+implicit. Two parallel probes:
+- **b6c** (running): extend b6b +4000 iters @0.3 — tests "structural shift just needs time".
+- **v7** (implementing): multiply the crossing credit by an explicit windowed duty-balance
+  factor q_duty = 4·d_A·d_B/(d_A+d_B)² (EMA duties, ~2-stride window). At the current gait
+  q_duty ≈ 0.64, at balance 1.0 — a persistent +56% income differential for rebalancing that
+  compounds with the amplitude slope, while timing-sharpening alone no longer raises income.
+  Offline gate (incl. degenerates + ideal) before any run, as always.
