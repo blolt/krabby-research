@@ -41,3 +41,18 @@ tripod 0.0, pitch +0.131 — counts as seed-1's v5-active sample.
 **User visual verdict on seed7 (2026-08-13):** the glide is NOT a good gait — adopt-glide option
 rejected. Directive: if seed 8 comes up empty, skip seed 9 and move directly to the symmetry
 route (implementation pre-authorized on that condition).
+| 8 | shuffle, **B-handed extreme** | 0.037 | +0.140 | **0.126/0.704** (beyond baseline!) | 100% | slip 11.2%, tippy 26.7%, EMA 0.220; anti-phase 15.5% but 0 swaps — coherent states never organize into alternation. Not winner-grade. |
+
+## Campaign closed: 0/7 alternating (seed 9 skipped per user directive)
+
+Census of v5-active from-scratch draws (incl. the seed-1 v5 screen): glide ×4 (seeds 1,4,6,7),
+tippy-shuffle ×2 (3,5), handed-shuffle/bouncy ×2 (seed2 **A-handed** 0.633/0.148, seed8
+**B-handed** 0.704/0.126). Zero alternating basins. Handedness broke BOTH directions across the
+search — the direction is pure lottery (symmetric machine, symmetric statistics), while the
+one alternating basin ever observed (baseline, seed 1, PLAIN config) predates v5. Honest note:
+0/8 with v5 active vs 1/1 plain is weak evidence that v5's early income may steer from-scratch
+runs toward the glide family; the symmetry validation run will therefore use the PLAIN config.
+
+**Conclusion**: unconstrained from-scratch training essentially never finds the alternating
+basin, and when it breaks symmetry it does so in a random direction. The user's pre-authorized
+conditional fires: proceed to mirror-symmetry training (campaign 2026-08-13_mirror_symmetry).
