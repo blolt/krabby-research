@@ -129,21 +129,32 @@ def _crab_simple_robot_cfg() -> ArticulationCfg:
                 # by THETA_HIP_MAX / radians(50) = 0.5708 to preserve the original design's relative
                 # front/rear-vs-middle splay proportions (and the same fractional margin from the
                 # limit) under the corrected geometry, rather than picking new values from scratch.
-                "FR_Body_Hip_RevoluteJoint": 0.342492,
-                "FL_Body_Hip_RevoluteJoint": -0.342492,
-                "ML_Body_Hip_RevoluteJoint": 0.142705,
-                "MR_Body_Hip_RevoluteJoint": -0.142705,
-                "RR_Body_Hip_RevoluteJoint": -0.342492,
-                "RL_Body_Hip_RevoluteJoint": 0.342492,
+                # NOTE(perpendicular-mounts, 2026-08-13): every leg is mounted perpendicular
+                # to the frame with its yaw range centered on that mount (user-confirmed hardware
+                # reality). The previous splay defaults (F/R +/-0.342492, M +/-0.142705 -- the
+                # Go2-inherited proportions rescaled at the Phase E limit correction) parked the
+                # front/rear legs 8.9 deg from the +/-28.54 deg mechanism limit and centered
+                # their +/-0.24 rad action window at 82% cam gear, which is why only the mid
+                # legs provided forward thrust (see
+                # sim_fine_tuning/2026-08-13_1230_perpendicular_mounts/). Zero defaults center
+                # every leg's command window on the mount neutral at 100% cam gear with the full
+                # symmetric stroke. The standing stance is the policy's choice within the
+                # window, not the default's.
+                "FR_Body_Hip_RevoluteJoint": 0.0,
+                "FL_Body_Hip_RevoluteJoint": 0.0,
+                "ML_Body_Hip_RevoluteJoint": 0.0,
+                "MR_Body_Hip_RevoluteJoint": 0.0,
+                "RR_Body_Hip_RevoluteJoint": 0.0,
+                "RL_Body_Hip_RevoluteJoint": 0.0,
                 # NOTE(cam-mechanism-migration): principal-value asin inverse of each leg's
                 # Body_Hip default above, computed in code (not hand-typed) to stay exactly
                 # consistent with crab_hex_cam_mapping.cam_shaft_to_hip (see plan Phase B).
-                "FR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.342492),
-                "FL_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(-0.342492),
-                "ML_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.142705),
-                "MR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(-0.142705),
-                "RR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(-0.342492),
-                "RL_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.342492),
+                "FR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.0),
+                "FL_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.0),
+                "ML_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.0),
+                "MR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.0),
+                "RR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.0),
+                "RL_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.0),
                 # Hip–femur: same on all legs. Knee: sign flip on FR/MR/RR (180° Z in USD); left −0.07
                 # vs right +0.10 balances zero-action roll (~−0.14°) with splay unchanged.
                 ".*_Hip_Femur_RevoluteJoint": 0.30,
