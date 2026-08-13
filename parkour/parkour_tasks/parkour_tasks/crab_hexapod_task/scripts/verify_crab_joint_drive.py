@@ -74,6 +74,12 @@ parser.add_argument(
     default=0.35,
     help="Pass if max |tau| >= this fraction of nominal actuator effort (when |dq| is tiny).",
 )
+parser.add_argument(
+    "--only",
+    type=str,
+    default=None,
+    help="Regex: probe only joints whose name matches (e.g. 'FR_Femur_Tibia').",
+)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
 
@@ -112,20 +118,26 @@ def _step_zeros(env, n: int) -> None:
 
 def _hold_actions(
     robot,
-    joint_idx: int,
+    col: int,
+    act_joint_ids: list[int],
     scale: float,
     clip_lo: float,
     clip_hi: float,
     device: torch.device,
-    num_joints: int,
     hold_gain: float = 2.0,
 ) -> torch.Tensor:
-    """Corrective actions to keep non-probed joints near default pose."""
-    q = robot.data.joint_pos[0, :num_joints]
-    q_def = robot.data.default_joint_pos[0, :num_joints]
-    actions = torch.zeros(num_joints, device=device)
-    for k in range(num_joints):
-        if k == joint_idx:
+    """Corrective actions (action-column space) to keep non-probed joints near default pose.
+
+    NOTE: action columns are the action term's 18 actuated joints; the articulation has 24
+    DOFs (6 passive Body_Hip + 6 CamShaft + 12 leg joints), so columns must be mapped to
+    articulation indices via ``act_joint_ids`` — indexing robot data by column is wrong.
+    """
+    art_ids = torch.tensor(act_joint_ids, device=device)
+    q = robot.data.joint_pos[0, art_ids]
+    q_def = robot.data.default_joint_pos[0, art_ids]
+    actions = torch.zeros(len(act_joint_ids), device=device)
+    for k in range(len(act_joint_ids)):
+        if k == col:
             continue
         actions[k] = torch.clamp(hold_gain * (q_def[k] - q[k]) / scale, clip_lo, clip_hi)
     return actions
@@ -133,31 +145,32 @@ def _hold_actions(
 
 def _step_joint_action(
     env,
-    joint_idx: int,
+    col: int,
+    art_id: int,
     raw: float,
     n: int,
     *,
     hold_others: bool,
+    act_joint_ids: list[int],
     scale: float,
     clip_lo: float,
     clip_hi: float,
 ) -> tuple[float, float]:
-    """Step with a single-joint command; return (max |tau|, max |qdot|) on that joint."""
+    """Step with a single-column command; return (max |tau|, max |qdot|) on that joint."""
     device = env.unwrapped.device
     robot = env.unwrapped.scene["robot"]
-    num_joints = robot.num_joints
     max_tau = 0.0
     max_qd = 0.0
     with torch.inference_mode():
         for _ in range(n):
             actions = torch.zeros(env.action_space.shape, device=device)
             if hold_others:
-                hold = _hold_actions(robot, joint_idx, scale, clip_lo, clip_hi, device, num_joints)
-                actions[0, :num_joints] = hold
-            actions[..., joint_idx] = raw
+                hold = _hold_actions(robot, col, act_joint_ids, scale, clip_lo, clip_hi, device)
+                actions[0, :] = hold
+            actions[..., col] = raw
             env.step(actions)
-            max_tau = max(max_tau, robot.data.applied_torque[0, joint_idx].abs().item())
-            max_qd = max(max_qd, robot.data.joint_vel[0, joint_idx].abs().item())
+            max_tau = max(max_tau, robot.data.applied_torque[0, art_id].abs().item())
+            max_qd = max(max_qd, robot.data.joint_vel[0, art_id].abs().item())
     return max_tau, max_qd
 
 
@@ -184,7 +197,12 @@ def main() -> None:
     robot = env.unwrapped.scene["robot"]
     joint_pos_term = env.unwrapped.action_manager.get_term("joint_pos")
     num_joints = robot.num_joints
-    joint_names = list(robot.data.joint_names)
+    # Action columns are the term's actuated joints (18), NOT the articulation's DOFs (24
+    # since the cam-mechanism migration added passive Body_Hip + CamShaft pairs). Probe in
+    # column space and map to articulation indices for all robot.data reads.
+    act_joint_ids = list(joint_pos_term._joint_ids)
+    act_joint_names = list(joint_pos_term._joint_names)
+    num_actions = len(act_joint_names)
     scale = float(joint_pos_term.cfg.scale)
     clip = joint_pos_term.cfg.clip
     if clip is None:
@@ -212,7 +230,10 @@ def main() -> None:
     print(f"num_envs: {env.unwrapped.scene.num_envs}", flush=True)
     print(f"gravity: {'on' if args_cli.with_gravity else 'off'}", flush=True)
     print(f"fix_base: {args_cli.fix_base}", flush=True)
-    print(f"num_joints: {num_joints} (expected 18 = 6 legs x 3 DOF)", flush=True)
+    print(
+        f"num_joints: {num_joints} articulation DOFs; probing {num_actions} actuated action columns",
+        flush=True,
+    )
     print(f"action term scale: {scale}", flush=True)
     print(f"action term clip: {clip}", flush=True)
     print(
@@ -222,8 +243,8 @@ def main() -> None:
     )
     print(f"pass threshold: |delta q| >= {args_cli.min_delta_rad} rad\n", flush=True)
 
-    if num_joints != 18:
-        print(f"WARNING: expected 18 joints, got {num_joints}", flush=True)
+    if num_actions != 18:
+        print(f"WARNING: expected 18 actuated joints, got {num_actions}", flush=True)
 
     limits = robot.data.soft_joint_pos_limits[0]
     expected_delta = scale * args_cli.action_mag
@@ -238,23 +259,56 @@ def main() -> None:
             return True
         return max_qd >= args_cli.min_vel_rad_s and max_tau >= 0.2 * nominal_eff
 
-    def _probe_joint(j: int, drive_steps: int, action_mag: float) -> tuple[bool, float, float, float, float, bool, bool]:
-        nominal_eff = _nominal_effort(joint_names[j])
+    body_names = list(robot.data.body_names)
+
+    def _foot_body_idx(jname: str) -> int | None:
+        leg = jname.split("_")[0]
+        name = f"{leg}_Footpad"
+        return body_names.index(name) if name in body_names else None
+
+    def _probe_joint(c: int, drive_steps: int, action_mag: float) -> tuple[bool, float, float, float, float, bool, bool]:
+        art_id = act_joint_ids[c]
+        nominal_eff = _nominal_effort(act_joint_names[c])
+        foot_idx = _foot_body_idx(act_joint_names[c])
         _reset_env(env)
         _step_zeros(env, args_cli.steps_settle)
-        baseline = robot.data.joint_pos[0, j].item()
+        baseline = robot.data.joint_pos[0, art_id].item()
+        foot0 = robot.data.body_pos_w[0, foot_idx].clone() if foot_idx is not None else None
         drive_kw = dict(
             hold_others=args_cli.hold_other_joints,
+            act_joint_ids=act_joint_ids,
             scale=scale,
             clip_lo=clip_lo,
             clip_hi=clip_hi,
         )
-        max_tau_plus, max_qd_plus = _step_joint_action(env, j, action_mag, drive_steps, **drive_kw)
-        delta_plus = robot.data.joint_pos[0, j].item() - baseline
+        max_tau_plus, max_qd_plus = _step_joint_action(env, c, art_id, action_mag, drive_steps, **drive_kw)
+        delta_plus = robot.data.joint_pos[0, art_id].item() - baseline
+        ep_len = int(env.unwrapped.episode_length_buf[0].item())
+        if ep_len < drive_steps:
+            print(
+                f"      WARNING: episode_length={ep_len} < drive steps {drive_steps} — env is "
+                f"resetting mid-probe; results invalid (use gravity-on, check terminations)",
+                flush=True,
+            )
+        if foot0 is not None:
+            dfoot = robot.data.body_pos_w[0, foot_idx] - foot0
+            print(
+                f"      foot dxyz (raw {action_mag:+.2f}): "
+                f"[{dfoot[0].item():+.4f}, {dfoot[1].item():+.4f}, {dfoot[2].item():+.4f}] m",
+                flush=True,
+            )
         _step_zeros(env, args_cli.steps_settle)
-        baseline_minus = robot.data.joint_pos[0, j].item()
-        max_tau_minus, max_qd_minus = _step_joint_action(env, j, -action_mag, drive_steps, **drive_kw)
-        delta_minus = robot.data.joint_pos[0, j].item() - baseline_minus
+        baseline_minus = robot.data.joint_pos[0, art_id].item()
+        foot0 = robot.data.body_pos_w[0, foot_idx].clone() if foot_idx is not None else None
+        max_tau_minus, max_qd_minus = _step_joint_action(env, c, art_id, -action_mag, drive_steps, **drive_kw)
+        delta_minus = robot.data.joint_pos[0, art_id].item() - baseline_minus
+        if foot0 is not None:
+            dfoot = robot.data.body_pos_w[0, foot_idx] - foot0
+            print(
+                f"      foot dxyz (raw {-action_mag:+.2f}): "
+                f"[{dfoot[0].item():+.4f}, {dfoot[1].item():+.4f}, {dfoot[2].item():+.4f}] m",
+                flush=True,
+            )
         ok_plus = _motion_ok(delta_plus, max_tau_plus, max_qd_plus, nominal_eff)
         ok_minus = _motion_ok(delta_minus, max_tau_minus, max_qd_minus, nominal_eff)
         return (
@@ -267,17 +321,28 @@ def main() -> None:
             ok_minus,
         )
 
-    for j in range(num_joints):
-        print(f"--- joint {j + 1}/{num_joints}: {joint_names[j]} ---", flush=True)
+    import re
+
+    probe_ids = [
+        c for c in range(num_actions)
+        if args_cli.only is None or re.search(args_cli.only, act_joint_names[c])
+    ]
+    if not probe_ids:
+        print(f"ERROR: --only '{args_cli.only}' matched no joints", flush=True)
+        sys.exit(2)
+
+    for c in probe_ids:
+        j = act_joint_ids[c]
+        print(f"--- action {c + 1}/{num_actions}: {act_joint_names[c]} (dof {j}) ---", flush=True)
         default = robot.data.default_joint_pos[0, j].item()
-        nominal_eff = _nominal_effort(joint_names[j])
+        nominal_eff = _nominal_effort(act_joint_names[c])
 
         ok, delta_plus, delta_minus, max_tau_plus, max_tau_minus, ok_plus, ok_minus = _probe_joint(
-            j, args_cli.steps_drive, args_cli.action_mag
+            c, args_cli.steps_drive, args_cli.action_mag
         )
         if not ok:
             ok_retry, dp2, dm2, tp2, tm2, op2, om2 = _probe_joint(
-                j, args_cli.steps_drive * 2, args_cli.action_mag
+                c, args_cli.steps_drive * 2, args_cli.action_mag
             )
             if ok_retry:
                 ok, delta_plus, delta_minus = ok_retry, dp2, dm2
@@ -286,7 +351,7 @@ def main() -> None:
             elif args_cli.action_mag < 2.0:
                 mag2 = min(2.0, clip_hi)
                 ok_retry2, dp3, dm3, tp3, tm3, op3, om3 = _probe_joint(
-                    j, args_cli.steps_drive * 2, mag2
+                    c, args_cli.steps_drive * 2, mag2
                 )
                 if ok_retry2:
                     ok, delta_plus, delta_minus = ok_retry2, dp3, dm3
@@ -299,15 +364,15 @@ def main() -> None:
         saturated = max(max_tau_plus, max_tau_minus) > 0.9 * nominal_eff
         results.append(
             {
-                "idx": j,
-                "name": joint_names[j],
+                "idx": c,
+                "name": act_joint_names[c],
                 "ok": ok,
                 "status": status,
             }
         )
 
         print(
-            f"[{j:2d}] {status}  {joint_names[j]}\n"
+            f"[{c:2d}] {status}  {act_joint_names[c]}\n"
             f"      default={default:+.4f}  lim=[{lo:+.3f}, {hi:+.3f}]  "
             f"nominal_effort={nominal_eff:.1f} Nm\n"
             f"      expected |dq|~{expected_delta:.3f} rad (scale*action_mag)\n"
@@ -324,7 +389,7 @@ def main() -> None:
 
     n_ok = sum(1 for r in results if r["ok"])
     print("\n=== Summary ===", flush=True)
-    print(f"Driven: {n_ok}/{num_joints}", flush=True)
+    print(f"Driven: {n_ok}/{len(probe_ids)}", flush=True)
     if all_ok:
         print("PASS: all joints showed measurable motion in at least one direction.", flush=True)
     else:
@@ -338,5 +403,12 @@ def main() -> None:
 if __name__ == "__main__":
     try:
         main()
+    except BaseException:
+        # Flush the traceback BEFORE closing Kit: simulation_app.close() can hang, and the
+        # default handler only prints after ``finally`` completes (observed: silent 1h spin).
+        import traceback
+
+        traceback.print_exc()
+        raise
     finally:
         simulation_app.close()

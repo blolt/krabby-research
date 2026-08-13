@@ -828,8 +828,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0.4, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -50
-            float physics:upperLimit = 50
+            float physics:lowerLimit = -32
+            float physics:upperLimit = 32
         }
 
         def PhysicsRevoluteJoint "FL_Body_CamShaft_RevoluteJoint" (
@@ -864,8 +864,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0.4, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -75
-            float physics:upperLimit = 75
+            float physics:lowerLimit = -70
+            float physics:upperLimit = 55
         }
 
         def PhysicsRevoluteJoint "FL_Femur_Tibia_RevoluteJoint" (
@@ -883,8 +883,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0, 0.4)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -100
-            float physics:upperLimit = 100
+            float physics:lowerLimit = -75
+            float physics:upperLimit = 50
         }
 
         def PhysicsRevoluteJoint "FR_Body_Hip_RevoluteJoint"
@@ -899,8 +899,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, -0.4, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -50
-            float physics:upperLimit = 50
+            float physics:lowerLimit = -32
+            float physics:upperLimit = 32
         }
 
         def PhysicsRevoluteJoint "FR_Body_CamShaft_RevoluteJoint" (
@@ -935,8 +935,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, -0.4, 0)
             quatf physics:localRot0 = (0, 0, 1, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -75
-            float physics:upperLimit = 75
+            float physics:lowerLimit = -70
+            float physics:upperLimit = 55
         }
 
         def PhysicsRevoluteJoint "FR_Femur_Tibia_RevoluteJoint" (
@@ -954,8 +954,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0, 0.4)
             quatf physics:localRot0 = (0, 0, 1, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -100
-            float physics:upperLimit = 100
+            float physics:lowerLimit = -50
+            float physics:upperLimit = 75
         }
 
         def PhysicsRevoluteJoint "ML_Body_Hip_RevoluteJoint"
@@ -970,8 +970,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0.4, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -50
-            float physics:upperLimit = 50
+            float physics:lowerLimit = -32
+            float physics:upperLimit = 32
         }
 
         def PhysicsRevoluteJoint "ML_Body_CamShaft_RevoluteJoint" (
@@ -1006,8 +1006,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0.4, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -75
-            float physics:upperLimit = 75
+            float physics:lowerLimit = -70
+            float physics:upperLimit = 55
         }
 
         def PhysicsRevoluteJoint "ML_Femur_Tibia_RevoluteJoint" (
@@ -1025,8 +1025,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0, 0.4)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -100
-            float physics:upperLimit = 100
+            float physics:lowerLimit = -75
+            float physics:upperLimit = 50
         }
 
         def PhysicsRevoluteJoint "MR_Body_Hip_RevoluteJoint"
@@ -1041,8 +1041,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, -0.4, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -50
-            float physics:upperLimit = 50
+            float physics:lowerLimit = -32
+            float physics:upperLimit = 32
         }
 
         def PhysicsRevoluteJoint "MR_Body_CamShaft_RevoluteJoint" (
@@ -1077,8 +1077,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, -0.4, 0)
             quatf physics:localRot0 = (0, 0, 1, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -75
-            float physics:upperLimit = 75
+            float physics:lowerLimit = -70
+            float physics:upperLimit = 55
         }
 
         def PhysicsRevoluteJoint "MR_Femur_Tibia_RevoluteJoint" (
@@ -1096,8 +1096,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0, 0.4)
             quatf physics:localRot0 = (0, 0, 1, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -100
-            float physics:upperLimit = 100
+            float physics:lowerLimit = -50
+            float physics:upperLimit = 75
         }
 
         def PhysicsRevoluteJoint "RL_Body_Hip_RevoluteJoint"
@@ -1112,8 +1112,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0.4, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -50
-            float physics:upperLimit = 50
+            float physics:lowerLimit = -32
+            float physics:upperLimit = 32
         }
 
         def PhysicsRevoluteJoint "RL_Body_CamShaft_RevoluteJoint" (
@@ -1148,8 +1148,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0.4, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -75
-            float physics:upperLimit = 75
+            float physics:lowerLimit = -70
+            float physics:upperLimit = 55
         }
 
         def PhysicsRevoluteJoint "RL_Femur_Tibia_RevoluteJoint" (
@@ -1167,8 +1167,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0, 0.4)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -100
-            float physics:upperLimit = 100
+            float physics:lowerLimit = -75
+            float physics:upperLimit = 50
         }
 
         def PhysicsRevoluteJoint "RR_Body_Hip_RevoluteJoint"
@@ -1183,8 +1183,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, -0.4, 0)
             quatf physics:localRot0 = (1, 0, 0, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -50
-            float physics:upperLimit = 50
+            float physics:lowerLimit = -32
+            float physics:upperLimit = 32
         }
 
         def PhysicsRevoluteJoint "RR_Body_CamShaft_RevoluteJoint" (
@@ -1219,8 +1219,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, -0.4, 0)
             quatf physics:localRot0 = (0, 0, 1, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -75
-            float physics:upperLimit = 75
+            float physics:lowerLimit = -70
+            float physics:upperLimit = 55
         }
 
         def PhysicsRevoluteJoint "RR_Femur_Tibia_RevoluteJoint" (
@@ -1238,8 +1238,8 @@ def Xform "krabby" (
             point3f physics:localPos1 = (0, 0, 0.4)
             quatf physics:localRot0 = (0, 0, 1, 0)
             quatf physics:localRot1 = (1, 0, 0, 0)
-            float physics:lowerLimit = -100
-            float physics:upperLimit = 100
+            float physics:lowerLimit = -50
+            float physics:upperLimit = 75
         }
 
         def PhysicsFixedJoint "FL_Tibia_Footpad_FixedJoint"
