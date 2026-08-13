@@ -77,3 +77,28 @@ Applied to this campaign once the current 20k validation completes:
    - Balanced within episodes + alternating → symmetry sufficient; adoption path.
 3. **Escalation** if loss+augmentation underdeliver: hard-equivariant architecture (Su et al.,
    IROS 2024 — strictly better than augmentation).
+
+## 20k validation: SYMMETRY SUFFICIENT — campaign target broken
+
+model_19999 (plain config + mirror loss 0.5, 6h14m, deterministic eval):
+
+| | baseline 19999 | b7c peak (best prior) | **sym 19999** |
+|---|---|---|---|
+| tripod | 0.401 | 0.4248 | **0.5170** (all 10 eps 0.50-0.53) |
+| duty_A / duty_B | 0.146 / 0.556 | 0.14 / 0.56 | **0.356 / 0.339** |
+| per-episode handedness | all B-handed | all B-handed | **10/10 BALANCED** (pre-registered diagnostic: no policy handedness, no rollout symmetry breaking) |
+| pearson(a,b) | −0.606 | −0.61 | **−0.730** |
+| dominant-set swaps / 10 eps | ~0-6 | 262 | **812** |
+| completion / slip / tippy | 100% / 2.6% / 6.5% | 100% / 2.3% / 7.2% | 100% / **2.02%** / 6.6% |
+| roll_rms / EMA(v_z) / stride | 0.0387 / 0.134 / 0.163 | 0.038 / 0.125 / 0.164 | 0.0498 / 0.140 / 0.148 |
+| signed pitch | +0.209 | +0.209 | +0.202 (lean persists — L/R mirror does not constrain pitch, as pre-registered) |
+| v5 replay income | 1.4-1.9/min | ~5/min | **25.7/min** (70% of ideal synthetic; term not used in training) |
+
+**Verdict: branch (a) of the pre-registered tree.** The mirror loss alone (coef 0.5) killed
+handedness at both policy and rollout level, unlocked genuine deep tripod alternation
+(0.517 ≥ the 0.45 bar every reward campaign chased), improved slip, and cost nothing
+anywhere else. The one remaining item from the original goals is the ~11.6° lean — now a
+clean, isolated target (candidate: clock reward with commanded body pitch per Walk These
+Ways, or a dedicated pitch curriculum — both easier against a duty-balanced gait).
+
+Adoption proposal presented to user (see chat); campaign STOPPED for review per protocol.
