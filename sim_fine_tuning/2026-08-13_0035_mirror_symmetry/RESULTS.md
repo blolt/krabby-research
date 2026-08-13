@@ -56,3 +56,24 @@ sign+, damping ratio(24) joint-perm sign+.
 5. 20k from-scratch validation, PLAIN config (no v5 — seed search: 0/8 v5-active vs 1/1 plain),
    coef 0.5. Mid-checks at 3000/5000 (alternating? duty balanced?), full eval at end vs
    baseline (0.401/+0.209/0.146-0.556). STOP for user with results.
+
+## Literature adjustments (user directive 2026-08-13, from docs/lit-review-hexapod-reward-stability.md)
+
+Applied to this campaign once the current 20k validation completes:
+
+1. **Enforcement method** (Abdolhosseini et al., MIG 2019): auxiliary mirror loss is the most
+   consistent method (our current setup — loss primary ✓); data duplication weakest. Next arm
+   after validation: **S+A** = mirror loss + use_data_augmentation=True as support.
+2. **Pre-registered failure mode for the validation eval**: a symmetric POLICY can still
+   produce HANDED ROLLOUTS (spontaneous symmetry breaking picks one mirrored trajectory per
+   episode). The eval must therefore analyze PER-EPISODE handedness: duty_A per episode across
+   the 10 eval episodes.
+   - All episodes same-handed → policy-level handedness (loss too weak) → S+A arm / coef retune.
+   - Episodes split both-handed (~mixed signs) → policy symmetric, rollouts break symmetry →
+     **the indicated fix is symmetry + CLOCK REWARD combined** (lit review §2: Siekmann ICRA
+     2021 periodic reward composition; schedule as reference, not price), NOT more symmetry
+     weight. Clock term must pass the offline replay gate per §2's recipe (healthy npz scores
+     well at its best-aligned phase; all degenerate traces score poorly at EVERY phase).
+   - Balanced within episodes + alternating → symmetry sufficient; adoption path.
+3. **Escalation** if loss+augmentation underdeliver: hard-equivariant architecture (Su et al.,
+   IROS 2024 — strictly better than augmentation).
