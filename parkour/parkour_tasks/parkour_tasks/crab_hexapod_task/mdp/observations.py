@@ -27,6 +27,14 @@ class CrabHexParkourObservations(ExtremeParkourObservations):
         self._obs_history_buffer = torch.zeros(
             self.num_envs, self.history_length, self._obs_buf_dim, device=self.device
         )
+        # NOTE(cam-velocity-actions): under velocity control the shaft rotates continuously,
+        # so its raw joint_pos grows without bound and would saturate the +-100 obs clip,
+        # blinding the policy. Wrap those channels to [-pi, pi]: the cam map is 2*pi-periodic
+        # (wrapped angle is information-complete), wrap is odd (mirror sign map unchanged),
+        # and the obs dim is preserved (checkpoint/history compatible).
+        self._cam_shaft_obs_ids, _ = self.asset.find_joints(
+            [".*_Body_CamShaft_RevoluteJoint"], preserve_order=True
+        )
 
     def __call__(
         self,
@@ -54,6 +62,10 @@ class CrabHexParkourObservations(ExtremeParkourObservations):
         delta_yaw = torch.where(on_flat, torch.zeros_like(self.delta_yaw), self.delta_yaw)
         delta_next_yaw = torch.where(on_flat, torch.zeros_like(self.delta_next_yaw), self.delta_next_yaw)
         commands = env.command_manager.get_command("base_velocity")
+        joint_pos_delta = self.asset.data.joint_pos - self.asset.data.default_joint_pos
+        joint_pos_delta[:, self._cam_shaft_obs_ids] = wrap_to_pi(
+            joint_pos_delta[:, self._cam_shaft_obs_ids]
+        )
         obs_buf = torch.cat(
             (
                 self.asset.data.root_ang_vel_b * 0.25,
@@ -66,7 +78,7 @@ class CrabHexParkourObservations(ExtremeParkourObservations):
                 env_idx_tensor,
                 invert_env_idx_tensor,
                 self.asset.data.root_lin_vel_b[:, :2] * 2.0,
-                self.asset.data.joint_pos - self.asset.data.default_joint_pos,
+                joint_pos_delta,
                 self.asset.data.joint_vel * 0.05,
                 env.action_manager.get_term("joint_pos").action_history_buf[:, -1],
                 self._get_contact_fill(),

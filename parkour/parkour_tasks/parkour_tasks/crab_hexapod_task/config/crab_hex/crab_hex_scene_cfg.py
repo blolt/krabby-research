@@ -37,32 +37,52 @@ def _crab_simple_usd_path() -> str:
 # These values target a natural frequency in the same conservative range the proven-stable
 # Femur_Tibia joint operates at (~75 rad/s), scaled down for CamShaft's actual inertia --
 # placeholder, tune further if lag/overshoot is visible during verification.
+# NOTE(cam-velocity-actions): the camshaft is VELOCITY-driven (policy commands signed shaft
+# speed, matching the real continuously-rotating quick-return motor). stiffness=0 turns the
+# ParkourDCMotor law tau = k_p*(pos_tgt - pos) + k_d*(vel_tgt - vel) into a pure velocity
+# servo; damping is the velocity-tracking gain. DISCRETE STABILITY: the explicit actuator
+# requires d < 2*I/dt; the placeholder 2cm cube's auto inertia (~2e-5 kg*m^2) made ANY
+# useful gain violently unstable (observed as +-5 N*m bang-bang chaos each substep) -- the
+# same root cause the pre-velocity comment fought by crippling gains to 1.0/0.05. The USD
+# now pins physics:diagonalInertia = 0.015 kg*m^2 on each camshaft (motor rotor reflected
+# through the gear reduction is NOT negligible; value is a placeholder pending hardware
+# measurement) -> d_max = 2*0.015/0.005 = 6, so d = 1.0 is comfortably stable and reaches
+# 6 rad/s from rest in ~20 ms at the 5 N*m cap. velocity_limit MUST comfortably exceed the
+# max commanded speed (CAM_VEL_SCALE = 6.0 rad/s in parkour_mdp_cfg.py): the DC-motor
+# torque-speed curve zeroes available forward torque as joint_vel -> velocity_limit, so the
+# old 6.0 would leave zero torque at the shaft's own operating point. 15.0 keeps ~60% of
+# saturation torque available at 6 rad/s. Placeholder pending measured motor free speed.
 _CAM_SHAFT_STIFFNESS = {
-    "FL_Body_CamShaft_RevoluteJoint": 1.0,
-    "FR_Body_CamShaft_RevoluteJoint": 1.0,
-    "ML_Body_CamShaft_RevoluteJoint": 1.0,
-    "MR_Body_CamShaft_RevoluteJoint": 1.0,
-    "RL_Body_CamShaft_RevoluteJoint": 1.0,
-    "RR_Body_CamShaft_RevoluteJoint": 1.0,
+    "FL_Body_CamShaft_RevoluteJoint": 0.0,
+    "FR_Body_CamShaft_RevoluteJoint": 0.0,
+    "ML_Body_CamShaft_RevoluteJoint": 0.0,
+    "MR_Body_CamShaft_RevoluteJoint": 0.0,
+    "RL_Body_CamShaft_RevoluteJoint": 0.0,
+    "RR_Body_CamShaft_RevoluteJoint": 0.0,
 }
-_CAM_SHAFT_DAMPING = {name: 0.05 for name in _CAM_SHAFT_STIFFNESS}
+_CAM_SHAFT_DAMPING = {name: 1.0 for name in _CAM_SHAFT_STIFFNESS}
 _CAM_SHAFT_EFFORT = {name: 5.0 for name in _CAM_SHAFT_STIFFNESS}
 _CAM_SHAFT_SATURATION = {name: 6.0 for name in _CAM_SHAFT_STIFFNESS}
+_CAM_SHAFT_VELOCITY_LIMIT = 15.0
 
-# NOTE(cam-mechanism-migration): Body_Hip's own actuator -- it tracks a position target
-# computed from the cam-shaft's state each substep (CrabHexDelayedJointPositionAction.apply_actions),
-# not a policy action. Reuses the pre-migration Body_Hip gains (495/9.9/600/738.5), since the
-# downstream leg load this joint has to move is unchanged; tune if tracking lag/overshoot is
-# visible during verification.
+# NOTE(cam-mechanism-migration): Body_Hip's own actuator -- it tracks position+velocity
+# targets computed from the cam-shaft's state each substep
+# (CrabHexDelayedJointPositionAction.apply_actions), not a policy action.
+# NOTE(cam-velocity-actions): gains raised 495/9.9 -> 2000/40. This actuator emulates a
+# RIGID linkage: under continuous shaft spin the quick-return reversal is fast (hip velocity
+# peak ~0.92x shaft speed) and the old gains lagged ~0.09 rad, overshooting past the
+# mechanism's asin(K)=28.54 deg into the 32 deg hard stop -- which the real linkage can
+# never do. Explicit-actuator stability at physics dt 0.005: omega_n = sqrt(2000/I_leg~3)
+# ~= 26 rad/s -> omega_n*dt ~= 0.13, comfortably stable.
 _HIP_TRACKING_STIFFNESS = {
-    "FL_Body_Hip_RevoluteJoint": 495.0,
-    "FR_Body_Hip_RevoluteJoint": 495.0,
-    "ML_Body_Hip_RevoluteJoint": 495.0,
-    "MR_Body_Hip_RevoluteJoint": 495.0,
-    "RL_Body_Hip_RevoluteJoint": 495.0,
-    "RR_Body_Hip_RevoluteJoint": 495.0,
+    "FL_Body_Hip_RevoluteJoint": 2000.0,
+    "FR_Body_Hip_RevoluteJoint": 2000.0,
+    "ML_Body_Hip_RevoluteJoint": 2000.0,
+    "MR_Body_Hip_RevoluteJoint": 2000.0,
+    "RL_Body_Hip_RevoluteJoint": 2000.0,
+    "RR_Body_Hip_RevoluteJoint": 2000.0,
 }
-_HIP_TRACKING_DAMPING = {name: 9.9 for name in _HIP_TRACKING_STIFFNESS}
+_HIP_TRACKING_DAMPING = {name: 40.0 for name in _HIP_TRACKING_STIFFNESS}
 _HIP_TRACKING_EFFORT = {name: 600.0 for name in _HIP_TRACKING_STIFFNESS}
 _HIP_TRACKING_SATURATION = {name: 738.5 for name in _HIP_TRACKING_STIFFNESS}
 
@@ -173,18 +193,24 @@ def _crab_simple_robot_cfg() -> ArticulationCfg:
                 joint_names_expr=[".*_Body_CamShaft_RevoluteJoint"],
                 effort_limit=_CAM_SHAFT_EFFORT,
                 saturation_effort=_CAM_SHAFT_SATURATION,
-                velocity_limit=6.0,
+                velocity_limit=_CAM_SHAFT_VELOCITY_LIMIT,
                 stiffness=_CAM_SHAFT_STIFFNESS,
                 damping=_CAM_SHAFT_DAMPING,
                 friction=0.0,
             ),
             # NOTE(cam-mechanism-migration): tracks the position target computed each substep
             # from the cam-shaft's state (see parkour_actions.py); not policy-actuated.
+            # NOTE(cam-velocity-actions): velocity_limit raised 6 -> 15. Under continuous shaft
+            # spin the quick-return hip velocity peaks at K/(1-K) ~= 0.92x shaft speed
+            # (~5.5 rad/s at CAM_VEL_SCALE=6), and the DC-motor torque-speed curve zeroes
+            # torque at velocity_limit -- 6.0 left no authority at the swing peak, observed as
+            # hip overshoot into the 32-deg hard stop. This "actuator" emulates a rigid
+            # linkage, not a motor: it must never be velocity-starved.
             "body_hip_tracking": ParkourDCMotorCfg(
                 joint_names_expr=[".*_Body_Hip_RevoluteJoint"],
                 effort_limit=_HIP_TRACKING_EFFORT,
                 saturation_effort=_HIP_TRACKING_SATURATION,
-                velocity_limit=6.0,
+                velocity_limit=15.0,
                 stiffness=_HIP_TRACKING_STIFFNESS,
                 damping=_HIP_TRACKING_DAMPING,
                 friction=0.0,

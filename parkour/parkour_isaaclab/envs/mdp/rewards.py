@@ -80,12 +80,20 @@ def reward_torques(
     asset: Articulation = env.scene[asset_cfg.name]
     return torch.sum(torch.square(asset.data.applied_torque), dim=1)
 
-def reward_dof_error(    
-    env: ParkourManagerBasedRLEnv,        
+def reward_dof_error(
+    env: ParkourManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
-    ) -> torch.Tensor: 
+    ) -> torch.Tensor:
     asset: Articulation = env.scene[asset_cfg.name]
-    return torch.sum(torch.square(asset.data.joint_pos - asset.data.default_joint_pos), dim=1)
+    # asset_cfg.joint_ids is slice(None) when no joint_names filter is given (Go2 path),
+    # preserving the historical all-joints behavior.
+    return torch.sum(
+        torch.square(
+            asset.data.joint_pos[:, asset_cfg.joint_ids]
+            - asset.data.default_joint_pos[:, asset_cfg.joint_ids]
+        ),
+        dim=1,
+    )
 
 def reward_hip_pos(
     env: ParkourManagerBasedRLEnv,        

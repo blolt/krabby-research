@@ -48,21 +48,33 @@ parser.add_argument(
     "--raw_actions",
     type=float,
     nargs="+",
-    default=[-1.0, -0.5, 0.0, 0.5, 1.0],
-    help="Raw CamShaft actions to test (clipped to [-1,1]; target = raw*scale + default_joint_pos).",
+    default=[-1.0, -0.5, 0.5, 1.0],
+    help="Raw CamShaft VELOCITY actions to test (clipped to [-1,1]; omega = raw * CAM_VEL_SCALE rad/s).",
 )
 parser.add_argument("--settle_steps", type=int, default=100, help="Steps to hold each action before sampling.")
+parser.add_argument(
+    "--revolutions",
+    type=float,
+    default=2.0,
+    help="Full shaft revolutions to spin per raw action while checking hip tracking pointwise.",
+)
 parser.add_argument(
     "--pos_tol_rad",
     type=float,
     default=0.08,
-    help="Max allowed |hip_pos - expected(shaft_actual)| after settling (real PD tracking, not exact).",
+    help="Max allowed |hip_pos - expected(shaft_actual)| sampled during the spin (real PD tracking, not exact).",
 )
 parser.add_argument(
     "--default_pos_tol_rad",
     type=float,
     default=0.05,
     help="Max allowed default-pose inconsistency (settled under gravity, not an exact write).",
+)
+parser.add_argument(
+    "--debug_frames",
+    action="store_true",
+    default=False,
+    help="Print per-frame shaft/hip telemetry (every 10th frame, all legs' min/max) during spins.",
 )
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
@@ -161,34 +173,105 @@ def main() -> None:
     default_err, default_oks = _check("post-settle default pose", args_cli.default_pos_tol_rad)
     all_ok = all_ok and all(default_oks)
 
-    # --- 2. Drive CamShaft through several target actions, settle, check tracking ---
+    # --- 2. Spin the CamShaft continuously (velocity actions) and check hip tracking
+    #        pointwise through >= args_cli.revolutions full revolutions each direction ---
+    from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg import CAM_VEL_SCALE
+    from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import THETA_HIP_MAX
+
+    hard_limit_rad = math.radians(32.0)  # Body_Hip USD hard limit (see crab_simple.usda)
+    env_dt = float(env.unwrapped.step_dt)
     max_pos_err = default_err
+    max_hip_abs = 0.0
     n_checked = 0
     n_failed = 0
     for raw in args_cli.raw_actions:
+        omega_cmd = raw * CAM_VEL_SCALE
+        n_steps = max(1, int(math.ceil(args_cli.revolutions * 2.0 * math.pi / (abs(omega_cmd) * env_dt))))
         actions = torch.zeros(env.action_space.shape, device=device)
         for idx in shaft_action_idx:
             actions[:, idx] = raw
+        spin_err = 0.0
+        spin_hip_abs = 0.0
+        n_resets = 0
+        shaft_travel = torch.zeros(len(shaft_ids), device=device)
+        prev_shaft = robot.data.joint_pos[:, shaft_ids].clone()
+        prev_ep_len = int(env.unwrapped.episode_length_buf[0].item())
         with torch.inference_mode():
-            for _ in range(args_cli.settle_steps):
+            for step_i in range(n_steps):
                 env.step(actions)
-        err, oks = _check(f"raw_action={raw:+.2f}", args_cli.pos_tol_rad)
+                if args_cli.debug_frames and step_i % 10 == 0:
+                    sv = robot.data.joint_vel[0, shaft_ids]
+                    st = robot.data.applied_torque[0, shaft_ids]
+                    svt = robot.data.joint_vel_target[0, shaft_ids]
+                    hv = robot.data.joint_vel[0, hip_ids]
+                    ht = robot.data.applied_torque[0, hip_ids]
+                    print(
+                        f"  f{step_i:3d}: shaft_v=[{sv.min().item():+.2f},{sv.max().item():+.2f}]"
+                        f" v_tgt=[{svt.min().item():+.2f},{svt.max().item():+.2f}]"
+                        f" shaft_tau=[{st.min().item():+.2f},{st.max().item():+.2f}]"
+                        f" hip_v=[{hv.min().item():+.2f},{hv.max().item():+.2f}]"
+                        f" hip_tau=[{ht.min().item():+.1f},{ht.max().item():+.1f}]",
+                        flush=True,
+                    )
+                ep_len = int(env.unwrapped.episode_length_buf[0].item())
+                shaft_actual = robot.data.joint_pos[:, shaft_ids]
+                if ep_len <= prev_ep_len:
+                    # env terminated and reset: joint state teleported — skip this frame for
+                    # error/travel accounting (the linkage itself did nothing wrong).
+                    n_resets += 1
+                    prev_shaft = shaft_actual.clone()
+                    prev_ep_len = ep_len
+                    continue
+                prev_ep_len = ep_len
+                hip_actual = robot.data.joint_pos[:, hip_ids]
+                expected_hip, _ = cam_shaft_to_hip(shaft_actual, torch.zeros_like(shaft_actual))
+                spin_err = max(spin_err, (hip_actual - expected_hip).abs().max().item())
+                spin_hip_abs = max(spin_hip_abs, hip_actual.abs().max().item())
+                # PhysX wraps the reported revolute angle (observed at +-2pi); unwrap the
+                # per-frame delta so travel isn't credited a phantom full turn at the seam
+                d_raw = (shaft_actual - prev_shaft)[0]
+                d_unwrapped = torch.atan2(torch.sin(d_raw), torch.cos(d_raw))
+                shaft_travel += d_unwrapped.abs()
+                prev_shaft = shaft_actual.clone()
+        revs = (shaft_travel / (2.0 * math.pi)).min().item()
+        # pro-rate the revolutions target when env resets ate frames (~15 frames each for
+        # the teleport + re-acceleration); floor at half the nominal target
+        usable_frac = max(0.0, (n_steps - 15 * n_resets) / n_steps)
+        required_revs = max(args_cli.revolutions * 0.5, args_cli.revolutions * 0.9 * usable_frac)
+        ok = spin_err <= args_cli.pos_tol_rad and revs >= required_revs
+        print(
+            f"\n--- spin raw={raw:+.2f} ({omega_cmd:+.1f} rad/s, {n_steps} steps, "
+            f"{n_resets} env resets) ---\n"
+            f"min revolutions completed = {revs:.2f} (target {args_cli.revolutions})\n"
+            f"max pointwise |hip err| = {spin_err:.4f} rad  ({'ok' if ok else 'FAIL'})\n"
+            f"max |hip| = {spin_hip_abs:.4f} rad (mechanism {THETA_HIP_MAX:.4f}, hard limit {hard_limit_rad:.4f})",
+            flush=True,
+        )
         n_checked += 1
-        max_pos_err = max(max_pos_err, err)
-        if not all(oks):
+        max_pos_err = max(max_pos_err, spin_err)
+        max_hip_abs = max(max_hip_abs, spin_hip_abs)
+        if not ok:
             n_failed += 1
 
-    sweep_ok = n_failed == 0
+    limit_ok = max_hip_abs < hard_limit_rad - 1e-3
+    if not limit_ok:
+        print(f"FAIL: hip reached the {math.degrees(hard_limit_rad):.0f} deg hard limit", flush=True)
+    sweep_ok = n_failed == 0 and limit_ok
     all_ok = all_ok and sweep_ok
-    print(f"\nchecked {n_checked} target actions: {args_cli.raw_actions}", flush=True)
+    print(f"\nchecked {n_checked} spin commands: {args_cli.raw_actions}", flush=True)
     print(f"max |hip_pos err| across all checks = {max_pos_err:.4f} rad", flush=True)
+    print(f"max |hip| across spins = {max_hip_abs:.4f} rad", flush=True)
     print(f"failed: {n_failed}/{n_checked}", flush=True)
 
     env.close()
 
     print("\n=== Summary ===", flush=True)
     if all_ok:
-        print("PASS: default pose consistent and hip joint tracks cam_shaft_to_hip() across the full sweep.", flush=True)
+        print(
+            "PASS: default pose consistent; hip tracks cam_shaft_to_hip() pointwise through "
+            "continuous multi-revolution spin in both directions without touching the hard limit.",
+            flush=True,
+        )
     else:
         print("FAIL: see details above.", flush=True)
     print(flush=True)

@@ -53,3 +53,31 @@ took the whole session down with it (3x). Fixes: DerivedDataCache moved aside
 - Cam mechanism check (new +-32 Body_Hip limits): PASS, hip tracks cam_shaft_to_hip()
   across full sweep on all 6 legs, max err 0.0104 rad (~0.6 deg); no limit contact.
 - Canary fine-tune launched: 2000 it, 256 envs, from symmetric reference model_19999.
+
+## Commit 2: camshaft velocity actions (supersedes Arm B)
+Code: velocity targets on the 6 cam channels (CrabHexDelayedJointPositionAction; offset
+forced 0), actuator body_hip_yaw k=0/d=1/vel_lim 15, CAM_VEL_SCALE=6.0 with per-joint
+scale/clip dicts across all stages (cam clip stays +-1; only position channels ramp),
+shaft obs wrapped to [-pi,pi], reward_dof_error fixed to respect joint_ids and pointed at
+position-actuated joints only (the cfg filter had been a silent no-op since forever),
+mirror map unchanged (odd quantities), multi-turn periodicity unit test.
+
+Three-round verification debug, in order:
+1. Spin check r1: shafts spun 2.8-4.3 revs but hip overshot into the 32-deg hard stop
+   (0.5585 rad) at 6 rad/s -- quick-return hip velocity peaks at 0.92x shaft speed ~= 5.5
+   rad/s, right at body_hip_tracking's velocity_limit=6 where the DC torque-speed curve
+   zeroes torque. Fix: tracking vel_limit 6 -> 15 + feed cam-map velocity as target
+   (feedforward; it was computed and discarded).
+2. Spin check r2: errors halved but shafts began STALLING chaotically. Per-frame telemetry
+   + actuator internals showed +-5 N*m bang-bang each substep: discrete instability --
+   d*dt/I ~= 250 for the placeholder 2cm camshaft cube (I ~= 2e-5). Same root cause the
+   old comment fought by crippling gains to 1.0/0.05. Fix: pin
+   physics:diagonalInertia = 0.015 kg*m^2 on the 6 camshaft prims (motor rotor reflected
+   through the gearing is not negligible; placeholder pending measurement) + stiffen
+   hip tracking 495/9.9 -> 2000/40 (rigid-linkage emulation, omega_n*dt = 0.13 stable).
+   Also: PhysX wraps reported shaft angle at +-2pi -> unwrap per-frame deltas in the check.
+3. Spin check r3 (final): PASS. 2.00 revs at every command (+-3, +-6 rad/s), pointwise hip
+   err <= 0.046 rad, max |hip| 0.536 < 0.5585 hard stop, zero env resets.
+
+Statics under velocity actions: pitch +0.63 deg, roll -0.17 deg, A_share 0.457, mass
+106.02 -- inside settle scatter (static_report_velact.json). Unit tests 100/100.

@@ -17,6 +17,8 @@ from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg impo
     CrabHexTerminationsCfg,
     EventCfg,
     ParkourEventsCfg,
+    _crab_action_clip,
+    _crab_action_scale,
 )
 from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_scene_cfg import CrabHexTeacherSceneCfg
 from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_student_cfg import (
@@ -202,8 +204,8 @@ def _apply_crab_hex_student_2b2_teacher_mdp(cfg) -> None:
 
 def _apply_crab_hex_bridge_actions_and_events(cfg, *, action_scale: float = 0.24) -> None:
     """Flat-walk-compatible actions/events for the flat-walk → teacher bridge."""
-    cfg.actions.joint_pos.scale = action_scale
-    cfg.actions.joint_pos.clip = {".*": (-1.0, 1.0)}
+    cfg.actions.joint_pos.scale = _crab_action_scale(action_scale)
+    cfg.actions.joint_pos.clip = _crab_action_clip((-1.0, 1.0))
     cfg.actions.joint_pos.use_delay = False
     cfg.actions.joint_pos.history_length = 1
 
@@ -221,8 +223,8 @@ def _apply_crab_hex_full_actions(cfg) -> None:
     ``cfg.actions.joint_pos.joint_names`` itself is unaffected -- already fixed at the class-level
     default (``CrabHexFlatWalkActionsCfg``) to exclude the passive ``*_Body_Hip_RevoluteJoint``.
     """
-    cfg.actions.joint_pos.scale = 0.25
-    cfg.actions.joint_pos.clip = {".*": (-4.8, 4.8)}
+    cfg.actions.joint_pos.scale = _crab_action_scale(0.25)
+    cfg.actions.joint_pos.clip = _crab_action_clip((-4.8, 4.8))
     cfg.actions.joint_pos.use_delay = True
     cfg.actions.joint_pos.history_length = 8
 
@@ -231,16 +233,16 @@ def _apply_crab_hex_full_ramp1_actions(cfg) -> None:
     """full-ramp-1: 0.245 scale / ±2.4 clip -- midpoint between 2b2-lite (0.24/±1) and true full
     (0.25/±4.8), so the policy adapts to a larger raw action range gradually instead of in one jump.
     """
-    cfg.actions.joint_pos.scale = 0.245
-    cfg.actions.joint_pos.clip = {".*": (-2.4, 2.4)}
+    cfg.actions.joint_pos.scale = _crab_action_scale(0.245)
+    cfg.actions.joint_pos.clip = _crab_action_clip((-2.4, 2.4))
     cfg.actions.joint_pos.use_delay = True
     cfg.actions.joint_pos.history_length = 8
 
 
 def _apply_crab_hex_full_ramp2_actions(cfg) -> None:
     """full-ramp-2: 0.25 scale / ±3.6 clip -- most of the way to true full's ±4.8."""
-    cfg.actions.joint_pos.scale = 0.25
-    cfg.actions.joint_pos.clip = {".*": (-3.6, 3.6)}
+    cfg.actions.joint_pos.scale = _crab_action_scale(0.25)
+    cfg.actions.joint_pos.clip = _crab_action_clip((-3.6, 3.6))
     cfg.actions.joint_pos.use_delay = True
     cfg.actions.joint_pos.history_length = 8
 

@@ -40,8 +40,8 @@ from isaaclab_tasks.utils import parse_env_cfg
 
 def main() -> None:
     env_cfg = parse_env_cfg(args_cli.task, device=args_cli.device, num_envs=args_cli.num_envs)
-    env_cfg.sim.gravity = (0.0, 0.0, 0.0)
-    env_cfg.scene.robot.spawn.rigid_props.disable_gravity = True
+    # gravity stays ON: zero-g floats the robot into per-step terminations that silently
+    # reset all joint state (see memory: isaac-headless-launch-quirks)
     env = gym.make(args_cli.task, cfg=env_cfg)
     robot = env.unwrapped.scene["robot"]
 
@@ -52,7 +52,8 @@ def main() -> None:
         damp = act.damping[0].tolist()
         eff = act.effort_limit[0].tolist()
         vel = act.velocity_limit[0].tolist() if hasattr(act, "velocity_limit") else None
-        print(f"[{group_name}] type={type(act).__name__}", flush=True)
+        idx = getattr(act, "joint_indices", getattr(act, "_joint_indices", None))
+        print(f"[{group_name}] type={type(act).__name__} joint_indices={idx}", flush=True)
         for i, n in enumerate(names):
             v = f" vel_lim={vel[i]:.1f}" if vel is not None else ""
             print(
@@ -60,40 +61,41 @@ def main() -> None:
                 flush=True,
             )
 
+    print("\n=== Sim-side (PhysX) drive gains per DOF ===", flush=True)
+    sim_k = robot.root_physx_view.get_dof_stiffnesses()[0]
+    sim_d = robot.root_physx_view.get_dof_dampings()[0]
+    for i, n in enumerate(robot.data.joint_names):
+        print(f"    dof {i:2d} {n}: sim_k={sim_k[i].item():g} sim_d={sim_d[i].item():g}", flush=True)
+
     joint_names = list(robot.data.joint_names)
-    knee_id = joint_names.index("FL_Femur_Tibia_RevoluteJoint")
+    cam_id = joint_names.index("FL_Body_CamShaft_RevoluteJoint")
     term = env.unwrapped.action_manager.get_term("joint_pos")
-    knee_col = list(term._joint_names).index("FL_Femur_Tibia_RevoluteJoint")
-    print(f"\n=== Drive FL knee via action col {knee_col} (dof {knee_id}) ===", flush=True)
+    cam_col = list(term._joint_names).index("FL_Body_CamShaft_RevoluteJoint")
+    yaw_act = robot.actuators["body_hip_yaw"]
+    print(f"\n=== Drive FL camshaft via action col {cam_col} (dof {cam_id}) ===", flush=True)
     with torch.inference_mode():
         env.reset()
         zero = torch.zeros(env.action_space.shape, device=env.unwrapped.device)
         for _ in range(48):
             env.step(zero)
-        q0 = robot.data.joint_pos[0, knee_id].item()
-        print(f"start q={q0:+.4f}", flush=True)
-        scale = term._scale if isinstance(term._scale, float) else term._scale[0, knee_col].item()
-        offset = term._offset if isinstance(term._offset, float) else term._offset[0, knee_col].item()
-        print(
-            f"term internals: use_delay={term._use_delay} delay={term.delay} "
-            f"hist_len={term._action_history_buf.shape[1]} scale={scale} offset={offset:+.4f}",
-            flush=True,
-        )
+        print(f"start theta={robot.data.joint_pos[0, cam_id].item():+.4f}", flush=True)
         act = zero.clone()
-        act[..., knee_col] = 1.0
-        for step in range(120):
+        act[..., cam_col] = 1.0
+        for step in range(80):
             env.step(act)
-            if step % 20 == 0 or step == 119:
-                q = robot.data.joint_pos[0, knee_id].item()
-                tgt = robot.data.joint_pos_target[0, knee_id].item()
-                tau = robot.data.applied_torque[0, knee_id].item()
-                raw = term.raw_actions[0, knee_col].item()
-                proc = term._processed_actions[0, knee_col].item()
-                hist = term._action_history_buf[0, :, knee_col].tolist()
+            if step % 8 == 0 or step == 79:
+                q = robot.data.joint_pos[0, cam_id].item()
+                qd = robot.data.joint_vel[0, cam_id].item()
+                vt = robot.data.joint_vel_target[0, cam_id].item()
+                pt = robot.data.joint_pos_target[0, cam_id].item()
+                tau = robot.data.applied_torque[0, cam_id].item()
+                # actuator-internal view (group-local slice 0 = FL)
+                comp = yaw_act.computed_effort[0, 0].item()
+                appl = yaw_act.applied_effort[0, 0].item()
                 print(
-                    f"  step {step:3d}: q={q:+.4f} target={tgt:+.4f} tau={tau:+.2f} "
-                    f"raw={raw:+.2f} proc={proc:+.4f} delay={term.delay} "
-                    f"hist={[round(h, 2) for h in hist]}",
+                    f"  step {step:3d}: theta={q:+.3f} omega={qd:+.3f} v_tgt={vt:+.2f} "
+                    f"pos_tgt={pt:+.3f} data_tau={tau:+.2f} act_computed={comp:+.2f} "
+                    f"act_applied={appl:+.2f}",
                     flush=True,
                 )
     env.close()

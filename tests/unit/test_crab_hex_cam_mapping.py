@@ -127,3 +127,23 @@ def test_batched_and_broadcastable():
     assert omega_hip.shape == theta_shaft.shape
     assert torch.isfinite(theta_hip).all()
     assert torch.isfinite(omega_hip).all()
+
+
+def test_multi_turn_periodicity():
+    """Velocity-driven shafts rotate continuously: the map must be exactly 2*pi-periodic so a
+    multi-turn shaft angle (e.g. 400 rad after a 60 s episode at ~6 rad/s) yields the same hip
+    angle as its wrapped equivalent, and stays bounded by THETA_HIP_MAX."""
+    theta = torch.linspace(-math.pi, math.pi, 97, dtype=torch.float64)
+    omega = torch.ones_like(theta)
+    base_hip, base_vel = cam_shaft_to_hip(theta, omega)
+    for k in (-3, -2, -1, 1, 2, 3):
+        hip_k, vel_k = cam_shaft_to_hip(theta + 2 * math.pi * k, omega)
+        assert torch.allclose(hip_k, base_hip, atol=1e-9)
+        assert torch.allclose(vel_k, base_vel, atol=1e-9)
+    # far multi-turn angles stay finite and inside the mechanism's swing limit
+    far = torch.linspace(-400.0, 400.0, 4001, dtype=torch.float64)
+    hip_far, _ = cam_shaft_to_hip(far, torch.zeros_like(far))
+    assert torch.isfinite(hip_far).all()
+    assert hip_far.abs().max().item() <= THETA_HIP_MAX + 1e-9
+    # float32 note: at |theta| ~ 400 rad, float32 phase resolution is ~2e-5 rad -- fine for
+    # control, but keep float64 here so the periodicity assertion itself is exact.

@@ -56,6 +56,39 @@ _CRAB_ACTUATED_JOINT_NAMES = [
     ".*_Femur_Tibia_RevoluteJoint",
 ]
 
+# NOTE(cam-velocity-actions): the 12 position-actuated joints. The camshaft channels are
+# velocity targets whose joint POSITION grows without bound under continuous rotation, so any
+# position-deviation reward (reward_dof_error) must be restricted to this subset.
+_CRAB_POSITION_ACTUATED_JOINT_NAMES = [
+    ".*_Hip_Femur_RevoluteJoint",
+    ".*_Femur_Tibia_RevoluteJoint",
+]
+
+# NOTE(cam-velocity-actions): raw +-1 on a camshaft channel maps to +-CAM_VEL_SCALE rad/s of
+# commanded shaft speed (one gait cycle = 2*pi shaft rad, so 6.0 rad/s ~= 0.95 cycles/s).
+# Constant across all curriculum stages -- only the position channels' scale/clip ramp.
+# Placeholder pending measured cam-motor free speed; keep below the actuator's
+# velocity_limit=15.0 (see crab_hex_scene_cfg.py torque-speed note).
+CAM_VEL_SCALE = 6.0
+
+
+def _crab_action_scale(pos_scale: float) -> dict[str, float]:
+    """Per-joint action scale: velocity semantics (rad/s) on cam channels, rad on the rest."""
+    return {
+        ".*_Body_CamShaft_RevoluteJoint": CAM_VEL_SCALE,
+        ".*_Hip_Femur_RevoluteJoint": pos_scale,
+        ".*_Femur_Tibia_RevoluteJoint": pos_scale,
+    }
+
+
+def _crab_action_clip(pos_clip: tuple[float, float]) -> dict[str, tuple[float, float]]:
+    """Per-joint raw-action clip: cam channels stay +-1 (full speed range) at every stage."""
+    return {
+        ".*_Body_CamShaft_RevoluteJoint": (-1.0, 1.0),
+        ".*_Hip_Femur_RevoluteJoint": pos_clip,
+        ".*_Femur_Tibia_RevoluteJoint": pos_clip,
+    }
+
 @configclass
 class CrabHexFlatWalkActionsCfg:
     """Flat-walk: scale 0.24 and ±1 raw clip (matches runner clip_actions)."""
@@ -65,13 +98,13 @@ class CrabHexFlatWalkActionsCfg:
         # NOTE(cam-mechanism-migration): see _CRAB_ACTUATED_JOINT_NAMES — excludes the now-passive
         # FL_Body_Hip_RevoluteJoint. Keeps action_dim == 18.
         joint_names=_CRAB_ACTUATED_JOINT_NAMES,
-        scale=0.24,
+        scale=_crab_action_scale(0.24),
         use_default_offset=True,
         action_delay_steps=[1, 1],
         delay_update_global_steps=24 * 8000,
         history_length=1,
         use_delay=False,
-        clip={".*": (-1.0, 1.0)},
+        clip=_crab_action_clip((-1.0, 1.0)),
     )
 
 
@@ -183,7 +216,9 @@ class CrabHexRewardsCfg:
     reward_dof_error = RewTerm(
         func=mdp_rewards.reward_dof_error,
         weight=-0.04,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_ACTUATED_JOINT_NAMES)},
+        # NOTE(cam-velocity-actions): position-actuated joints only — the camshaft position
+        # is unbounded under continuous rotation.
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_POSITION_ACTUATED_JOINT_NAMES)},
     )
     reward_hip_pos = RewTerm(
         func=mdp_rewards.reward_hip_pos,
@@ -474,7 +509,9 @@ class CrabHexStage2BPhase1RewardsCfg(CrabHexTeacherBridgeRewardsCfg):
     reward_dof_error = RewTerm(
         func=mdp_rewards.reward_dof_error,
         weight=-0.04,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_ACTUATED_JOINT_NAMES)},
+        # NOTE(cam-velocity-actions): position-actuated joints only — the camshaft position
+        # is unbounded under continuous rotation.
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_POSITION_ACTUATED_JOINT_NAMES)},
     )
     reward_torques = RewTerm(
         func=mdp_rewards.reward_torques,
@@ -802,9 +839,9 @@ class CrabHexFlatWalkRewardsCfg:
     reward_dof_error = RewTerm(
         func=mdp_rewards.reward_dof_error,
         weight=0.0,
-        # NOTE(cam-mechanism-migration): filtered to the actuated joints so the (currently
-        # zero-weight, but still logged) sum doesn't include the passive FL_Body_Hip_RevoluteJoint.
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_ACTUATED_JOINT_NAMES)},
+        # NOTE(cam-velocity-actions): position-actuated joints only (excludes passive Body_Hip
+        # AND the velocity-driven camshaft, whose position is unbounded under continuous spin).
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_POSITION_ACTUATED_JOINT_NAMES)},
     )
     # NOTE(short-run-campaign): weight raised 0.40 -> 0.8, the winning value from the Milestone 18
     # Task 1 short-run tuning campaign (sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md) -- threshold=0.05

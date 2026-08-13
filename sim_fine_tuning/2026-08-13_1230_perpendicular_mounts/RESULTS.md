@@ -37,3 +37,9 @@ discrepancies queued for that audit: sim mass 106 kg vs URDF ~23 kg; source of t
 zero-action roll the knee tune compensates; the FR+RL floating-feet settle pattern; systematic
 joint frame/sign verification vs CAD; cam K re-derivation from current CAD; collision shapes
 vs CAD.
+
+---
+2026-08-13 19:xx UPDATE: Arm B (camshaft action-window widening) is SUPERSEDED by the
+geometry_velocity_actions campaign (sim_fine_tuning/2026-08-13_1900_geometry_velocity_actions/):
+cam channels are now VELOCITY targets (true continuous one-direction spin, matching the
+hardware quick-return motor), which subsumes and obsoletes the position-window widening.

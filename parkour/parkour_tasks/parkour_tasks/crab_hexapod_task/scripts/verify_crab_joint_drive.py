@@ -120,7 +120,8 @@ def _hold_actions(
     robot,
     col: int,
     act_joint_ids: list[int],
-    scale: float,
+    scale_vec: torch.Tensor,
+    cam_cols: set[int],
     clip_lo: float,
     clip_hi: float,
     device: torch.device,
@@ -131,15 +132,17 @@ def _hold_actions(
     NOTE: action columns are the action term's 18 actuated joints; the articulation has 24
     DOFs (6 passive Body_Hip + 6 CamShaft + 12 leg joints), so columns must be mapped to
     articulation indices via ``act_joint_ids`` — indexing robot data by column is wrong.
+    Camshaft columns are VELOCITY channels: raw 0 already commands 0 rad/s (hold), and a
+    position-error correction would be nonsense there.
     """
     art_ids = torch.tensor(act_joint_ids, device=device)
     q = robot.data.joint_pos[0, art_ids]
     q_def = robot.data.default_joint_pos[0, art_ids]
     actions = torch.zeros(len(act_joint_ids), device=device)
     for k in range(len(act_joint_ids)):
-        if k == col:
+        if k == col or k in cam_cols:
             continue
-        actions[k] = torch.clamp(hold_gain * (q_def[k] - q[k]) / scale, clip_lo, clip_hi)
+        actions[k] = torch.clamp(hold_gain * (q_def[k] - q[k]) / scale_vec[k], clip_lo, clip_hi)
     return actions
 
 
@@ -152,7 +155,8 @@ def _step_joint_action(
     *,
     hold_others: bool,
     act_joint_ids: list[int],
-    scale: float,
+    scale_vec: torch.Tensor,
+    cam_cols: set[int],
     clip_lo: float,
     clip_hi: float,
 ) -> tuple[float, float]:
@@ -165,7 +169,9 @@ def _step_joint_action(
         for _ in range(n):
             actions = torch.zeros(env.action_space.shape, device=device)
             if hold_others:
-                hold = _hold_actions(robot, col, act_joint_ids, scale, clip_lo, clip_hi, device)
+                hold = _hold_actions(
+                    robot, col, act_joint_ids, scale_vec, cam_cols, clip_lo, clip_hi, device
+                )
                 actions[0, :] = hold
             actions[..., col] = raw
             env.step(actions)
@@ -203,7 +209,15 @@ def main() -> None:
     act_joint_ids = list(joint_pos_term._joint_ids)
     act_joint_names = list(joint_pos_term._joint_names)
     num_actions = len(act_joint_names)
-    scale = float(joint_pos_term.cfg.scale)
+    cam_cols = {i for i, n in enumerate(act_joint_names) if "CamShaft" in n}
+    # scale may be a scalar or a per-joint dict resolved into a tensor by the action term
+    # (cam channels are rad/s velocity scale, others rad position scale).
+    if torch.is_tensor(joint_pos_term._scale):
+        scale_vec = joint_pos_term._scale[0].detach().clone()
+    else:
+        scale_vec = torch.full(
+            (num_actions,), float(joint_pos_term._scale), device=env.unwrapped.device
+        )
     clip = joint_pos_term.cfg.clip
     if clip is None:
         clip_lo, clip_hi = -float("inf"), float("inf")
@@ -234,7 +248,12 @@ def main() -> None:
         f"num_joints: {num_joints} articulation DOFs; probing {num_actions} actuated action columns",
         flush=True,
     )
-    print(f"action term scale: {scale}", flush=True)
+    print(
+        "action term per-joint scale: "
+        + ", ".join(f"{n}={scale_vec[i].item():g}" for i, n in enumerate(act_joint_names)),
+        flush=True,
+    )
+    print(f"cam velocity columns (rad/s semantics): {sorted(cam_cols)}", flush=True)
     print(f"action term clip: {clip}", flush=True)
     print(
         f"probe: action_mag={args_cli.action_mag}, settle={args_cli.steps_settle}, "
@@ -247,7 +266,6 @@ def main() -> None:
         print(f"WARNING: expected 18 actuated joints, got {num_actions}", flush=True)
 
     limits = robot.data.soft_joint_pos_limits[0]
-    expected_delta = scale * args_cli.action_mag
 
     results: list[dict] = []
     all_ok = True
@@ -277,7 +295,8 @@ def main() -> None:
         drive_kw = dict(
             hold_others=args_cli.hold_other_joints,
             act_joint_ids=act_joint_ids,
-            scale=scale,
+            scale_vec=scale_vec,
+            cam_cols=cam_cols,
             clip_lo=clip_lo,
             clip_hi=clip_hi,
         )
@@ -375,7 +394,8 @@ def main() -> None:
             f"[{c:2d}] {status}  {act_joint_names[c]}\n"
             f"      default={default:+.4f}  lim=[{lo:+.3f}, {hi:+.3f}]  "
             f"nominal_effort={nominal_eff:.1f} Nm\n"
-            f"      expected |dq|~{expected_delta:.3f} rad (scale*action_mag)\n"
+            f"      expected |dq|~{scale_vec[c].item() * args_cli.action_mag:.3f} "
+            f"{'rad/s (velocity channel: dq grows with time)' if c in cam_cols else 'rad'}\n"
             f"      action +{args_cli.action_mag:+.2f} -> dq={delta_plus:+.4f}  "
             f"max|tau|={max_tau_plus:.1f}  ({'ok' if ok_plus else 'weak'}"
             f"{'; SAT' if saturated and not ok_plus else ''})\n"

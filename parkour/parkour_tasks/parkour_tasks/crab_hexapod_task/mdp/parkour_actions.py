@@ -48,6 +48,15 @@ class CrabHexDelayedJointPositionAction(DelayedJointPositionAction):
         hip_ids, _ = self._asset.find_joints(hip_names, preserve_order=True)
         self._cam_shaft_joint_ids = shaft_ids
         self._cam_hip_joint_ids = hip_ids
+        # NOTE(cam-velocity-actions): the 6 camshaft action channels are VELOCITY targets
+        # (rad/s), matching the real quick-return linkage whose motor spins continuously in
+        # one direction. Their offset must be zero (default joint *velocity*), not the default
+        # joint position that use_default_offset injects for the position channels.
+        self._cam_action_cols = [
+            i for i, name in enumerate(self._joint_names) if name in set(shaft_names)
+        ]
+        if self._cam_action_cols:
+            self._offset[:, self._cam_action_cols] = 0.0
 
     def _clip_raw_actions(self, actions: torch.Tensor) -> torch.Tensor:
         if self.cfg.clip is None:
@@ -55,7 +64,15 @@ class CrabHexDelayedJointPositionAction(DelayedJointPositionAction):
         return torch.clamp(actions, min=self._clip[:, :, 0], max=self._clip[:, :, 1])
 
     def apply_actions(self):
+        # Position targets for all 18 columns (inert for the camshaft: its actuator runs
+        # stiffness=0, so the position term contributes no torque), then velocity targets on
+        # the 6 cam columns — processed = raw * scale + 0 offset = rad/s.
         super().apply_actions()
+        if self._cam_action_cols:
+            self._asset.set_joint_velocity_target(
+                self._processed_actions[:, self._cam_action_cols],
+                joint_ids=self._cam_shaft_joint_ids,
+            )
         if self._cam_shaft_joint_ids:
             theta_shaft = self._asset.data.joint_pos[:, self._cam_shaft_joint_ids]
             omega_shaft = self._asset.data.joint_vel[:, self._cam_shaft_joint_ids]
@@ -68,8 +85,13 @@ class CrabHexDelayedJointPositionAction(DelayedJointPositionAction):
             if not torch.isfinite(theta_shaft).all() or not torch.isfinite(omega_shaft).all():
                 theta_shaft = torch.nan_to_num(theta_shaft, nan=0.0, posinf=0.0, neginf=0.0)
                 omega_shaft = torch.nan_to_num(omega_shaft, nan=0.0, posinf=0.0, neginf=0.0)
-            theta_hip, _ = cam_shaft_to_hip(theta_shaft, omega_shaft)
+            theta_hip, omega_hip = cam_shaft_to_hip(theta_shaft, omega_shaft)
             self._asset.set_joint_position_target(theta_hip, joint_ids=self._cam_hip_joint_ids)
+            # NOTE(cam-velocity-actions): also feed the linkage's velocity as a target — the
+            # PD's damping term then acts as feedforward instead of braking against the
+            # legitimate hip motion. Without it the hip lags/overshoots at the quick-return
+            # velocity peak (~0.92x shaft speed) under continuous spin.
+            self._asset.set_joint_velocity_target(omega_hip, joint_ids=self._cam_hip_joint_ids)
 
     def process_actions(self, actions: torch.Tensor):
         if self.env.common_step_counter % self._delay_update_global_steps == 0:

@@ -17,6 +17,9 @@ full derivation):
 
 - ``*_Body_CamShaft_*``: L/R swap, sign flip. The Whitworth cam map
   ``theta_hip = atan2(K sin t, 1 + K cos t)`` is odd, so mirrored defaults negate exactly.
+  Under velocity actions (2026-08-13) the channel is a signed shaft SPEED and the obs
+  channel is the wrapped-to-[-pi,pi] shaft angle: both are odd quantities, so the same
+  -1 sign applies unchanged.
 - ``*_Body_Hip_*`` (passive): swap, sign flip (yaw-type; defaults negate L/R).
 - ``*_Hip_Femur_*``: swap, no flip (leg-plane pitch joint; defaults equal L/R).
 - ``*_Femur_Tibia_*``: swap, sign flip (180-deg Z USD flip on right legs). KNOWN
