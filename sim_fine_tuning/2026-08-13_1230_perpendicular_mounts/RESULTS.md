@@ -23,3 +23,17 @@ commands only ~±4.4° of yaw) is deferred pending Arm A results.
    catastrophe check only) → then the real validation: 20k from-scratch + mirror loss 0.5.
 4. Primary gate: thrust distribution (per-group shaft |v| + reversal share — success = front/
    rear shafts working); plus stride, tripod/duty, lean, standard guardrails.
+
+## Canary: PASS — campaign PAUSED for full geometry audit (user directive)
+
+2000-iter fine-tune from the symmetric reference across the re-centering shock: reward 0.47 →
+27.5 (full recovery, above pre-shift level), no NaN. Eval: completion 90% (1 fall), tripod
+0.420, duty 0.302/0.308 (balance intact), slip 2.7%, stride 0.143. Front/rear shafts still
+idle (0.11 rad/s vs mids 3.72) — habit persistence, as expected for a fine-tune; the
+thrust-redistribution verdict requires the 20k from-scratch run.
+
+**20k validation and Arm B are BLOCKED pending the user's full robot-geometry audit.** Known
+discrepancies queued for that audit: sim mass 106 kg vs URDF ~23 kg; source of the −0.14°
+zero-action roll the knee tune compensates; the FR+RL floating-feet settle pattern; systematic
+joint frame/sign verification vs CAD; cam K re-derivation from current CAD; collision shapes
+vs CAD.
