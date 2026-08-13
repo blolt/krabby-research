@@ -183,23 +183,37 @@ class CrabHexMirror:
 
 _MIRROR_CACHE: dict[int, CrabHexMirror] = {}
 
+_N_SCAN = None  # computed from the scanner pattern at build time
+_N_PRIV = 9 + 5  # priv_explicit(9) + priv_latent head (mass 1 + com 3 + friction 1)
 
-def _get_mirror(env) -> CrabHexMirror:
+
+def _get_mirror(env, obs_dim: int) -> CrabHexMirror:
+    """Build (once per env) from resolved names; history length inferred from ``obs_dim``."""
     key = id(env)
     if key not in _MIRROR_CACHE:
         uenv = getattr(env, "unwrapped", env)
         robot = uenv.scene["robot"]
         action_term = uenv.action_manager.get_term("joint_pos")
         action_names = list(getattr(action_term, "_joint_names", None) or action_term.joint_names)
-        obs_term = uenv.observation_manager.get_term_cfg("policy", "extreme_parkour_observations").func
         sensor = uenv.scene.sensors["contact_forces"]
-        sensor_cfg = obs_term.sensor_cfg
-        contact_names = [sensor.body_names[i] for i in sensor_cfg.body_ids]
+        # same set the obs term's ".*_Footpad" SceneEntityCfg resolves to, in sensor body order
+        contact_names = [n for n in sensor.body_names if n.endswith("_Footpad")]
         scanner = uenv.scene.sensors["height_scanner"]
         pat = scanner.cfg.pattern_cfg
         import math
+
         nx = int(math.floor(pat.size[0] / pat.resolution + 1e-9)) + 1
         ny = int(math.floor(pat.size[1] / pat.resolution + 1e-9)) + 1
+        nj = len(robot.joint_names)
+        n_prop = _N_HEAD + 2 * nj + len(action_names) + len(contact_names)
+        # obs_dim = n_prop + scan + priv(9 + 5 + 2*nj) + H * n_prop
+        remainder = obs_dim - n_prop - nx * ny - _N_PRIV - 2 * nj
+        if remainder < 0 or remainder % n_prop != 0:
+            raise ValueError(
+                f"obs dim {obs_dim} inconsistent with n_prop={n_prop}, scan={nx * ny}, "
+                f"priv={_N_PRIV + 2 * nj} — obs layout changed; update crab_hex_mirror.py"
+            )
+        history_length = remainder // n_prop
         _MIRROR_CACHE[key] = CrabHexMirror(
             joint_names=list(robot.joint_names),
             action_joint_names=action_names,
@@ -207,7 +221,7 @@ def _get_mirror(env) -> CrabHexMirror:
             scan_nx=nx,
             scan_ny=ny,
             scan_ordering=getattr(pat, "ordering", "xy"),
-            history_length=obs_term.history_length,
+            history_length=history_length,
             device=uenv.device,
         )
     return _MIRROR_CACHE[key]
@@ -215,7 +229,12 @@ def _get_mirror(env) -> CrabHexMirror:
 
 def crab_hex_symmetry_augmentation(obs=None, actions=None, env=None, obs_type="policy"):
     """rsl-rl symmetry entry point: returns (cat([obs, mirror(obs)]), cat([act, mirror(act)]))."""
-    mirror = _get_mirror(env)
+    if obs is None and id(env) not in _MIRROR_CACHE:
+        raise RuntimeError(
+            "crab_hex_symmetry_augmentation must see an obs batch before an actions-only call "
+            "(the mirror is sized from the live obs dim)"
+        )
+    mirror = _get_mirror(env, obs.shape[-1] if obs is not None else 0)
     obs_out = None
     act_out = None
     if obs is not None:
