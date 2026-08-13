@@ -102,3 +102,22 @@ clean, isolated target (candidate: clock reward with commanded body pitch per Wa
 Ways, or a dedicated pitch curriculum — both easier against a duty-balanced gait).
 
 Adoption proposal presented to user (see chat); campaign STOPPED for review per protocol.
+
+## Teacher-stack carry-up (symmetric lineage): COMPLETE — symmetry survives the curriculum
+
+bridge (100) → 2b1 (100) → 2b2 (4×500, sweet spot at iter ~21994 → model_22000). Per-batch
+2b2 gates: b1 2/5 → b2 3/5 (clearance passes) → b3 3/5 (ep_len passes, clearance dips) → b4
+best window: clearance 0.183 ✓, crab_failure **12.0%** (best of any lineage; old lineage
+oscillated 15.6-21.5%) ✓, ep_len 806 ✓, goal_idx 1.37 ✓. fwd_progress 0.089 — gate >0.15 never
+reached by ANY lineage (old best 0.106); recorded as aspirational, plateau called per skill.
+
+**Duty-balance gates (flat-walk eval, no mirror loss active in any teacher stage):**
+| stage | duty_A/B | handed eps | tripod | completion | slip |
+|---|---|---|---|---|---|
+| 2b1 model_20197 | 0.346/0.359 | 0/9 | 0.519 | 90% (1 fall — transitional ckpt) | 2.4% |
+| **2b2 model_22000** | **0.357/0.359** | **0/10** | **0.5255** | 100% | 1.8% |
+
+The balanced tripod gait not only survived ~2200 iterations of obstacle-curriculum fine-tuning
+without symmetry enforcement — it *improved* (tripod 0.517 → 0.5255 on the flat eval). The
+symmetric basin is stable under downstream training; no teacher-side mirror loss needed.
+2b2 teacher checkpoint for downstream stages (student/full1): model_22000.
