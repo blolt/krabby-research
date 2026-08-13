@@ -121,3 +121,12 @@ The balanced tripod gait not only survived ~2200 iterations of obstacle-curricul
 without symmetry enforcement — it *improved* (tripod 0.517 → 0.5255 on the flat eval). The
 symmetric basin is stable under downstream training; no teacher-side mirror loss needed.
 2b2 teacher checkpoint for downstream stages (student/full1): model_22000.
+
+## Student distillation (symmetric lineage) — batch 1 running
+
+From 2b2 model_22000. Launch note: 256 envs OOM'd twice at the depth-encoder (14.0-14.1 GB vs
+15.5 GB total with ~570 MB held by desktop apps — the successful Aug 6 student ran without
+that load). Running at **192 envs** + expandable_segments (13.25 GB, stable); caveat: ~25%
+smaller distillation batch than the old lineage's 256-env student. Rate 6.0 s/iter → batch 1
+(4000 iters) ≈ 6.7 h. Primary metric: Mean depth_actor_loss (min), skill batch rules, ceiling
+12000.
