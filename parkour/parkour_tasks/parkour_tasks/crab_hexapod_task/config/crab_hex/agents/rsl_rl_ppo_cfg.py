@@ -107,13 +107,16 @@ class CrabHexFlatWalkPPORunnerCfg(CrabHexTeacherPPORunnerCfg):
 
     def __post_init__(self):
         self.policy.init_noise_std = 1.5
-        # NOTE(mirror-symmetry-campaign): opt-in L/R symmetry-mirror loss, gated on an env var
-        # (same pattern as KRABBY_HEX_SPAWN_Z) so default runs pay zero overhead — a populated
-        # symmetry_cfg triggers an extra policy forward pass per update even with the loss off.
-        # See sim_fine_tuning/2026-08-13_0035_mirror_symmetry/RESULTS.md and crab_hex_mirror.py.
+        # NOTE(mirror-symmetry-campaign, BAKED 2026-08-13): the L/R symmetry-mirror loss is ON
+        # by default for flat-walk training (coef 0.5). The 20k validation run broke the tripod
+        # target that five reward versions and three weight campaigns never reached (tripod
+        # 0.517 vs 0.401 baseline; duty 0.356/0.339 vs 0.146/0.556; 10/10 eval episodes
+        # balanced) with zero degradation. Set KRABBY_SYM_LOSS_COEF=0 to disable (e.g. for
+        # ablations) — see sim_fine_tuning/2026-08-13_0035_mirror_symmetry/RESULTS.md and
+        # crab_hex_mirror.py.
         import os
 
-        _sym_coef = float(os.environ.get("KRABBY_SYM_LOSS_COEF", "0.0"))
+        _sym_coef = float(os.environ.get("KRABBY_SYM_LOSS_COEF", "0.5"))
         if _sym_coef > 0.0:
             from isaaclab_rl.rsl_rl import RslRlSymmetryCfg
 
