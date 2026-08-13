@@ -107,6 +107,24 @@ class CrabHexFlatWalkPPORunnerCfg(CrabHexTeacherPPORunnerCfg):
 
     def __post_init__(self):
         self.policy.init_noise_std = 1.5
+        # NOTE(mirror-symmetry-campaign): opt-in L/R symmetry-mirror loss, gated on an env var
+        # (same pattern as KRABBY_HEX_SPAWN_Z) so default runs pay zero overhead — a populated
+        # symmetry_cfg triggers an extra policy forward pass per update even with the loss off.
+        # See sim_fine_tuning/2026-08-13_0035_mirror_symmetry/RESULTS.md and crab_hex_mirror.py.
+        import os
+
+        _sym_coef = float(os.environ.get("KRABBY_SYM_LOSS_COEF", "0.0"))
+        if _sym_coef > 0.0:
+            from isaaclab_rl.rsl_rl import RslRlSymmetryCfg
+
+            self.algorithm.symmetry_cfg = RslRlSymmetryCfg(
+                use_data_augmentation=False,
+                use_mirror_loss=True,
+                data_augmentation_func=(
+                    "parkour_tasks.crab_hexapod_task.mdp.crab_hex_mirror:crab_hex_symmetry_augmentation"
+                ),
+                mirror_loss_coeff=_sym_coef,
+            )
 
 
 @configclass
