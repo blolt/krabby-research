@@ -35,3 +35,4 @@ tripod 0.0, pitch +0.131 — counts as seed-1's v5-active sample.
 | 3 | tippy-shuffle (skate family) | 0.0 | +0.193 | 0.524/0.504 (balanced but no alternation) | 100% | tippy 38.8%, slip 9.9%, roll collapsed 0.010; anti-phase 0%. Not winner-grade. |
 | 4 | unison-glide (falls) | 0.0 | +0.146 | 0.314/0.306 (balanced-light, unison) | 80% (2 falls) | slip 1.2%, tippy 5.5%, roll collapsed 0.013; anti-phase 0%. Clean-looking glide that falls. Not winner-grade. |
 | 5 | tippy-shuffle (skate family) | 0.0 | +0.190 | 0.432/0.441 (balanced, no alternation) | 100% | tippy 35.9%, slip 9.2%, roll collapsed 0.011, EMA 0.247; anti-phase 0%. Not winner-grade. |
+| 6 | unison-glide (stable) | 0.0 | +0.133 | 0.337/0.342 (balanced-light, unison) | 100% | slip 3.4%, tippy 9.6%, roll collapsed 0.010, EMA 0.126; anti-phase 0%. The seed-1-v5 glide reproduced, this time without falls. Not winner-grade (no alternation). |
