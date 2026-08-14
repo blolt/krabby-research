@@ -34,7 +34,10 @@ REPO = Path("/home/nickmagus/krabby/krabby-research")
 SHAFT_IDS = [1, 3, 5, 7, 9, 11]  # articulation order (print_joint_order.py ground truth)
 VEL_DEADZONE = 0.05  # PenaltyMotorDirectionReversal default
 DT_FALLBACK = 0.02
-CANDIDATE_WEIGHTS = [-0.1, -0.3]
+# Round 2 (2026-08-13, user-approved escalation after -0.1/-0.3 were absorbed): the 15%
+# proportionality cap is deliberately waived — the screens showed even 9.9% of income
+# produces zero dose-response on reversal rate, so these weights intentionally dominate.
+CANDIDATE_WEIGHTS = [-0.6, -1.0]
 LOCOMOTION_INCOME_PER_MIN = 65.0  # velact from-scratch: ~21 reward / ~19.5 s episode
 
 FIXTURES = {
