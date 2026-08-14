@@ -83,3 +83,17 @@ goes silent (no contact). The offline replica missed it because all fixtures wer
 walking traces (no fallen-robot family in the fixture set — noted as a gap for future
 gates). Fix: RewardCamPhaseLock now gated on command-active x upright (projected
 gravity), mirroring RewardOneDirectionSpin's cmd gate. Rerunning as screen_r4b_gated.
+
+## Round 4b screen (gated): locomotion best-of-era, basin roulette persists
+reward 19.7, completion 1.0, slip 4.2% (schedule penalty works!), tippy 6.8% — but
+ratio 0.007 (oscillation basin at 3k; spin did not emerge this fast) and tripod 0.
+Next: FT-from-model_19999 arm — terms are ALIGNED with its spin core (earns 26/min
+phase-lock, pays 31.8/min schedule on its slip), so this differs from the lit review's
+hostile-shaping fine-tune null. Fallback: 10k from-scratch screen.
+
+## Round 4c (FT arm) + 4d launch
+FT-from-19999 with round-4 terms: spin preserved (ratio 1.0), slip 29->24.7%, but rear
+phase lock STATIC (0.18->0.19) — confirms the lit review's fine-tune null for phase
+reorganization; FT refines execution, not structure. r4d (user-approved): 10k
+from-scratch, all round-4 terms — spin historically emerges by 10k unaided; phase-lock
+adds basin pull from step 0. Success = reference candidate.
