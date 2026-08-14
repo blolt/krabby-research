@@ -19,3 +19,16 @@ Remaining options, updated by this evidence:
 (d) ACCEPT oscillation: 20k reference at w=-0.3 (best locomotion; hardware can reverse,
     so transfer is safe). Spin question revisits later (e.g. after tripod consolidates).
 Hybrid: (d) now for the reference + (b) as a separate follow-on campaign is also viable.
+
+## 20k run (w=-0.3) certification — SPIN ACHIEVED, stepping un-phased
+model_19999 (fromscratch_w0.3_20k/logs/rsl_rl/crab_hex_flat_walk/2026-08-14_08-41-28/):
+one_direction_ratio 1.000 (10/10 episodes), shaft 5.99 rad/s continuous, completion 1.0,
+reward 19.95; tripod 0.0, slip 29% median, tippy 15%. The campaign's core objective —
+the quick-return mechanism driven as designed — is achieved and stable. Stepping phase
+never consolidated into tripod within 20k.
+
+Note for next lever: at 6 rad/s the support-swap half-cycle ~= 0.52 s — INSIDE the
+reward_tripod_schedule 0.10-0.60 s band (unlike the old oscillation). The inert tripod
+term can see this gait.
+
+## Bake decision (user): see chat/AskUserQuestion

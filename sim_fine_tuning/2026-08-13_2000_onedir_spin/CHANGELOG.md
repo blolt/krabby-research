@@ -47,3 +47,14 @@ Design fork (user decision): see RESULTS.md.
   locomotion income) and +0.2 (18.2%); partial-spinner traces earn intermediate 13.9/min
   (smooth gradient toward the spin basin). Registered weight 0.0, KRABBY_SPIN_REWARD_W
   override. Screens queued AFTER the 20k run (serial GPU).
+
+## 20k mid-run gate @10k: SPIN BASIN FOUND
+one_direction_ratio = 1.0 (all 10 episodes), shaft |v| 5.98 rad/s — continuous
+one-direction quick-return operation, discovered at w=-0.3 alone (basin roulette: the 3k
+screen with identical config+seed landed in the oscillation basin instead; GPU
+nondeterminism). Reward plateau ~18 = immature stepping on top of spin: tripod 0.0,
+set-corr +0.53, slip 35%, completion 0.8. Formal mid-gate condition fired (tripod 0 +
+positive corr) but killing the run would be wrong — this IS the target mechanism regime;
+remaining 10k tests whether stepping consolidates on top of spin. Implication for the
+spin-reward screens: the +0.1/+0.2 shaping may mainly serve to make basin entry RELIABLE
+rather than lucky.
