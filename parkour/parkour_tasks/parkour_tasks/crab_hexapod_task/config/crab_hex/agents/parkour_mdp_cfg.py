@@ -1003,6 +1003,23 @@ class CrabHexFlatWalkRewardsCfg:
             "command_name": "base_velocity",
         },
     )
+    # NOTE(onedir-spin round 4, lit-review synthesis): contact schedule referenced to each
+    # leg's own cam phase (stance on power stroke / swing on return stroke) + in-set cam
+    # phase locking toward tripod. Both replica-gated offline (ideal pays 0 / earns 59;
+    # misaligned gaits pay 23-33 / earn 3-26). Weights 0.0 until screened.
+    penalty_cam_contact_schedule = RewTerm(
+        func=mdp_rewards.PenaltyCamContactSchedule,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+        },
+    )
+    reward_cam_phase_lock = RewTerm(
+        func=mdp_rewards.RewardCamPhaseLock,
+        weight=0.0,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
 
     def __post_init__(self):
         # NOTE(onedir-spin-campaign 2026-08-13): env-var override for the camshaft
@@ -1020,6 +1037,12 @@ class CrabHexFlatWalkRewardsCfg:
         _sw = float(os.environ.get("KRABBY_SPIN_REWARD_W", "0.0"))
         if _sw != 0.0:
             self.reward_one_direction_spin.weight = _sw
+        _cs = float(os.environ.get("KRABBY_CAM_SCHED_W", "0.0"))
+        if _cs != 0.0:
+            self.penalty_cam_contact_schedule.weight = _cs
+        _pl = float(os.environ.get("KRABBY_PHASE_LOCK_W", "0.0"))
+        if _pl != 0.0:
+            self.reward_cam_phase_lock.weight = _pl
 
 
 @configclass

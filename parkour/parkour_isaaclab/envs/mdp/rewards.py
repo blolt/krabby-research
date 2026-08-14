@@ -976,6 +976,110 @@ class RewardOneDirectionSpin(ManagerTermBase):
         return (consistency * speed_scale).mean(dim=1) * cmd_active
 
 
+class PenaltyCamContactSchedule(ManagerTermBase):
+    """Contact-schedule penalty referenced to each leg's OWN cam-shaft phase (round 4,
+    lit-review synthesis: Siekmann-style swing/stance windows, but the clock is the
+    hardware phase variable the quick-return linkage provides).
+
+    Return stroke (fast hip sweep, |d theta_hip/d s| > g_thresh): contact is penalized —
+    the foot should be in swing while the cam snaps the leg back. Power stroke: planar
+    foot speed while in contact is penalized — a planted foot must not slide. The target
+    behavior (contact only during power stroke, no slide) pays exactly zero; as a pure
+    penalty there is no holdable positive-income state to farm.
+    """
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        asset: Articulation = env.scene[cfg.params["asset_cfg"].name]
+        # resolve leg order by name so shaft, footpad-body, and sensor indices agree
+        shaft_ids, shaft_names = asset.find_joints([".*_Body_CamShaft_RevoluteJoint"], preserve_order=True)
+        legs = [n.split("_")[0] for n in shaft_names]
+        self._shaft_ids = shaft_ids
+        body_ids, body_names = asset.find_bodies([f"{leg}_Footpad" for leg in legs], preserve_order=True)
+        self._foot_body_ids = body_ids
+        sensor: ContactSensor = env.scene.sensors[cfg.params["sensor_cfg"].name]
+        name_to_sensor = {n: i for i, n in enumerate(sensor.body_names)}
+        self._sensor_ids = [name_to_sensor[f"{leg}_Footpad"] for leg in legs]
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        sensor_cfg: SceneEntityCfg,
+        g_thresh: float = 0.55,
+        contact_force_threshold: float = 1.0,
+    ) -> torch.Tensor:
+        from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import cam_shaft_to_hip
+
+        asset: Articulation = env.scene[asset_cfg.name]
+        sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
+        theta = asset.data.joint_pos[:, self._shaft_ids]
+        _, g = cam_shaft_to_hip(theta, torch.ones_like(theta))
+        in_return = g.abs() > g_thresh
+        forces = sensor.data.net_forces_w_history[:, :, self._sensor_ids, :].norm(dim=-1).max(dim=1)[0]
+        contact = forces > contact_force_threshold
+        foot_speed = asset.data.body_lin_vel_w[:, self._foot_body_ids, :2].norm(dim=-1)
+        force_pen = (contact & in_return).float().sum(dim=1)
+        slide_pen = (foot_speed * (contact & ~in_return).float()).sum(dim=1)
+        return force_pen + slide_pen
+
+
+class RewardCamPhaseLock(ManagerTermBase):
+    """Reward in-tripod-set cam-phase coherence, gated by one-direction spin (round 4).
+
+    Sets A = {FL, MR, RL}, B = {FR, ML, RR}. Per set: |mean_j exp(i * dir_j * theta_j)|
+    in [0, 1] (1 = shafts phase-locked), multiplied by the set's mean spin gate
+    (EMA |mean v|/mean |v| x speed scale — the replay-validated one-direction measure),
+    so a non-spinning policy cannot farm the coherence of parked shafts (offline replica:
+    oscillator 3/min vs spin gait 26/min vs ideal 59/min).
+    """
+
+    _SET_A = ("FL", "MR", "RL")
+    _SET_B = ("FR", "ML", "RR")
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        asset: Articulation = env.scene[cfg.params["asset_cfg"].name]
+        shaft_ids, shaft_names = asset.find_joints([".*_Body_CamShaft_RevoluteJoint"], preserve_order=True)
+        legs = [n.split("_")[0] for n in shaft_names]
+        self._shaft_ids = shaft_ids
+        self._a_cols = [legs.index(leg) for leg in self._SET_A]
+        self._b_cols = [legs.index(leg) for leg in self._SET_B]
+        n = len(shaft_ids)
+        self.ema_signed = torch.zeros(env.num_envs, n, device=self.device)
+        self.ema_abs = torch.zeros(env.num_envs, n, device=self.device)
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        self.ema_signed[env_ids] = 0.0
+        self.ema_abs[env_ids] = 0.0
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        ema_tau: float = 2.0,
+        speed_ref: float = 4.0,
+    ) -> torch.Tensor:
+        asset: Articulation = env.scene[asset_cfg.name]
+        vel = asset.data.joint_vel[:, self._shaft_ids]
+        alpha = 1.0 - torch.exp(torch.tensor(-env.step_dt / ema_tau, device=self.device))
+        self.ema_signed = self.ema_signed + alpha * (vel - self.ema_signed)
+        self.ema_abs = self.ema_abs + alpha * (vel.abs() - self.ema_abs)
+        gate = (self.ema_signed.abs() / self.ema_abs.clamp_min(1e-6)) * (
+            self.ema_abs / speed_ref
+        ).clamp(max=1.0)
+        # direction-normalized phase so opposite-spinning sets compare consistently
+        theta = asset.data.joint_pos[:, self._shaft_ids] * torch.sign(
+            self.ema_signed + 1e-9
+        )
+        z = torch.exp(1j * theta.to(torch.complex64))
+        coh_a = z[:, self._a_cols].mean(dim=1).abs() * gate[:, self._a_cols].mean(dim=1)
+        coh_b = z[:, self._b_cols].mean(dim=1).abs() * gate[:, self._b_cols].mean(dim=1)
+        return 0.5 * (coh_a + coh_b)
+
+
 class RewardStrideLength(ManagerTermBase):
     """Reward each leg's stance-phase contribution to real body progress along the commanded
     direction -- only a planted foot can push the robot forward, so only stance counts, and only

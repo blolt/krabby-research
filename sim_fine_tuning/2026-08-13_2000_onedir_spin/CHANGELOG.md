@@ -58,3 +58,19 @@ positive corr) but killing the run would be wrong — this IS the target mechani
 remaining 10k tests whether stepping consolidates on top of spin. Implication for the
 spin-reward screens: the +0.1/+0.2 shaping may mainly serve to make basin entry RELIABLE
 rather than lucky.
+
+## Round 4 (lit-review synthesis, user-approved): shaft-phase contact schedule + phase lock
+Per docs/lit-review-hexapod-reward-stability.md: Siekmann-style swing/stance windows (#1
+ranked rec) with the CAM PHASE as the clock (the review's own s6/s9 observation, now
+unlocked by the achieved continuous spin), + in-set phase locking toward tripod offsets.
+reward_tripod_schedule route was DROPPED: its replay gate failed on the spin gait (0.4
+paid crossings/min — the sparse-gradient signature of the 4 failed campaigns). Delivery
+is FROM-SCRATCH per the review's fine-tune null (s9).
+- PenaltyCamContactSchedule: contact during return stroke (|g|>0.55) + slide during
+  power-stroke stance. Replica: ideal pays 0.0/min; spin gait 31.8; oscillator 32.9.
+  Pure penalty -> no farmable state.
+- RewardCamPhaseLock: in-set phase coherence x one-direction gate. Replica: ideal 59,
+  spin gait 26 (half-climbed: FL-MR locked at 0 deg, rears lock=0.18), oscillator 3.
+- Screen: fromscratch 3k, KRABBY_REVERSAL_W=-0.3 CAM_SCHED_W=-0.1 PHASE_LOCK_W=0.1.
+  Gates: ratio>=0.8 (spin entry should now be reliable), completion>=0.9, slip<29%,
+  reward>=17; tripod>0 is the prize.
