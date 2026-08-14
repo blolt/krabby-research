@@ -1059,8 +1059,11 @@ class RewardCamPhaseLock(ManagerTermBase):
         self,
         env: ParkourManagerBasedRLEnv,
         asset_cfg: SceneEntityCfg,
+        command_name: str = "base_velocity",
         ema_tau: float = 2.0,
         speed_ref: float = 4.0,
+        min_cmd_norm: float = 0.12,
+        min_upright_gz: float = 0.9,
     ) -> torch.Tensor:
         asset: Articulation = env.scene[asset_cfg.name]
         vel = asset.data.joint_vel[:, self._shaft_ids]
@@ -1077,7 +1080,14 @@ class RewardCamPhaseLock(ManagerTermBase):
         z = torch.exp(1j * theta.to(torch.complex64))
         coh_a = z[:, self._a_cols].mean(dim=1).abs() * gate[:, self._a_cols].mean(dim=1)
         coh_b = z[:, self._b_cols].mean(dim=1).abs() * gate[:, self._b_cols].mean(dim=1)
-        return 0.5 * (coh_a + coh_b)
+        # NOTE(round-4 screen post-mortem): without these gates the optimal policy is to
+        # FALL OVER and spin — a fallen robot phase-locks trivially (feet off the ground,
+        # no contact-schedule pressure, no ground disturbances). 100% crab_failure at ~80
+        # steps for 3000 iters. Pay only upright, commanded locomotion.
+        cmd = env.command_manager.get_command(command_name)
+        cmd_active = (torch.norm(cmd[:, :2], dim=1) > min_cmd_norm).float()
+        upright = (-asset.data.projected_gravity_b[:, 2] > min_upright_gz).float()
+        return 0.5 * (coh_a + coh_b) * cmd_active * upright
 
 
 class RewardStrideLength(ManagerTermBase):

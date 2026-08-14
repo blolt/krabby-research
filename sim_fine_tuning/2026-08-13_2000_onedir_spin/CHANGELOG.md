@@ -74,3 +74,12 @@ is FROM-SCRATCH per the review's fine-tune null (s9).
 - Screen: fromscratch 3k, KRABBY_REVERSAL_W=-0.3 CAM_SCHED_W=-0.1 PHASE_LOCK_W=0.1.
   Gates: ratio>=0.8 (spin entry should now be reliable), completion>=0.9, slip<29%,
   reward>=17; tripod>0 is the prize.
+
+## Round 4 screen r1: FAIL — fall-and-spin reward hack (fixed, rerunning)
+screen_r4_synthesis flatlined at reward ~1.0: 100% crab_failure at ~80 steps for all
+3000 iters. Post-mortem: a FALLEN robot is optimal under the ungated phase-lock term —
+shafts spin/lock trivially with feet off the ground and the contact-schedule penalty
+goes silent (no contact). The offline replica missed it because all fixtures were
+walking traces (no fallen-robot family in the fixture set — noted as a gap for future
+gates). Fix: RewardCamPhaseLock now gated on command-active x upright (projected
+gravity), mirroring RewardOneDirectionSpin's cmd gate. Rerunning as screen_r4b_gated.
