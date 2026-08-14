@@ -668,3 +668,42 @@ def action_metrics(
         }
         out["joint_vel_deadzone"] = float(joint_vel_deadzone)
     return out
+
+
+def shaft_spin_metrics(
+    joint_vel: np.ndarray,
+    shaft_ids: Sequence[int],
+    *,
+    dt: float,
+    deadzone: float = 0.05,
+) -> dict:
+    """Continuous-rotation metrics for the velocity-driven cam shafts (2026-08 velocity era).
+
+    The quick-return linkage wants the motor spinning in ONE direction; the cam converts that
+    into the leg's back-and-forth yaw. The primary gate number is ``one_direction_ratio`` =
+    |mean(v)| / mean(|v|): 1.0 = pure one-direction spin, ~0 = symmetric oscillation
+    (the position-era habit). Reversal counting reuses the sticky rule so numbers stay
+    directly comparable to ``PenaltyMotorDirectionReversal`` in training logs.
+    """
+    jv = np.asarray(joint_vel, dtype=np.float64)[:, list(shaft_ids)]
+    n_steps = jv.shape[0]
+    duration_s = n_steps * dt
+    signed_mean = jv.mean(axis=0)
+    abs_mean = np.abs(jv).mean(axis=0)
+    ratio = np.abs(signed_mean) / np.maximum(abs_mean, 1e-9)
+    reversals = _sticky_sign_reversals(jv, deadzone)
+    net_revolutions = jv.sum(axis=0) * dt / (2.0 * np.pi)
+    return {
+        "n_shafts": int(jv.shape[1]),
+        "n_steps": int(n_steps),
+        "duration_s": float(duration_s),
+        "deadzone": float(deadzone),
+        "signed_mean_vel": [float(v) for v in signed_mean],
+        "mean_abs_vel": [float(v) for v in abs_mean],
+        "one_direction_ratio": [float(v) for v in ratio],
+        "one_direction_ratio_median": float(np.median(ratio)),
+        "mean_abs_vel_median": float(np.median(abs_mean)),
+        "reversals_per_s": [float(r / max(duration_s, 1e-9)) for r in reversals],
+        "reversals_per_s_median": float(np.median(reversals) / max(duration_s, 1e-9)),
+        "net_revolutions": [float(v) for v in net_revolutions],
+    }

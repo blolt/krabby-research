@@ -149,6 +149,13 @@ def score_episode(
         joint_vel=raw["joint_vel"][ep, env_idx],
         joint_vel_groups=joint_vel_groups,
     )
+    # Velocity-era spin gate: cam shafts should rotate continuously in one direction.
+    if joint_vel_groups and joint_vel_groups.get("camshaft"):
+        out["shaft_spin"] = M.shaft_spin_metrics(
+            raw["joint_vel"][ep, env_idx],
+            joint_vel_groups["camshaft"],
+            dt=dt,
+        )
 
     out["discarded_windows"] = discarded
     if scored:
@@ -198,6 +205,12 @@ def aggregate(episodes: list[dict]) -> dict:
     scores = [e["tripod_score"] for e in episodes if e["tripod_score"] is not None]
     tips = [e["tippy_tap_fraction"] for e in episodes if e.get("tippy_tap_fraction") is not None]
     slips = [e["slip_ratio_mean"] for e in episodes if e.get("slip_ratio_mean") is not None]
+    spin_ratios = [
+        e["shaft_spin"]["one_direction_ratio_median"] for e in episodes if e.get("shaft_spin")
+    ]
+    spin_speeds = [
+        e["shaft_spin"]["mean_abs_vel_median"] for e in episodes if e.get("shaft_spin")
+    ]
     reasons: dict[str, int] = {}
     for e in episodes:
         reasons[e["termination_reason"]] = reasons.get(e["termination_reason"], 0) + 1
@@ -230,6 +243,8 @@ def aggregate(episodes: list[dict]) -> dict:
         "tripod_score_by_hold": {k: _stats(v) for k, v in per_hold.items()},
         "tippy_tap_fraction": _stats(tips),
         "slip_ratio": _stats(slips),
+        "shaft_one_direction_ratio": _stats(spin_ratios),
+        "shaft_mean_abs_vel": _stats(spin_speeds),
         "termination_reasons": reasons,
         "schedule_completion_rate": (
             float(sum(1 for e in episodes if e["completed_schedule"]) / n_eps) if n_eps else None

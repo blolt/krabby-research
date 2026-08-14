@@ -286,3 +286,49 @@ def test_swing_clearance_interior_min_detects_drag():
     fl_lift = res_lift["per_foot"]["FL_Footpad"]["min_over_swing_interior"]["mean"]
     assert fl_flat == pytest.approx(0.0, abs=1e-9)
     assert fl_lift > 0.05
+
+
+# --- shaft_spin_metrics (velocity-era one-direction spin gate) ---
+
+
+def test_spin_metrics_pure_one_direction():
+    """Constant positive omega on all shafts: ratio 1.0, zero reversals, correct revolutions."""
+    n, omega = 500, 6.0
+    jv = np.zeros((n, 24))
+    shaft_ids = [1, 3, 5, 7, 9, 11]
+    jv[:, shaft_ids] = omega
+    out = M.shaft_spin_metrics(jv, shaft_ids, dt=DT)
+    assert out["one_direction_ratio_median"] == pytest.approx(1.0)
+    assert out["reversals_per_s_median"] == 0.0
+    assert out["mean_abs_vel_median"] == pytest.approx(omega)
+    expected_revs = omega * n * DT / (2 * np.pi)
+    assert out["net_revolutions"][0] == pytest.approx(expected_revs)
+
+
+def test_spin_metrics_symmetric_oscillation():
+    """Sine-wave shaft velocity: ratio ~0, reversal rate ~= 2x the oscillation frequency."""
+    n, freq_hz, amp = 1000, 1.4, 6.0
+    t = np.arange(n) * DT
+    jv = np.zeros((n, 24))
+    shaft_ids = [1, 3, 5, 7, 9, 11]
+    jv[:, shaft_ids] = amp * np.sin(2 * np.pi * freq_hz * t)[:, None]
+    out = M.shaft_spin_metrics(jv, shaft_ids, dt=DT)
+    assert out["one_direction_ratio_median"] < 0.05
+    assert out["reversals_per_s_median"] == pytest.approx(2 * freq_hz, rel=0.15)
+    assert abs(out["net_revolutions"][0]) < 0.5
+
+
+def test_spin_metrics_deadzone_dwell_no_reversal():
+    """Coasting into the deadzone and resuming the SAME direction pays no reversal
+    (sticky rule, matching PenaltyMotorDirectionReversal)."""
+    jv = np.zeros((300, 24))
+    shaft_ids = [1, 3, 5, 7, 9, 11]
+    jv[:100, shaft_ids] = 5.0
+    jv[100:200, shaft_ids] = 0.01  # inside 0.05 deadzone
+    jv[200:, shaft_ids] = 5.0
+    out = M.shaft_spin_metrics(jv, shaft_ids, dt=DT)
+    assert out["reversals_per_s_median"] == 0.0
+    # genuine flip across a dwell still pays exactly once
+    jv[200:, shaft_ids] = -5.0
+    out2 = M.shaft_spin_metrics(jv, shaft_ids, dt=DT)
+    assert out2["reversals_per_s_median"] == pytest.approx(1.0 / (300 * DT))

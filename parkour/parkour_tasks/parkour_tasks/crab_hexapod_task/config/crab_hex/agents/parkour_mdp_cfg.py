@@ -993,6 +993,20 @@ class CrabHexFlatWalkRewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
+    def __post_init__(self):
+        # NOTE(onedir-spin-campaign 2026-08-13): env-var override for the camshaft
+        # direction-reversal penalty weight, for the velocity-era weight screens. The
+        # position-era evidence that zeroed this term does not transfer: under velocity
+        # actions it prices literal shaft spin direction (offline replay: the -0.1/-0.3
+        # candidates cost the current oscillator 3.3%/9.9% of locomotion income; a true
+        # one-direction spin pays exactly 0). Default 0.0 preserves current behavior
+        # until the screen winner is baked.
+        import os
+
+        _w = float(os.environ.get("KRABBY_REVERSAL_W", "0.0"))
+        if _w != 0.0:
+            self.penalty_motor_direction_reversal.weight = _w
+
 
 @configclass
 class CrabHexFlatWalkTerminationsCfg:
