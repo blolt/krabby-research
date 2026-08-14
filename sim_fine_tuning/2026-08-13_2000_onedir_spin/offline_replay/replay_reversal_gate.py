@@ -127,5 +127,65 @@ def main() -> int:
     return 0 if any_pass else 1
 
 
+# --- Round 3: positive spin-reward replay (RewardOneDirectionSpin replica) ---
+
+SPIN_EMA_TAU = 2.0  # tau 0.5 leaked 19.4% to the 1.4 Hz oscillator; 2.0 attenuates to ~6%
+SPIN_SPEED_REF = 4.0
+SPIN_CANDIDATE_WEIGHTS = [0.1, 0.2]
+
+
+def spin_reward_income(jv_shafts: np.ndarray, dt: float) -> float:
+    """Unweighted per-minute income of the RewardOneDirectionSpin replica (cmd assumed active)."""
+    alpha = 1.0 - np.exp(-dt / SPIN_EMA_TAU)
+    ema_s = np.zeros(jv_shafts.shape[1])
+    ema_a = np.zeros(jv_shafts.shape[1])
+    total = 0.0
+    for t in range(jv_shafts.shape[0]):
+        ema_s += alpha * (jv_shafts[t] - ema_s)
+        ema_a += alpha * (np.abs(jv_shafts[t]) - ema_a)
+        consistency = np.abs(ema_s) / np.maximum(ema_a, 1e-6)
+        speed_scale = np.minimum(ema_a / SPIN_SPEED_REF, 1.0)
+        total += float((consistency * speed_scale).mean()) * dt
+    return total / (jv_shafts.shape[0] * dt / 60.0)
+
+
+def spin_gate() -> int:
+    print("\n=== Round 3: positive spin-reward replay ===")
+    incomes: dict[str, float] = {}
+    for name, raw_dir in {
+        **FIXTURES,
+        "partial_spinner_w1.0": REPO
+        / "parkour/logs/rsl_rl/gait_eval/v1/flat_walk_forward/seed001/2026-08-14_04-43-07/raw",
+    }.items():
+        vals = []
+        for f in sorted(Path(raw_dir).glob("episode_*.npz")):
+            d = np.load(f)
+            jv = np.asarray(d["joint_vel"], dtype=np.float64)[:, SHAFT_IDS]
+            vals.append(spin_reward_income(jv, float(d["dt"]) if "dt" in d else DT_FALLBACK))
+        incomes[name] = float(np.median(vals))
+        print(f"[{name}] unweighted spin income = {incomes[name]:.2f}/min")
+    # synthetic pure spinner
+    jv = np.full((2925, len(SHAFT_IDS)), 6.0)
+    incomes["healthy_synthetic_spin"] = spin_reward_income(jv, DT_FALLBACK)
+    print(f"[healthy_synthetic_spin] unweighted spin income = {incomes['healthy_synthetic_spin']:.2f}/min")
+
+    ok_any = False
+    spin = incomes["healthy_synthetic_spin"]
+    osc = incomes["degen_velact_oscillator"]
+    for w in SPIN_CANDIDATE_WEIGHTS:
+        gain = w * spin
+        osc_gain = w * osc
+        frac = gain / LOCOMOTION_INCOME_PER_MIN
+        ok = 0.05 <= frac <= 0.25 and osc_gain <= 0.10 * gain
+        ok_any = ok_any or ok
+        print(
+            f"weight +{w:.2f}: pure spinner earns {gain:.2f}/min = {frac * 100:.1f}% of locomotion "
+            f"income; oscillator earns {osc_gain / max(gain, 1e-9) * 100:.1f}% of that -> "
+            f"{'PASS' if ok else 'FAIL'}"
+        )
+    print("SPIN GATE:", "PASS" if ok_any else "FAIL")
+    return 0 if ok_any else 1
+
+
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(spin_gate() if "--spin" in sys.argv else main())

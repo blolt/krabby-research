@@ -930,6 +930,52 @@ class PenaltyMotorDirectionReversal(ManagerTermBase):
         return penalty
 
 
+class RewardOneDirectionSpin(ManagerTermBase):
+    """Reward sustained one-directional cam-shaft rotation (velocity era, 2026-08-14).
+
+    Five-point penalty dose-response (onedir-spin campaign) showed taxing reversals is
+    either absorbed (<= -0.6) or collapses locomotion (-1.0); this term shapes TOWARD the
+    spin basin instead. Per shaft it pays the signed-consistency of an EMA'd velocity:
+    |ema(v)| / ema(|v|) in [0, 1] — a symmetric oscillation earns ~0, a continuous spin
+    earns ~1 — scaled by min(ema(|v|)/speed_ref, 1) so slow/parked shafts cannot farm it,
+    and gated on an active velocity command so standing still earns nothing.
+    """
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        asset_cfg: SceneEntityCfg = cfg.params["asset_cfg"]
+        self.joint_ids = asset_cfg.joint_ids
+        n = len(self.joint_ids)
+        self.ema_signed = torch.zeros(env.num_envs, n, device=self.device)
+        self.ema_abs = torch.zeros(env.num_envs, n, device=self.device)
+
+    def reset(self, env_ids: Sequence[int] | None = None) -> None:
+        if env_ids is None:
+            env_ids = slice(None)
+        self.ema_signed[env_ids] = 0.0
+        self.ema_abs[env_ids] = 0.0
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        command_name: str = "base_velocity",
+        ema_tau: float = 2.0,
+        speed_ref: float = 4.0,
+        min_cmd_norm: float = 0.12,
+    ) -> torch.Tensor:
+        asset: Articulation = env.scene[asset_cfg.name]
+        vel = asset.data.joint_vel[:, self.joint_ids]
+        alpha = 1.0 - torch.exp(torch.tensor(-env.step_dt / ema_tau, device=self.device))
+        self.ema_signed = self.ema_signed + alpha * (vel - self.ema_signed)
+        self.ema_abs = self.ema_abs + alpha * (vel.abs() - self.ema_abs)
+        consistency = self.ema_signed.abs() / self.ema_abs.clamp_min(1e-6)
+        speed_scale = (self.ema_abs / speed_ref).clamp(max=1.0)
+        cmd = env.command_manager.get_command(command_name)
+        cmd_active = (torch.norm(cmd[:, :2], dim=1) > min_cmd_norm).float()
+        return (consistency * speed_scale).mean(dim=1) * cmd_active
+
+
 class RewardStrideLength(ManagerTermBase):
     """Reward each leg's stance-phase contribution to real body progress along the commanded
     direction -- only a planted foot can push the robot forward, so only stance counts, and only

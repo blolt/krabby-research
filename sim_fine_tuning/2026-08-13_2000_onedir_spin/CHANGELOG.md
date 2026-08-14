@@ -37,3 +37,13 @@ position-era 20k reference level; first nonzero tripod 0.139; completion 1.0; sl
 ~5.6 rad/s in all arms (shafts never suppressed).
 
 Design fork (user decision): see RESULTS.md.
+
+## Round 3 (hybrid path, user-approved): positive spin reward + 20k reference in flight
+- 20k from-scratch at KRABBY_REVERSAL_W=-0.3 LAUNCHED (best-locomotion config; hardware
+  can reverse so oscillation transfers; mid-run 10k gait-eval gate armed).
+- RewardOneDirectionSpin added (rewards.py): EMA signed-consistency x speed scale,
+  command-gated. First replay caught tau=0.5 leaking 19.4% of spinner income to the
+  1.4 Hz oscillator -> tau=2.0 attenuates to 5.4%. Replay gate PASS at +0.1 (9.1% of
+  locomotion income) and +0.2 (18.2%); partial-spinner traces earn intermediate 13.9/min
+  (smooth gradient toward the spin basin). Registered weight 0.0, KRABBY_SPIN_REWARD_W
+  override. Screens queued AFTER the 20k run (serial GPU).

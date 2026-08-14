@@ -992,6 +992,17 @@ class CrabHexFlatWalkRewardsCfg:
         weight=-1e-6,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+    # NOTE(onedir-spin-campaign round 3): positive shaping toward continuous one-direction
+    # shaft spin — the penalty route was closed by a 5-point dose-response (absorbed up to
+    # -0.6, locomotion collapse at -1.0). Weight 0.0 until screened; KRABBY_SPIN_REWARD_W.
+    reward_one_direction_spin = RewTerm(
+        func=mdp_rewards.RewardOneDirectionSpin,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_Body_CamShaft_RevoluteJoint"]),
+            "command_name": "base_velocity",
+        },
+    )
 
     def __post_init__(self):
         # NOTE(onedir-spin-campaign 2026-08-13): env-var override for the camshaft
@@ -1006,6 +1017,9 @@ class CrabHexFlatWalkRewardsCfg:
         _w = float(os.environ.get("KRABBY_REVERSAL_W", "0.0"))
         if _w != 0.0:
             self.penalty_motor_direction_reversal.weight = _w
+        _sw = float(os.environ.get("KRABBY_SPIN_REWARD_W", "0.0"))
+        if _sw != 0.0:
+            self.reward_one_direction_spin.weight = _sw
 
 
 @configclass
