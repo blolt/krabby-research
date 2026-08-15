@@ -61,3 +61,9 @@ phase-locked (FL/ML 1.0, RL 0.89), mirror spin directions by side.
   slip 24.7%) — the mechanism working as designed, stepping mediocre.
 - STEPPING benchmark: screen_r4b_gated/model_2999 (slip 4.2%, completion 1.0) —
   oscillation basin.
+
+## BAKED (user decision, 2026-08-14)
+- Velocity-era flat-walk reference: screen_r4c_ft19999/.../model_22998.pt (sha 580b6f3b…)
+- penalty_motor_direction_reversal = -0.3 baked as flat-walk default
+- scenarios_v1.yaml flat_walk_forward pin updated (with sha256)
+- Plan of record for next campaign: seed-basin lottery (spin gate as selector)

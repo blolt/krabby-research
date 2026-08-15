@@ -100,7 +100,10 @@ scenarios:
     role: teacher
     task: Isaac-Crab-Hex-Flat-Walk-v0
     terrain_label: flat
-    checkpoint: logs/rsl_rl/crab_hex_flat_walk/2026-08-04_23-34-31/model_19999.pt
+    # Velocity-era spin reference (baked 2026-08-14, onedir-spin campaign): continuous
+    # one-direction quick-return operation, ratio 1.0, completion 1.0, slip 24.7%.
+    checkpoint: /home/nickmagus/krabby/krabby-research/sim_fine_tuning/2026-08-13_2000_onedir_spin/screen_r4c_ft19999/logs/rsl_rl/crab_hex_flat_walk/2026-08-14_17-25-51/model_22998.pt
+    checkpoint_sha256: 580b6f3b1e77dd84116d31ff8c524e3f68b249977d08c13590a47c93c7764831
     episodes: 10
     env_seed: 1
     episode_length_s: 24.0
