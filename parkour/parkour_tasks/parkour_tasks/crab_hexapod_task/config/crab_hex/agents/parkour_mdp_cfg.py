@@ -1032,6 +1032,12 @@ class CrabHexFlatWalkRewardsCfg:
         weight=0.0,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+    # NOTE(task1-velocity C1): constant-gradient tracking pressure; see function docstring.
+    penalty_tracking_error_l1 = RewTerm(
+        func=mdp_rewards.penalty_tracking_error_l1,
+        weight=0.0,
+        params={"command_name": "base_velocity", "asset_cfg": SceneEntityCfg("robot")},
+    )
 
     def __post_init__(self):
         # NOTE(onedir-spin-campaign 2026-08-13): env-var override for the camshaft
@@ -1051,6 +1057,7 @@ class CrabHexFlatWalkRewardsCfg:
             "KRABBY_CAM_SCHED_W": "penalty_cam_contact_schedule",
             "KRABBY_PHASE_LOCK_W": "reward_cam_phase_lock",
             "KRABBY_POWER_W": "penalty_mechanical_power",
+            "KRABBY_TRACK_L1_W": "penalty_tracking_error_l1",
         }
         for env_name, term_name in _overrides.items():
             raw = os.environ.get(env_name)

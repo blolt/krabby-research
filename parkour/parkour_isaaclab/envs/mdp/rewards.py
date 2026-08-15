@@ -976,6 +976,22 @@ class RewardOneDirectionSpin(ManagerTermBase):
         return (consistency * speed_scale).mean(dim=1) * cmd_active
 
 
+def penalty_tracking_error_l1(
+    env: ParkourManagerBasedRLEnv,
+    command_name: str = "base_velocity",
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Linear planar velocity-tracking error |cmd_xy - v_xy| (task1-velocity C1).
+
+    The exponential tracking term's gradient dies outside ~+-0.25 m/s (narrow sigma) or
+    pays income without tracking (wide sigma). This L1 penalty supplies constant
+    gradient pressure at every error magnitude and cannot be satisfied at a fixed
+    deficit; as a pure penalty its optimum is exact tracking."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    cmd = env.command_manager.get_command(command_name)
+    return torch.norm(cmd[:, :2] - asset.data.root_lin_vel_b[:, :2], dim=1)
+
+
 def penalty_mechanical_power(
     env: ParkourManagerBasedRLEnv,
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
