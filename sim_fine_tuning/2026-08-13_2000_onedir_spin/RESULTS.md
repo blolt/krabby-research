@@ -32,3 +32,32 @@ reward_tripod_schedule 0.10-0.60 s band (unlike the old oscillation). The inert 
 term can see this gait.
 
 ## Bake decision (user): see chat/AskUserQuestion
+
+## Round 4 final (r4d, 10k from-scratch, all terms): spin gate FAIL, stepping best-in-class
+ratio 0.015 (oscillation basin — shaping does not force basin entry), slip 10.1%, tippy
+7.3%, completion 0.7 (3 falls), tripod 0, reward 22.9. Novel structure: entire left side
+phase-locked (FL/ML 1.0, RL 0.89), mirror spin directions by side.
+
+## Campaign conclusions (4 rounds of gated evidence)
+1. Continuous one-direction spin IS a stable attractor of the velocity-era MDP
+   (model_19999 -> model_22998: ratio 1.0, completion 1.0, slip 24.7%).
+2. Basin ENTRY is early-training stochastics; no reward configuration tried (penalty
+   dose-response 5 points, positive spin reward, phase-lock pull, schedule pressure)
+   selects it reliably within 3-10k.
+3. Fine-tuning refines execution (slip 29->24.7) but never reorganizes phase structure
+   (rear lock 0.18->0.19) — consistent with the lit review's fine-tune null.
+4. PenaltyCamContactSchedule reliably improves stepping in any basin (4.2-10.1% slip
+   from scratch vs 29% unshaped).
+
+## Escalation menu (future campaign)
+(a) Seed-basin lottery with the spin gate as selector (repo precedent:
+    2026-08-12_1550_seed_basin_search) — N seeds x ~5k iters, continue spinners.
+(b) CPG/oscillator action space (lit review #5, held-in-reserve escalation): phase
+    variable is architectural — basin question dissolves. Largest integration cost.
+(c) Warm-start hybrid: init cam-channel weights from model_22998, rest fresh.
+
+## Current best artifacts
+- SPIN reference candidate: screen_r4c_ft19999/model_22998 (ratio 1.0, completion 1.0,
+  slip 24.7%) — the mechanism working as designed, stepping mediocre.
+- STEPPING benchmark: screen_r4b_gated/model_2999 (slip 4.2%, completion 1.0) —
+  oscillation basin.
