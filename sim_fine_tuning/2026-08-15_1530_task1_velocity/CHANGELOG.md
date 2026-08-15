@@ -42,3 +42,11 @@ Mechanism differed from prediction: micro-taps did NOT drop (19% vs 11% mass <=3
 paying cam-length swings properly reorganized the gait into alternating tripod phasing
 instead. WATCH-ITEMS for C3+: tippy 23.8%, slip 11.3%, one fall. Shafts still oscillate
 (ratio 0.007) — spin remains a C4+/CPG objective. Stack now = L1 -0.5 + thresh 0.20.
+
+## C3 — stance-count band {3,4}: REFUTED AT REPLAY GATE (no GPU spent)
+Position-era reference: 61% of steady steps outside {3,4}; C2: 42%; oscillator: 69%.
+The band assumes 50%-duty alternation; this mechanism's tripod runs ~0.66 duty with
+legitimate 4-6-contact overlap. Term skipped per Task 1 s2.3/NOTE discipline. If a
+fall-pricing term is needed later (positive spin terms reintroduced), derive the band
+from the certified reference's own count distribution and drop the steady-mask
+dependence (fallen traces have no steady steps to score).
