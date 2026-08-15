@@ -103,3 +103,19 @@ cadence modulation is feasible for spin — the CPG-native control structure.
 PROPOSED FIX: widen tracking sigma^2 0.02 -> 0.25 (legged-gym standard), optionally
 annealed; rescreen 3k from scratch; gate on tracking income > 0.8/1.25 AND per-hold
 deficit < 0.1 at eval.
+
+## Sigma-fix screen (2026-08-15): NECESSARY BUT NOT SUFFICIENT — paused for review
+sigma^2 0.02 -> 0.25: training tracking income 0.73 by iter 500 (vs 0.25-flatline era),
+reward 28.2 @3k (era best). BUT eval: still command-blind (vx 0.21-0.23 flat across the
+band, deficits to -0.44, shafts pinned 5.7 rad/s) — the wide well PAYS at large deficits
+(46-78% income), so it fixed gradient reach and destroyed gradient pressure. Refined
+diagnosis: opposing cost is credit assignment under velocity semantics — stride is
+cam-fixed, so speed control requires sustained cadence modulation (~50-step diffuse
+credit) vs position actions' within-step speed response. A constant needs no control law;
+the shallow well doesn't pay enough to force learning one.
+Queued candidates (NOT launched, campaign paused): (a) linear |v_err| penalty ~-0.5
+(constant pressure, unfarmable), (b) sigma anneal 0.25->0.02, (c) CPG action space —
+which now solves BOTH open problems at once: omega is an explicit action, making
+command->speed a one-step credit assignment, and spin is structural.
+NOTE for certification SOP: add a per-hold tracking-deficit gate (<0.1 m/s) — the
+completion metric masked command-blindness in the model_22998 bake.
