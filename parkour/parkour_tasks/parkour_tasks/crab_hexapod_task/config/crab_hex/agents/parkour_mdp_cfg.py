@@ -1024,6 +1024,13 @@ class CrabHexFlatWalkRewardsCfg:
         weight=0.0,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+    # NOTE(staged-ramp): physics-grounded basin selector — spin gaits are ~42% cheaper in
+    # total |tau*qdot| than oscillation (see penalty_mechanical_power docstring).
+    penalty_mechanical_power = RewTerm(
+        func=mdp_rewards.penalty_mechanical_power,
+        weight=0.0,
+        params={"asset_cfg": SceneEntityCfg("robot")},
+    )
 
     def __post_init__(self):
         # NOTE(onedir-spin-campaign 2026-08-13): env-var override for the camshaft
@@ -1035,18 +1042,19 @@ class CrabHexFlatWalkRewardsCfg:
         # until the screen winner is baked.
         import os
 
-        _w = float(os.environ.get("KRABBY_REVERSAL_W", "0.0"))
-        if _w != 0.0:
-            self.penalty_motor_direction_reversal.weight = _w
-        _sw = float(os.environ.get("KRABBY_SPIN_REWARD_W", "0.0"))
-        if _sw != 0.0:
-            self.reward_one_direction_spin.weight = _sw
-        _cs = float(os.environ.get("KRABBY_CAM_SCHED_W", "0.0"))
-        if _cs != 0.0:
-            self.penalty_cam_contact_schedule.weight = _cs
-        _pl = float(os.environ.get("KRABBY_PHASE_LOCK_W", "0.0"))
-        if _pl != 0.0:
-            self.reward_cam_phase_lock.weight = _pl
+        # Presence-based overrides: an explicitly-set env var wins even at 0.0 (needed to
+        # DISABLE baked defaults, e.g. staged-ramp phase A turns the -0.3 reversal off).
+        _overrides = {
+            "KRABBY_REVERSAL_W": "penalty_motor_direction_reversal",
+            "KRABBY_SPIN_REWARD_W": "reward_one_direction_spin",
+            "KRABBY_CAM_SCHED_W": "penalty_cam_contact_schedule",
+            "KRABBY_PHASE_LOCK_W": "reward_cam_phase_lock",
+            "KRABBY_POWER_W": "penalty_mechanical_power",
+        }
+        for env_name, term_name in _overrides.items():
+            raw = os.environ.get(env_name)
+            if raw is not None:
+                getattr(self, term_name).weight = float(raw)
 
 
 @configclass

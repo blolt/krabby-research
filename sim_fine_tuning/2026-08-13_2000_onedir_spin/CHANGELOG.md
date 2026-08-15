@@ -97,3 +97,14 @@ phase lock STATIC (0.18->0.19) — confirms the lit review's fine-tune null for 
 reorganization; FT refines execution, not structure. r4d (user-approved): 10k
 from-scratch, all round-4 terms — spin historically emerges by 10k unaided; phase-lock
 adds basin pull from step 0. Success = reference candidate.
+
+## Staged ramp + power term (2026-08-15, user-approved)
+- Lit review s5 CLOSED with a positive: replayed sum|tau*qdot| — walking spinner 738 W
+  vs oscillators 1259-1423 W (position-era ref 1286 W). The saving is in the LEG chain
+  (496 vs 988-1234 W): smooth yaw spares hip/knee reversal transients. Physics-grounded
+  basin selector; penalty_mechanical_power added (weight 0.0, KRABBY_POWER_W).
+- Env overrides now presence-based (explicit 0 disables baked defaults — needed for
+  phase A).
+- Staged ramp launched: 2 seeds; phase A 5k walk-first (schedule -0.1 only), phase B
+  resume +10k (reversal -0.3, lock +0.1, power -0.001). Gates: ratio>=0.8 AND
+  completion>=0.9 AND slip<0.15.

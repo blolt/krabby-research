@@ -976,6 +976,21 @@ class RewardOneDirectionSpin(ManagerTermBase):
         return (consistency * speed_scale).mean(dim=1) * cmd_active
 
 
+def penalty_mechanical_power(
+    env: ParkourManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> torch.Tensor:
+    """Total mechanical power sum |tau * qdot| (lit review s5, replayed 2026-08-15):
+    continuous one-direction spin costs ~738 W vs ~1260-1420 W for shaft-oscillation
+    gaits — the saving is in the LEG chain (fewer reversal transients), so this prices
+    the oscillation basin ~1.7x harder than spin on physics grounds. Weight scale:
+    ~1e-3 puts the differential at a few percent of locomotion income."""
+    asset: Articulation = env.scene[asset_cfg.name]
+    return torch.sum(
+        torch.abs(asset.data.applied_torque * asset.data.joint_vel), dim=1
+    )
+
+
 class PenaltyCamContactSchedule(ManagerTermBase):
     """Contact-schedule penalty referenced to each leg's OWN cam-shaft phase (round 4,
     lit-review synthesis: Siekmann-style swing/stance windows, but the clock is the
