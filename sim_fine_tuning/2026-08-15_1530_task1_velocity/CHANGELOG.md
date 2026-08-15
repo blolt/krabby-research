@@ -31,3 +31,14 @@ gradient carried the policy into the narrow exp well (tracking-exp income 0.76/1
 era's 0.25 flatline, sigma^2 still 0.02). Speed modulation comes from legs, not shaft
 cadence (shaft |w| ~5.6 at all holds). C1 retained via env var for subsequent screens;
 bake decision deferred to campaign end per SOP.
+
+## C2 — air-time threshold 0.05 -> 0.20 s (cam-derived; KRABBY_AIRTIME_THRESH): PASS
+| change | reward@3k | tracking deficit (lo/mid/hi) | tripod | completion | slip | tippy |
+|--------|-----------|------------------------------|--------|------------|------|-------|
+| C1     | 21.0      | +0.08 / +0.03 / -0.01        | 0.0    | 1.00       | 0.079| ~0.15 |
+| C2     | **27.1**  | +0.02 / -0.01 / -0.08        | **0.573**| 0.90     | 0.113| 0.238 |
+FIRST tripod of the velocity era — exceeds the position-era reference (0.517) at 3k.
+Mechanism differed from prediction: micro-taps did NOT drop (19% vs 11% mass <=3 steps);
+paying cam-length swings properly reorganized the gait into alternating tripod phasing
+instead. WATCH-ITEMS for C3+: tippy 23.8%, slip 11.3%, one fall. Shafts still oscillate
+(ratio 0.007) — spin remains a C4+/CPG objective. Stack now = L1 -0.5 + thresh 0.20.
