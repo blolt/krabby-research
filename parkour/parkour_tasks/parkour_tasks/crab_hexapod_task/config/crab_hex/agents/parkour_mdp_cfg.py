@@ -1055,6 +1055,15 @@ class CrabHexFlatWalkRewardsCfg:
             raw = os.environ.get(env_name)
             if raw is not None:
                 getattr(self, term_name).weight = float(raw)
+        # NOTE(tracking-regression 2026-08-15): sigma^2=0.02 gives the tracking well a
+        # ~+-0.25 m/s capture radius; velocity-action exploration lands outside it and the
+        # era's dominant reward term contributes zero gradient forever (see onedir-spin
+        # RESULTS.md root cause). Override widens the well (legged-gym standard: 0.25).
+        _ts2 = os.environ.get("KRABBY_TRACK_SIGMA2")
+        if _ts2 is not None:
+            import math as _math
+
+            self.track_lin_vel_xy_exp.params["std"] = _math.sqrt(float(_ts2))
 
 
 @configclass
