@@ -119,3 +119,11 @@ which now solves BOTH open problems at once: omega is an explicit action, making
 command->speed a one-step credit assignment, and spin is structural.
 NOTE for certification SOP: add a per-hold tracking-deficit gate (<0.1 m/s) — the
 completion metric masked command-blindness in the model_22998 bake.
+
+## CAMPAIGN CLOSED — UNBAKED (user decision 2026-08-15)
+The model_22998 reference bake and the flat-walk reversal -0.3 default are rescinded:
+all era weight evidence was scored with the dominant tracking term inert. Robot config
+(limits, velocity actions, gains, inertia) is unchanged and correct. Successor:
+sim_fine_tuning/2026-08-15_*_task1_velocity/ — Task-1 discipline, amended certification
+gates, change queue C1 (tracking) -> C2 (air-time recal) -> C3 (stance band) -> C4+
+(spin instruments re-gated) -> CPG escalation.

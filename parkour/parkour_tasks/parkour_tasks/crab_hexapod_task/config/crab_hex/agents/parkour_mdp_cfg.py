@@ -969,11 +969,12 @@ class CrabHexFlatWalkRewardsCfg:
     # hardware-longevity concern documented in motor_reversal_on/CHANGELOG.md.
     penalty_motor_direction_reversal = RewTerm(
         func=mdp_rewards.PenaltyMotorDirectionReversal,
-        # NOTE(onedir-spin campaign, BAKED 2026-08-14): -0.3 is the velocity-era flat-walk
-        # default — the weight under which the spin basin was reached (fromscratch 20k) and
-        # the baked reference model_22998 was produced. Position-era evidence for 0.0 no
-        # longer applies under velocity actions. Override: KRABBY_REVERSAL_W.
-        weight=-0.3,
+        # NOTE(task1-velocity campaign, UNBAKED 2026-08-15): the -0.3 bake (2026-08-14) was
+        # rescinded — its justifying evidence was scored on a landscape where the dominant
+        # tracking term was inert (velocity-era command-blindness, onedir-spin RESULTS.md).
+        # Effective stack returns to the position-era value; re-enable via KRABBY_REVERSAL_W
+        # only through the Task-1 campaign's replay-gate + screen discipline.
+        weight=0.0,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=[".*_Body_CamShaft_RevoluteJoint"])},
     )
     # NOTE(short-run-campaign): weights raised from 0.0 (previously inactive on flat-walk, only
