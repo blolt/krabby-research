@@ -1072,6 +1072,12 @@ class CrabHexFlatWalkRewardsCfg:
             import math as _math
 
             self.track_lin_vel_xy_exp.params["std"] = _math.sqrt(float(_ts2))
+        # NOTE(task1-velocity C2): air-time swing threshold, recalibrated for the cam era —
+        # the cam return stroke at full speed is 2.14 rad / 6 rad/s ~= 0.36 s; the baked
+        # 0.05 s cannot distinguish a cam-timed swing from a micro-tap.
+        _at = os.environ.get("KRABBY_AIRTIME_THRESH")
+        if _at is not None:
+            self.reward_feet_air_time_positive.params["threshold"] = float(_at)
 
 
 @configclass
