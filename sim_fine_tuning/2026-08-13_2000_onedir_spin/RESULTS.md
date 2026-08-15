@@ -81,3 +81,25 @@ observed walking-spin entry (seed-1 20k run) transitioned FROM established walki
 collapses into falling; spin that emerges after walking is stable. Suggests a STAGED
 ramp (walk first, then ramp spin pressure mid-training) rather than more from-scratch
 lottery — or the CPG action space, which sidesteps basins entirely.
+
+## TRACKING REGRESSION ROOT CAUSE (2026-08-15, Task-1 speed-pressure follow-up)
+Speed-feasibility analysis found something bigger: ALL velocity-era policies are
+command-blind (fixed body speed across the 0.30-0.65 band; shaft speed constant), while
+the position-era ref tracks to <=0.02 m/s and modulates cam activity with the command.
+Root cause chain (probes A/B/C, offline):
+  A. Velocity-era policies respond to the command obs 3-6x more weakly than position-era
+     (action deltas across holds: cam 0.60/0.31 vs 1.80) — channel alive, never trained.
+  B. track_lin_vel_xy_exp (weight 1.25, sigma^2=0.02) has capture radius ~+-0.25 m/s;
+     gradient peaks at err=0.10 and is numerically ZERO at the spin gait's 0.48 deficit.
+  C. Training curves: position-era tracking income hit 0.53/1.25 by iter 500 and ~0.95 at
+     convergence; velocity-era 20k flatlined at ~0.25 from iter 2500 for 17,500 iters.
+Mechanism: position-action exploration starts slow -> errors inside the narrow well ->
+tracking learned first. Velocity-action exploration (scale 6 rad/s) lands the proto-gait
+far outside the well -> zero gradient from the era's largest term -> gait built entirely
+on secondary income, command ignored. sigma^2=0.02 only ever worked by exploration luck.
+Implication: the week's basin economics were computed WITHOUT the dominant reward term;
+kinematics say spin at 6 rad/s can deliver 1.08 m/s (0.71 single-set), so tracking via
+cadence modulation is feasible for spin — the CPG-native control structure.
+PROPOSED FIX: widen tracking sigma^2 0.02 -> 0.25 (legged-gym standard), optionally
+annealed; rescreen 3k from scratch; gate on tracking income > 0.8/1.25 AND per-hold
+deficit < 0.1 at eval.
