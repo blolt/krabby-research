@@ -67,3 +67,17 @@ phase-locked (FL/ML 1.0, RL 0.89), mirror spin directions by side.
 - penalty_motor_direction_reversal = -0.3 baked as flat-walk default
 - scenarios_v1.yaml flat_walk_forward pin updated (with sha256)
 - Plan of record for next campaign: seed-basin lottery (spin gate as selector)
+
+## Seed-basin lottery (overnight 2026-08-14/15): 0/7 true winners — measured, decisive
+Corrected scoring (ratio >= 0.8 AND completion >= 0.7): 5 oscillators (walking, ratio
+~0.01; seed 3 slip 2.5% = best stepping of the era), 2 FALLEN SPINNERS (ratio ~1.0,
+completion 0.00 — the fall-and-spin attractor captures spin-adjacent starts even with
+the upright-gated phase-lock, because all shaping penalties go silent when airborne).
+Full table: lottery_summary.md.
+
+Basin probability estimate at 5k under current shaping: walking-spin ~0/7; the ONLY
+observed walking-spin entry (seed-1 20k run) transitioned FROM established walking
+(~18 reward through 7k) to spin by 10k. Reading: spin that emerges before walking
+collapses into falling; spin that emerges after walking is stable. Suggests a STAGED
+ramp (walk first, then ramp spin pressure mid-training) rather than more from-scratch
+lottery — or the CPG action space, which sidesteps basins entirely.
