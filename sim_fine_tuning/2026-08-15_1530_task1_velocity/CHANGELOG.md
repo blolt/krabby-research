@@ -63,3 +63,11 @@ Replay on the C2 screen's tripod traces: 16.3/min @0.15 weight, 158 crossings/mi
 that earns it: self-reinforcing once the basin is entered, inert otherwise. Plan:
 enable reward_tripod_schedule 0.15 on C1+C2 -> 4-seed x 3k selection (pick tripod
 formers) -> resume best +17k -> re-certify. (~overnight GPU)
+
+## C3b — tripod crossing lock @0.15: FAIL (income 0.0000 all run — basin never entered)
+Confirms the v-series theorem in the velocity era: the term is a lock, not a creator.
+Tracking regressed (deficits -0.09/-0.17/-0.30), reward 19.5 < gate. REVERTED.
+Basin-entry conclusion after 7 attempts across 2 campaigns: entry is not
+reward-addressable — only SELECTION (multi-seed) or STRUCTURE (CPG) remain.
+Task-1 flat-walk list status: 2.1 C2-PASS, 2.2 baked, 2.3 refuted+lock-only,
+2.5 C5 re-sweep REMAINING, 2.6 C1-PASS.
