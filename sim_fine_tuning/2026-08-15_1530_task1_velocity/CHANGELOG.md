@@ -132,3 +132,9 @@ good). 20k from-scratch at SYM=0 on the C1+C2 stack; compare against fromscratch
 Gaps vs full certification: completion 0.8 (<0.9; two falls) and tripod 0 (no 20k run of
 the era has held tripod; the C2 3k screen remains the only sighting). Checkpoint:
 fromscratch_C6a_20k/logs/rsl_rl/crab_hex_flat_walk/2026-08-16_12-51-51/model_19999.pt
+
+## BAKED (user decision 2026-08-16): C2 checkpoint adopted as velocity-era reference
+- penalty_tracking_error_l1 = -0.5 default (C1); flat-walk air-time threshold = 0.20 (C2)
+- scenarios_v1.yaml flat_walk_forward -> C2 model_2999 (sha 7500414c...)
+- Known gaps documented (slip 11.3%, tippy 23.8%, 3k-scale, basin-dependent tripod)
+- Next: curriculum carry-up from this checkpoint through bridge/2b1 -> 2b2

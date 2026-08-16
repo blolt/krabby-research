@@ -853,7 +853,10 @@ class CrabHexFlatWalkRewardsCfg:
         params={
             "command_name": "base_velocity",
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
-            "threshold": 0.05,
+            # NOTE(task1-velocity C2, BAKED 2026-08-16): cam-derived swing target
+            # (return stroke 2.14 rad / 6 rad/s ~= 0.36 s; 0.05 could not tell a
+            # cam-timed swing from a micro-tap). Override: KRABBY_AIRTIME_THRESH.
+            "threshold": 0.20,
         },
     )
     # NOTE(stride-length): rewards |hip-yaw diff|**power across every touchdown<->liftoff
@@ -1032,10 +1035,12 @@ class CrabHexFlatWalkRewardsCfg:
         weight=0.0,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
-    # NOTE(task1-velocity C1): constant-gradient tracking pressure; see function docstring.
+    # NOTE(task1-velocity C1, BAKED 2026-08-16): constant-gradient tracking pressure — the
+    # change that restored command-following to the velocity era (screen: deficits <=0.08
+    # vs the era's 0.25-0.48 command-blindness). Override: KRABBY_TRACK_L1_W.
     penalty_tracking_error_l1 = RewTerm(
         func=mdp_rewards.penalty_tracking_error_l1,
-        weight=0.0,
+        weight=-0.5,
         params={"command_name": "base_velocity", "asset_cfg": SceneEntityCfg("robot")},
     )
 

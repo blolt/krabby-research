@@ -100,11 +100,12 @@ scenarios:
     role: teacher
     task: Isaac-Crab-Hex-Flat-Walk-v0
     terrain_label: flat
-    # NOTE(task1-velocity, 2026-08-15): the model_22998 pin was RESCINDED (command-blind;
-    # certified before the per-hold tracking-deficit gate existed). No certified
-    # velocity-era reference exists yet — the Task-1 campaign pins one when a candidate
-    # passes the amended gates (incl. per-hold tracking deficit < 0.1 m/s).
-    checkpoint: logs/rsl_rl/crab_hex_flat_walk/2026-08-04_23-34-31/model_19999.pt
+    # NOTE(task1-velocity, BAKED 2026-08-16): C2 screen checkpoint adopted as the
+    # velocity-era reference (user decision) — tracking deficits <=0.08 (gate PASS),
+    # tripod 0.573, reward 27.1, completion 0.9. Known gaps: slip 11.3%, tippy 23.8%,
+    # 3k-scale only; tripod formation is trajectory-dependent (20k rolls missed it).
+    checkpoint: /home/nickmagus/krabby/krabby-research/sim_fine_tuning/2026-08-15_1530_task1_velocity/screen_C2_airtime/logs/rsl_rl/crab_hex_flat_walk/2026-08-15_18-01-57/model_2999.pt
+    checkpoint_sha256: 7500414ccf08d163e8f05476cebf6f2c5bad9bd78cbb07ca57f7e7b01d0dff7c
     episodes: 10
     env_seed: 1
     episode_length_s: 24.0
