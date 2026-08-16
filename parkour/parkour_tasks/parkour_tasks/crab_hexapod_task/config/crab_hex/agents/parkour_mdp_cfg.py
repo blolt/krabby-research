@@ -1058,6 +1058,7 @@ class CrabHexFlatWalkRewardsCfg:
             "KRABBY_PHASE_LOCK_W": "reward_cam_phase_lock",
             "KRABBY_POWER_W": "penalty_mechanical_power",
             "KRABBY_TRACK_L1_W": "penalty_tracking_error_l1",
+            "KRABBY_TRIPOD_W": "reward_tripod_schedule",
         }
         for env_name, term_name in _overrides.items():
             raw = os.environ.get(env_name)
