@@ -71,3 +71,9 @@ Basin-entry conclusion after 7 attempts across 2 campaigns: entry is not
 reward-addressable — only SELECTION (multi-seed) or STRUCTURE (CPG) remain.
 Task-1 flat-walk list status: 2.1 C2-PASS, 2.2 baked, 2.3 refuted+lock-only,
 2.5 C5 re-sweep REMAINING, 2.6 C1-PASS.
+
+## C6 part 1 — mirror map velocity-era consistency check (offline): PASS
+Involution exact; mirrored-vs-original action stats on C2 traces match within 2-5% of
+channel scale (cam/hip); knee residual 12% = the documented -0.07/+0.10 roll-balance
+asymmetry (known approximation). No velocity-era sign error. Part 2 queued behind C5a:
+C6a ablation (KRABBY_SYM_LOSS_COEF=0) and C6b strengthen (=1.0) on the C1+C2 stack.
