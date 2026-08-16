@@ -119,3 +119,16 @@ Remaining paths to a certified reference: multi-seed selection OR CPG action spa
 C6a's 3k gait was best-in-era stepping (slip 3.6%, tippy 5.7%, completion 1.0, tracking
 good). 20k from-scratch at SYM=0 on the C1+C2 stack; compare against fromscratch_C1C2_20k
 (sym 0.5, certification FAIL: tripod 0.0, slip 16.7%). Mid-gate at 10k.
+
+## C6a-20k final: DOMINATES the sym-0.5 20k on every axis; first 20k to pass tracking gate
+| @20k | C6a (sym 0) | C1C2 (sym 0.5) |
+|------|-------------|----------------|
+| reward | 23.5 | 20.0 |
+| tracking | +.04/-.02/-.06 PASS | -.14 FAIL |
+| slip | 4.1% | 16.7% |
+| tippy | 9.9% | 27.9% |
+| completion | 0.8 | 0.8 |
+| tripod | 0.0 | 0.0 |
+Gaps vs full certification: completion 0.8 (<0.9; two falls) and tripod 0 (no 20k run of
+the era has held tripod; the C2 3k screen remains the only sighting). Checkpoint:
+fromscratch_C6a_20k/logs/rsl_rl/crab_hex_flat_walk/2026-08-16_12-51-51/model_19999.pt
