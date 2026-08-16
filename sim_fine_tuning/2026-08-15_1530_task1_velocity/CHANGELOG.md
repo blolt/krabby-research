@@ -94,3 +94,23 @@ Task-1 flat-walk exploration COMPLETE: every item screened, passed, or refuted.
 | C6a (sym 0)  | 19.9 | .07/.05/.02 | 0.032 | 1.00 | **0.036**| **0.057** |
 Symmetry OFF -> cleanest stepping of the era but no tripod. The loss appears implicated
 in both tripod formation (+) and step roughness (-); single-roll basin variance caveat.
+
+## C6b — symmetry 1.0: FAIL (tracking regressed, deficits to -0.40; reward 16.6)
+Dose curve complete: sym 0 = cleanest stepping (slip 3.6%) no tripod; 0.5 = sweet spot
+(tripod 0.573, reward 27.1); 1.0 = harmful (fights knee asymmetry + breaks tracking).
+Baked 0.5 default CONFIRMED by its own audit.
+
+# ===== TASK-1 EXPLORATION COMPLETE =====
+| item | disposition |
+|------|-------------|
+| C1 linear tracking penalty -0.5 | PASS — command-following restored |
+| C2 air-time thresh 0.20 (cam-derived) | PASS — first velocity-era tripod 0.573 |
+| C3 stance band {3,4} | REFUTED at replay (0.66-duty overlap) |
+| C3b tripod crossing lock 0.15 | FAIL — lock, not creator; basin never entered |
+| C5a mechanical power -0.001 | FAIL — induces tippy-tap (replay blind spot documented) |
+| C5b action-rate re-sweep | SKIPPED — no implicated suspect |
+| C6 symmetry audit | map consistent; 0.5 confirmed optimal of {0, 0.5, 1.0} |
+Standing candidate stack: position-era rewards + C1 (-0.5 L1) + C2 (0.20 thresh),
+sym 0.5. Best single-run results: tripod 0.573 / tracking deficits <=0.08 (C2 roll);
+adoption blocked ONLY by basin-entry stochasticity (20k roll failed certification).
+Remaining paths to a certified reference: multi-seed selection OR CPG action space.
