@@ -86,3 +86,11 @@ predicted failure regime). Energy half of Task-1 s2.5 closed NEGATIVE for flat-w
 Smoothness half (action_rate/delta_torques): position-era values stay; no velocity-era
 evidence implicates them — C5b skipped per discipline (no implicated suspect).
 Task-1 flat-walk exploration COMPLETE: every item screened, passed, or refuted.
+
+## C6a — symmetry ablation (SYM=0): reward-gate FAIL, best-in-era stepping
+| change | reward@3k | deficits | tripod | completion | slip | tippy |
+|--------|-----------|----------|--------|------------|------|-------|
+| C2 (sym 0.5) | 27.1 | .02/.01/.08 | 0.573 | 0.90 | 0.113| 0.238 |
+| C6a (sym 0)  | 19.9 | .07/.05/.02 | 0.032 | 1.00 | **0.036**| **0.057** |
+Symmetry OFF -> cleanest stepping of the era but no tripod. The loss appears implicated
+in both tripod formation (+) and step roughness (-); single-roll basin variance caveat.
