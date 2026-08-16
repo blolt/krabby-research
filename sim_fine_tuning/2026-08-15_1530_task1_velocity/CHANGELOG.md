@@ -50,3 +50,16 @@ legitimate 4-6-contact overlap. Term skipped per Task 1 s2.3/NOTE discipline. If
 fall-pricing term is needed later (positive spin terms reintroduced), derive the band
 from the certified reference's own count distribution and drop the steady-mask
 dependence (fallen traces have no steady steps to score).
+
+## C1+C2 20k adoption run: CERTIFICATION FAIL (basin roulette)
+model_19999: tripod 0.0 (never consolidated — same config+seed as the 0.573 screen; GPU
+nondeterminism), completion 0.8, slip 16.7%, tippy 27.9%, high-hold deficit -0.14 (over
+gate). Tracking substantially held. Income telemetry identical to the screen — the basin
+difference is phase coordination, invisible in reward magnitudes.
+
+## C3b proposal (recovery): tripod crossing term as consolidation lock
+Replay on the C2 screen's tripod traces: 16.3/min @0.15 weight, 158 crossings/min — vs
+~0 on every non-tripod family ever traced. The v1-v5-refuted term finally has a gait
+that earns it: self-reinforcing once the basin is entered, inert otherwise. Plan:
+enable reward_tripod_schedule 0.15 on C1+C2 -> 4-seed x 3k selection (pick tripod
+formers) -> resume best +17k -> re-certify. (~overnight GPU)
