@@ -114,3 +114,8 @@ Standing candidate stack: position-era rewards + C1 (-0.5 L1) + C2 (0.20 thresh)
 sym 0.5. Best single-run results: tripod 0.573 / tracking deficits <=0.08 (C2 roll);
 adoption blocked ONLY by basin-entry stochasticity (20k roll failed certification).
 Remaining paths to a certified reference: multi-seed selection OR CPG action space.
+
+## C6a-20k (user-directed): symmetry-off long run for A/B vs the C1+C2 20k
+C6a's 3k gait was best-in-era stepping (slip 3.6%, tippy 5.7%, completion 1.0, tracking
+good). 20k from-scratch at SYM=0 on the C1+C2 stack; compare against fromscratch_C1C2_20k
+(sym 0.5, certification FAIL: tripod 0.0, slip 16.7%). Mid-gate at 10k.
