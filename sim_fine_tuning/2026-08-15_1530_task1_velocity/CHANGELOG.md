@@ -77,3 +77,12 @@ Involution exact; mirrored-vs-original action stats on C2 traces match within 2-
 channel scale (cam/hip); knee residual 12% = the documented -0.07/+0.10 roll-balance
 asymmetry (known approximation). No velocity-era sign error. Part 2 queued behind C5a:
 C6a ablation (KRABBY_SYM_LOSS_COEF=0) and C6b strengthen (=1.0) on the C1+C2 stack.
+
+## C5a — mechanical power @-0.001: FAIL, REVERTED
+Reward 11.4 (<21.7 gate), tippy-tap 41.5% (policy shortened steps to cut power: -13%,
+1096 W), tripod 0, tracking held. Replay-gate blind spot: replay prices FIXED behavior;
+in-training the term reshaped behavior toward cheap-and-degraded (lit review s5's
+predicted failure regime). Energy half of Task-1 s2.5 closed NEGATIVE for flat-walk.
+Smoothness half (action_rate/delta_torques): position-era values stay; no velocity-era
+evidence implicates them — C5b skipped per discipline (no implicated suspect).
+Task-1 flat-walk exploration COMPLETE: every item screened, passed, or refuted.
