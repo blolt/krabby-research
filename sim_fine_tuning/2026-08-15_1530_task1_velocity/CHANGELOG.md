@@ -138,3 +138,11 @@ fromscratch_C6a_20k/logs/rsl_rl/crab_hex_flat_walk/2026-08-16_12-51-51/model_199
 - scenarios_v1.yaml flat_walk_forward -> C2 model_2999 (sha 7500414c...)
 - Known gaps documented (slip 11.3%, tippy 23.8%, 3k-scale, basin-dependent tripod)
 - Next: curriculum carry-up from this checkpoint through bridge/2b1 -> 2b2
+
+## Flat extension (user-directed): resume C2 model_2999 +17k to 20k-equivalent
+Process note: the 2b2 carry-up was started from the 3k base prematurely — the maturity
+step should have come first (both prior successful carry-ups used 20k bases). The C2
+checkpoint has never been extended; resuming preserves its tripod basin (r4c precedent)
+vs the from-scratch 20k re-roll that lost it. Mid-run basin checks at +5k/+10k.
+2b2 lineage state: paused at batch 3 best-seen (failure 0.372); will redo bridge->2b2
+from the matured flat checkpoint.
