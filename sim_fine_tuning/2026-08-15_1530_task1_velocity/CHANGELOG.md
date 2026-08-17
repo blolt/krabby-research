@@ -153,3 +153,11 @@ from the matured flat checkpoint.
 remain). model_19998 is the era-best tripod policy. High hold (0.543) still weakest —
 NOTE: bridge commands 0.45-0.85, faster than flat; watch bridge failure rate.
 Carry-up v2 from model_19998 starting.
+
+## Carry-up v2 verdict: STOPPED — maturity/plasticity trade-off surfaced
+Bridge 0.44 & 2b1 0.59 (vs v1 0.79/0.93): matured base transfers walking far better.
+BUT 2b2: failure 0.52->0.62 across 2 batches with clearance FROZEN at 0.013 (v1's
+immature base reached 0.08-0.15 — it learned to lift; the consolidated tripod rhythm
+does not modify its swing for obstacles). Same rigidity as the flat high-speed falls.
+v1 plateaued from weakness; v2 from rigidity. The carry-up base wants INTERMEDIATE
+maturity or explicit lift-plasticity help at 2b2 — decision fork for the user.
