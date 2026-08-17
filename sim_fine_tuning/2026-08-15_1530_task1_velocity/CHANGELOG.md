@@ -164,3 +164,9 @@ maturity or explicit lift-plasticity help at 2b2 — decision fork for the user.
 
 ## Carry-up v3 (user-approved): intermediate-maturity base (model_8000, tripod 0.639)
 Third point on the maturity-plasticity curve: 5k consolidation vs v1's 0k and v2's 17k.
+
+## v3 CLOSED at ceiling (3000/3000): gates unmet
+Batches 5-6: failure ~0.51 (best-seen remains batch 3: 0.435), clearance climbed to the
+end (0.121 vs 0.15 gate — lifting nearly learned). Verdict: the intermediate base learns
+terrain skills but cannot simultaneously reach gate-level stability. All three carry-up
+lineages closed. Successor: sim_fine_tuning/2026-08-17_1500_phased_flat (approved plan).
