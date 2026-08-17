@@ -41,3 +41,19 @@ Verdict: critic reset at the B boundary does not enable conversion and costs wal
 quality. Combined with the v2-base falsification (lit review §5), the primacy-bias
 hypothesis is now negative in BOTH the rigid and plastic settings — drop critic reset
 from the remaining Phase-B/C candidate lists except as a no-cost adjunct.
+
+## B2 energy-only — COMPLETE 2026-08-17 — NO CONVERSION, best walker
+KRABBY_REVERSAL_W=0 + KRABBY_POWER_W=-0.001, resume model_2999, 3k (model_5998).
+Train: reward 18.9 (power income -0.74 dominates the gap), failure 5.1%, ep_len 960.
+Eval: ratio 0.0056 (no conversion; reversals 2.62/s, mildly down), tripod **0.621**
+(best yet), tippy 18.9% (best), slip 10.5%, completion 0.9, deficits -0.014/+0.010/
++0.076 (all PASS). Verdict: the physics cost gradient improves gait quality across the
+board but cannot bootstrap the oscillation->spin flip on its own — the 42%-cheaper spin
+basin is separated by a barrier the local gradient doesn't cross. Candidate keeper as a
+quality term regardless of spin outcome.
+
+## Ratio scoreboard after singles round 1
+B0 pressure -0.3: 0.0055 | B1 critic reset: 0.0057 | B2 energy: 0.0056.
+Remaining singles: B3a spin reward +0.2 (positive income on the EMA spin metric — only
+untried mechanism class), then phase-lock +0.1 / reversal dose -0.6 if needed.
+Stop rule floor (no arm >= 0.3) not yet triggered — singles not exhausted.
