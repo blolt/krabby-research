@@ -57,3 +57,12 @@ B0 pressure -0.3: 0.0055 | B1 critic reset: 0.0057 | B2 energy: 0.0056.
 Remaining singles: B3a spin reward +0.2 (positive income on the EMA spin metric — only
 untried mechanism class), then phase-lock +0.1 / reversal dose -0.6 if needed.
 Stop rule floor (no arm >= 0.3) not yet triggered — singles not exhausted.
+
+## B3a spin reward +0.2 — COMPLETE 2026-08-17 — NO CONVERSION
+Baseline stack + KRABBY_SPIN_REWARD_W=0.2, resume model_2999, 3k (model_5998).
+Train: spin income 0.009/0.2 (EMA ratio ~5% throughout — never bootstrapped), reward
+26.9, failure 10.3%. Eval: ratio 0.0043, tripod 0.569, completion 1.0, deficits
+-0.024/+0.004/+0.090 (PASS), slip 10.3%, tippy 24.3%, 2.95 rev/s.
+Verdict: positive income on the spin metric cannot bootstrap from a ~0 base — the EMA
+gate means near-zero gradient until spinning already exists. Fourth mechanism at
+ratio ~0.005. Remaining singles: B3b phase-lock +0.1, B3c reversal dose -0.6.
