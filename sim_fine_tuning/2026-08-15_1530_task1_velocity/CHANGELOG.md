@@ -146,3 +146,10 @@ checkpoint has never been extended; resuming preserves its tripod basin (r4c pre
 vs the from-scratch 20k re-roll that lost it. Mid-run basin checks at +5k/+10k.
 2b2 lineage state: paused at batch 3 best-seen (failure 0.372); will redo bridge->2b2
 from the matured flat checkpoint.
+
+## Flat extension complete: consolidation worked
+3k->20k trajectory: tripod 0.573->0.654, slip 11.3->6.9%, tippy 23.8->13.2%, tracking
++-0.02, completion 0.9->0.5->0.4->0.7 (mid-run dip transitional; 3 late high-hold falls
+remain). model_19998 is the era-best tripod policy. High hold (0.543) still weakest —
+NOTE: bridge commands 0.45-0.85, faster than flat; watch bridge failure rate.
+Carry-up v2 from model_19998 starting.
