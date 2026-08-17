@@ -31,3 +31,13 @@ Verdict: pressure alone does not convert the gait even on the plastic base — w
 improves, spin unchanged. This is the do-nothing-clever number the arms must beat.
 Gates for arms: ratio >=0.8 (win) / >=0.3 (stop-rule floor), deficits <0.1,
 completion >=0.9, tripod >=0.3, reward >=22.6 (0.8x B0).
+
+## B1 critic reset — COMPLETE 2026-08-17 — NEGATIVE
+Surgery: fresh critic (norm 30.7->17.3), Adam cleared; resume + reversal -0.3, 3k
+(model_5998). Train: reward 24.4, failure 7.5%, reversal income -0.108 (absorbed).
+Eval: ratio 0.0057 (no conversion, 3.03 rev/s), tripod 0.450 (<< B0 0.601),
+completion 0.8 (FAIL), high-hold deficit +0.111 (FAIL), slip 12.5%, tippy 28.7%.
+Verdict: critic reset at the B boundary does not enable conversion and costs walking
+quality. Combined with the v2-base falsification (lit review §5), the primacy-bias
+hypothesis is now negative in BOTH the rigid and plastic settings — drop critic reset
+from the remaining Phase-B/C candidate lists except as a no-cost adjunct.
