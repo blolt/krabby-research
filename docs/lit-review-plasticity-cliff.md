@@ -103,3 +103,15 @@ NOT recommended for this cliff (mechanism mismatch, measured): entropy/std re-in
   failure-rate slope toward v1-like adaptation speed.
 - If neither moves clearance on the v2 base, the rigidity is representational
   (actor-side), and #4 (restructure) is the remaining path — matching §9's null.
+
+## 5. Prediction outcomes (updated 2026-08-17)
+
+Prediction #1 (critic reset unfreezes clearance on the v2 base): **FALSIFIED.**
+One 500-iter 2b2 batch from model_20196 with fresh critic (norm 46.5->17.3, Adam
+moments zeroed): clearance 0.010 windowed (control: 0.013 — no change), while failure
+transiently collapsed to 0.92 and recovered only to 0.82 (control 0.52), terrain
+demoted to 0.25. The rigidity is actor-representational, not advantage-starvation;
+the reset's transient also proved expensive at this batch scale. Remaining paths per
+§3: actor S&P (#2, one cheap probe left) and curriculum restructure (#4, causal fix).
+The v3 intermediate-maturity lineage (clearance 0.02->0.064->0.080 and climbing) is the
+live practical instance of #4's principle.
