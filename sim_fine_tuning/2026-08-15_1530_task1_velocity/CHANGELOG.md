@@ -161,3 +161,6 @@ immature base reached 0.08-0.15 — it learned to lift; the consolidated tripod 
 does not modify its swing for obstacles). Same rigidity as the flat high-speed falls.
 v1 plateaued from weakness; v2 from rigidity. The carry-up base wants INTERMEDIATE
 maturity or explicit lift-plasticity help at 2b2 — decision fork for the user.
+
+## Carry-up v3 (user-approved): intermediate-maturity base (model_8000, tripod 0.639)
+Third point on the maturity-plasticity curve: 5k consolidation vs v1's 0k and v2's 17k.
