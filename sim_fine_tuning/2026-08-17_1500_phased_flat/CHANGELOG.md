@@ -156,3 +156,12 @@ Flat eval: **tripod 0.660 (new best)**, completion 1.0, deficits -0.023/+0.009/+
 (PASS), slip 11.1%, tippy 21.2%. Gates: flat-retention PASS, completion PASS,
 clearance FAIL (lifting lags). Per plan: C1 = clearance to shaping weight (1.8,
 teacher-validated) — the designated knob for this exact outcome.
+
+## C1 clearance shaping 1.8 — COMPLETE 2026-08-18 — LIFTING STILL ABSENT
+Same as C0 but KRABBY_CLEARANCE_W=1.8 (model_8997). Train: reward 18.5, failure 5.9%.
+Clearance income DECLINED across the run (0.0035 -> 0.0014) — the weight didn't ignite
+lifting; income drifts down as flat-majority optimization dominates. Flat eval: tripod
+0.636, completion 1.0, slip 11.5%, tippy 19.7% (flat retention PASS).
+Diagnosis: at difficulty 0.05-0.2 the obstacles are small enough to walk through/over
+without lifting — no gradient exists. Next knob per plan: difficulty raise.
+C2 = KRABBY_FLAT_TERRAIN_DIFF=0.2:0.4, one change vs C1.
