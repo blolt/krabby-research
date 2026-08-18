@@ -110,3 +110,17 @@ attraction, income, timing, surgery, and their combinations — ratio never left
 by reward shaping; remaining forks are structural (unidirectional cam action clamp)
 or de-scope (Phase C from the best walker). Best walker artifacts now: CB6 model_5998
 (tripod 0.649) and CB4 model_5998 (failure 1.9%, tripod 0.635, completion 1.0).
+
+## FS1 from-scratch under CB4 stack — COMPLETE 2026-08-18 — NEGATIVE (creep basin)
+User-requested: pow -0.001 + rev -0.6 from scratch, seed 1, 3k (model_2999).
+Train: reward 8.1 (still rising at 3k but toward the wrong basin), failure 17%,
+air-time income ~0.002 flat all run, tripod income 0.0 all run.
+Eval: **tripod 0.000**, ratio 0.0169 (3x resume arms, still nothing), deficits
++0.20/+0.36/+0.54 (walk never formed — commanded speeds never reached), slip 24.7%,
+tippy 36%, completion 1.0 only because it never falls: it creeps.
+Verdict: penalties present during formation push the policy into an energy-minimizing
+creep instead of a gait — the outcome §5 of the reward-stability review predicted for
+energy terms before locomotion exists. From-scratch basin selection under the CB4
+stack finds neither tripod nor spin. The resume-then-shape and scratch-with-shape
+directions are now BOTH closed; remaining forks are structural (unidirectional cam
+clamp) or de-scope (Phase C from CB4/CB6 walker).
