@@ -137,3 +137,12 @@ suppresses exactly the leg-lifting (air time) that tripod formation requires, so
 cheap mode wins before stepping exists. Same family as the C5a tippy-tap failure.
 Scratch direction now closed in both variants: rev+pow -> creep; pow alone -> drag.
 Energy terms are safe only AFTER a stepping gait exists (B2/CB4/CB6 precedent).
+
+## FORK DECISION (user, 2026-08-18): de-scope spin — PHASE B CLOSED
+Phase-B winner: **CB4 model_5998** (pow -0.001 + rev -0.6 resumed from C2 base;
+failure 1.9%, completion 1.0, tripod 0.635, deficits PASS). Spin objective de-scoped
+from the sim curriculum; the sim-to-real cam-direction question moves out of scope of
+this campaign. Phase C begins: build KRABBY_FLAT_TERRAIN_MODE (light terrain in the
+flat env, ~80/20 flat/easy-obstacles, difficulty 0.05-0.2, frozen levels), then C0
+baseline = CB4 winner resumed +3k under terrain mode with the same reward env.
+Gates: clearance alive >=0.05 by +3k, flat metrics within 10% of CB4, completion >=0.8.
