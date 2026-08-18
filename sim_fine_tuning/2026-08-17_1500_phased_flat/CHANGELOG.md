@@ -124,3 +124,16 @@ energy terms before locomotion exists. From-scratch basin selection under the CB
 stack finds neither tripod nor spin. The resume-then-shape and scratch-with-shape
 directions are now BOTH closed; remaining forks are structural (unidirectional cam
 clamp) or de-scope (Phase C from CB4/CB6 walker).
+
+## FS2 energy-only from scratch — COMPLETE 2026-08-18 — NEGATIVE (no tripod)
+User-requested: pow -0.001 alone (reversal off) from scratch, seed 1, 3k (model_2999).
+Train: reward 11.3, failure 9.6%, ep_len 968 — healthier formation than FS1, but
+tripod income 0.0 and air-time ~0 for the entire run.
+Eval: **tripod 0.000** again, ratio 0.0084, deficits -0.079/+0.005/+0.128 (tracks at
+low/mid — it genuinely locomotes, unlike FS1), slip 16.4%, **tippy 41.5%**,
+rev/s 1.74 (lowest ever). Verdict: without reversal tax the policy reaches commanded
+speed, but via a low-lift dragging/vibratory mode — energy pressure during formation
+suppresses exactly the leg-lifting (air time) that tripod formation requires, so the
+cheap mode wins before stepping exists. Same family as the C5a tippy-tap failure.
+Scratch direction now closed in both variants: rev+pow -> creep; pow alone -> drag.
+Energy terms are safe only AFTER a stepping gait exists (B2/CB4/CB6 precedent).
