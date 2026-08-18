@@ -175,3 +175,13 @@ falling, and the clearance term's gates (min_forward_speed 0.25, min_goal_progre
 0.15) exclude slow crossings from income — no gradient toward lifting. Next: video
 diagnostic of C2 on light terrain before any gate-param surgery (which would need the
 offline replay gate).
+
+## Video diagnostic + C3 gate relaxation — 2026-08-18
+600-step video of C2 model on 100% obstacle tiles (diff 0.2-0.4): the robot CREEPS —
+legs cycle, goal markers stay ahead, no falls. Confirms the mechanism: on obstacle
+tiles the policy drops below the clearance term's income gates (min_forward_speed
+0.25, min_goal_progress 0.15), so the slow first crossings that need reinforcing pay
+zero. Fix: flat-stack copy of the term relaxes gates to 0.10/0.05 (teacher copy
+untouched). Replay gate N/A: function unchanged + teacher-validated, params loosen
+toward permissiveness; the too-permissive failure mode is covered by the C3 screen's
+income trace + flat-retention eval. C3 = C2 config + relaxed gates.

@@ -1050,6 +1050,11 @@ class CrabHexFlatWalkRewardsCfg:
     # KRABBY_CLEARANCE_W=0.01 (instrument scale: income <=0.01x raw, negligible vs the
     # ~19-28 locomotion income) purely so Episode_Reward/reward_obstacle_clearance
     # tracks lifting for the C gate; larger weights are an experiment knob if lifting lags.
+    # NOTE(C3 gate relaxation 2026-08-18): the teacher gates (speed 0.25 / progress 0.15)
+    # exclude slow first crossings — C1/C2 video showed the policy creeps at obstacles,
+    # so the term paid ~0 and income *declined* as flat-majority optimization won.
+    # Relaxed for the flat-light stage so bootstrap crossings pay; the teacher stack's
+    # copy keeps the strict gates.
     reward_obstacle_clearance = RewTerm(
         func=mdp_rewards.reward_obstacle_clearance,
         weight=0.0,
@@ -1058,8 +1063,8 @@ class CrabHexFlatWalkRewardsCfg:
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
             "parkour_name": "base_parkour",
             "command_name": "base_velocity",
-            "min_goal_progress": 0.15,
-            "min_forward_speed": 0.25,
+            "min_goal_progress": 0.05,
+            "min_forward_speed": 0.10,
             "min_forward_speed_cmd": 0.12,
             "max_tilt_gravity_xy_sq": 0.02,
         },
