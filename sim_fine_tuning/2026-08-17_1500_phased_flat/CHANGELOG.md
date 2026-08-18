@@ -88,3 +88,25 @@ not escapable by reward shaping from this base, plastic or not. Per the plan's s
 rule: hard stop, user fork required before combos or structural changes.
 Best walker artifact of the round: B2 model_5998 (tripod 0.621, tippy 18.9%, all
 non-spin gates PASS) — candidate Phase-C base if the fork de-scopes spin from Phase B.
+
+## COMBO ROUND — COMPLETE 2026-08-18 03:35 — ALL SIX NULL ON SPIN
+Six overnight combo screens (run_combo_round.sh), all 3k resumes from the C2 base:
+
+| arm | stack | ratio | tripod | completion | failure | rev/s |
+|---|---|---|---|---|---|---|
+| CB1 | pow+rev0.3 | 0.0072 | 0.604 | 1.0 | 3.3% | 2.54 |
+| CB2 | pow+rev0.3+spin0.2 | 0.0064 | 0.605 | 0.9 | 2.3% | 2.59 |
+| CB3 | pow+spin0.2 | 0.0052 | 0.593 | 1.0 | 2.7% | 2.59 |
+| CB4 | pow+rev0.6 | 0.0062 | **0.635** | 1.0 | **1.9%** | 2.56 |
+| CB5 | rev0.3+spin0.2+lock0.1 | 0.0052 | 0.574 | 0.8 | 2.6% | 2.82 |
+| CB6 | all four | 0.0053 | **0.649** | 0.9 | 3.9% | 2.63 |
+
+Best ratio 0.0072 (CB1) — noise-level, ~40x below the 0.3 stop-rule floor. The energy
+backbone again bought gait quality (CB6 tripod 0.649 = best-ever; CB4 failure 1.9% =
+best-ever) and shaved reversals to ~2.55/s, but no combo initiated conversion.
+PHASE B REWARD-SHAPING IS EXHAUSTED: 12 arms (6 singles + 6 combos) spanning pressure,
+attraction, income, timing, surgery, and their combinations — ratio never left
+[0.004, 0.008]. Conclusion stands: the oscillation basin is structurally inescapable
+by reward shaping; remaining forks are structural (unidirectional cam action clamp)
+or de-scope (Phase C from the best walker). Best walker artifacts now: CB6 model_5998
+(tripod 0.649) and CB4 model_5998 (failure 1.9%, tripod 0.635, completion 1.0).
