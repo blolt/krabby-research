@@ -66,3 +66,10 @@ Train: spin income 0.009/0.2 (EMA ratio ~5% throughout — never bootstrapped), 
 Verdict: positive income on the spin metric cannot bootstrap from a ~0 base — the EMA
 gate means near-zero gradient until spinning already exists. Fourth mechanism at
 ratio ~0.005. Remaining singles: B3b phase-lock +0.1, B3c reversal dose -0.6.
+
+## B3b phase-lock +0.1 — COMPLETE 2026-08-17 — NO CONVERSION
+Baseline stack + KRABBY_PHASE_LOCK_W=0.1, resume model_2999, 3k (model_5998).
+Train: phase-lock income 0.005/0.1 (same bootstrap failure as B3a — pays only for
+cam-consistent contacts, which don't exist at ratio ~0.005), reward 28.2, failure 3.5%.
+Eval: ratio 0.0045, tripod 0.563, **completion 0.6 (4 falls — worst arm)**, deficits
+PASS, 2.95 rev/s. Verdict: null on spin, negative on robustness. Fifth mechanism null.
