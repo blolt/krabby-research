@@ -1044,6 +1044,27 @@ class CrabHexFlatWalkRewardsCfg:
         params={"command_name": "base_velocity", "asset_cfg": SceneEntityCfg("robot")},
     )
 
+    # NOTE(phased-flat Phase C 2026-08-18): clearance instrument for the light-terrain
+    # mode (KRABBY_FLAT_TERRAIN_MODE). Teacher-validated term, same params as the 2b
+    # stack; weight 0.0 keeps the flat stack unchanged on 100% flat. Phase-C runs set
+    # KRABBY_CLEARANCE_W=0.01 (instrument scale: income <=0.01x raw, negligible vs the
+    # ~19-28 locomotion income) purely so Episode_Reward/reward_obstacle_clearance
+    # tracks lifting for the C gate; larger weights are an experiment knob if lifting lags.
+    reward_obstacle_clearance = RewTerm(
+        func=mdp_rewards.reward_obstacle_clearance,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "parkour_name": "base_parkour",
+            "command_name": "base_velocity",
+            "min_goal_progress": 0.15,
+            "min_forward_speed": 0.25,
+            "min_forward_speed_cmd": 0.12,
+            "max_tilt_gravity_xy_sq": 0.02,
+        },
+    )
+
     def __post_init__(self):
         # NOTE(onedir-spin-campaign 2026-08-13): env-var override for the camshaft
         # direction-reversal penalty weight, for the velocity-era weight screens. The
@@ -1064,6 +1085,7 @@ class CrabHexFlatWalkRewardsCfg:
             "KRABBY_POWER_W": "penalty_mechanical_power",
             "KRABBY_TRACK_L1_W": "penalty_tracking_error_l1",
             "KRABBY_TRIPOD_W": "reward_tripod_schedule",
+            "KRABBY_CLEARANCE_W": "reward_obstacle_clearance",
         }
         for env_name, term_name in _overrides.items():
             raw = os.environ.get(env_name)

@@ -430,6 +430,21 @@ class CrabHexFlatWalkEnvCfg(CrabHexTeacherEnvCfg):
                     sub_terrain.proportion = 1.0
                 else:
                     sub_terrain.proportion = 0.0
+        # NOTE(phased-flat Phase C 2026-08-18): ``KRABBY_FLAT_TERRAIN_MODE=light`` blends
+        # easy obstacles into flat-walk so lifting is learned while the gait is still
+        # plastic (the carry-up lineages showed obstacles-after-consolidation plateaus).
+        # Same terrain recipe family as the bridge stage but gentler: frozen levels,
+        # shallow parkour geometry, defaults 80% flat / difficulty 0.05-0.2. Knobs:
+        # ``KRABBY_FLAT_TERRAIN_FLAT_FRAC`` and ``KRABBY_FLAT_TERRAIN_DIFF`` ("lo:hi").
+        _flat_mode = os.environ.get("KRABBY_FLAT_TERRAIN_MODE", "").strip().lower()
+        if _flat_mode in ("light", "1", "true", "yes") and tg is not None:
+            self.parkours.base_parkour.freeze_terrain_levels = True
+            _frac = float(os.environ.get("KRABBY_FLAT_TERRAIN_FLAT_FRAC", "0.8"))
+            _lo, _hi = (
+                float(x) for x in os.environ.get("KRABBY_FLAT_TERRAIN_DIFF", "0.05:0.2").split(":")
+            )
+            _apply_crab_hex_easy_mixed_terrain(tg, flat_proportion=_frac, difficulty_range=(_lo, _hi))
+            _apply_crab_hex_bridge_shallow_parkour_geometry(tg)
 
 
 @configclass
