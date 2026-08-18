@@ -73,3 +73,18 @@ Train: phase-lock income 0.005/0.1 (same bootstrap failure as B3a — pays only 
 cam-consistent contacts, which don't exist at ratio ~0.005), reward 28.2, failure 3.5%.
 Eval: ratio 0.0045, tripod 0.563, **completion 0.6 (4 falls — worst arm)**, deficits
 PASS, 2.95 rev/s. Verdict: null on spin, negative on robustness. Fifth mechanism null.
+
+## B3c reversal dose -0.6 — COMPLETE 2026-08-17 — ABSORBED
+KRABBY_REVERSAL_W=-0.6, resume model_2999, 3k (model_5998). Train: reversal income
+-0.193 (~2x the -0.3 income = unchanged reversal rate), reward 26.7, failure 6.0%.
+Eval: ratio 0.0042, tripod 0.543, completion 0.6 (4 falls), deficits PASS, 2.90 rev/s.
+
+## PHASE B SINGLES ROUND CLOSED — STOP RULE TRIGGERED 2026-08-17
+Six mechanisms, one change per screen, all from the plastic C2 base, all ratio ~0.005
+(gate floor 0.3): B0 pressure -0.3 (0.0055), B1 critic reset (0.0057), B2 energy
+attraction (0.0056), B3a spin income +0.2 (0.0043), B3b phase-lock +0.1 (0.0045),
+B3c pressure -0.6 (0.0042). No arm moved the ratio AT ALL — the oscillation basin is
+not escapable by reward shaping from this base, plastic or not. Per the plan's stop
+rule: hard stop, user fork required before combos or structural changes.
+Best walker artifact of the round: B2 model_5998 (tripod 0.621, tippy 18.9%, all
+non-spin gates PASS) — candidate Phase-C base if the fork de-scopes spin from Phase B.
