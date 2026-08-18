@@ -210,3 +210,14 @@ bonus ~0.004; BOTH flat across the run. Five reward arms, one shape: income
 level responds to each fix, trend never grows. Suspicion moves to EXPOSURE: at 80/20
 the policy earns ~all income without lifting; teacher stages force lifting because
 obstacle-majority terrain gates progress on it. C6 = C5 + KRABBY_FLAT_TERRAIN_FLAT_FRAC=0.5.
+
+## C6 exposure 50/50 — BATCH 1 COMPLETE 2026-08-18 — FIRST GROWTH SIGNATURE
+C5 + KRABBY_FLAT_TERRAIN_FLAT_FRAC=0.5 (model_8997). Train: obstacle_clearance income
+GROWS monotonically 0.0131->0.0307 (2.3x, still climbing at 3k — the first growing
+trend in Phase C); foot_clearance 0.063->0.073; goal_idx 1.09. EXPOSURE WAS THE
+BOTTLENECK. Acquisition cost: failure 28.6%, ep_len 666, reward 16.6 (completion
+~0.71 < 0.8 gate). Flat eval: tripod 0.466 (FAIL vs 10% retention: CB4 0.635),
+completion 0.9, slip 16.1%, tippy 31.5%. Verdict: continue (primary metric climbing)
+— batch 2 = resume model_8997, same env, +3k. Watch: failure recovery + tripod;
+if lifting consolidates but flat degrades further, next knob is a fraction SCHEDULE
+(50% acquisition -> 20% consolidation), not more exposure.
