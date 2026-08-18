@@ -193,3 +193,12 @@ Diagnosis update: the CB4 reward env carries KRABBY_POWER_W=-0.001 which taxes t
 marginal work of lifting — the exact interaction FS2 exposed (power suppresses
 leg-lift). Phase C has been shaping clearance against an energy term that pays the
 policy to keep feet low. C4 = C3 minus the power term (KRABBY_POWER_W=0, one change).
+
+## C4 no-power — COMPLETE 2026-08-18 — decline stopped, no growth
+C3 config + KRABBY_POWER_W=0 (model_8997). Train: reward 26.5, failure 9.2%,
+clearance 0.0041 -> 0.0030 (holds ~0.0035-0.0043 mid-run, no monotonic decline for
+the first time — the power tax WAS suppressing lifting — but no ignition either).
+Remaining gap vs teacher-terrain lifting (v1 income 0.08-0.15): the teacher stack's
+dense swing-height shaper reward_foot_clearance +2.0 does the mechanical teaching;
+the sparse outcome bonus alone has nothing to climb. C5 = C4 + KRABBY_FOOT_CLEAR_W=2.0
+(term added to flat stack as 0.0 instrument, teacher-validated params).

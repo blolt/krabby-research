@@ -1070,6 +1070,26 @@ class CrabHexFlatWalkRewardsCfg:
         },
     )
 
+    # NOTE(C5 2026-08-18): dense swing-height shaper from the teacher stack — the
+    # sparse obstacle_clearance bonus alone plateaued at ~0.004 income (C0-C4); in the
+    # teacher stack this +2.0 term is the workhorse that teaches lifting mechanics and
+    # obstacle_clearance is only the outcome bonus. Instrument 0.0; KRABBY_FOOT_CLEAR_W.
+    reward_foot_clearance = RewTerm(
+        func=mdp_rewards.reward_foot_clearance,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_Footpad"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "command_name": "base_velocity",
+            "contact_force_threshold": 0.1,
+            "min_clearance_m": 0.05,
+            "max_clearance_m": 0.20,
+            "min_forward_speed_cmd": 0.12,
+            "ground_offset_from_root_m": -1.0,
+            "parkour_name": "base_parkour",
+        },
+    )
+
     def __post_init__(self):
         # NOTE(onedir-spin-campaign 2026-08-13): env-var override for the camshaft
         # direction-reversal penalty weight, for the velocity-era weight screens. The
@@ -1091,6 +1111,7 @@ class CrabHexFlatWalkRewardsCfg:
             "KRABBY_TRACK_L1_W": "penalty_tracking_error_l1",
             "KRABBY_TRIPOD_W": "reward_tripod_schedule",
             "KRABBY_CLEARANCE_W": "reward_obstacle_clearance",
+            "KRABBY_FOOT_CLEAR_W": "reward_foot_clearance",
         }
         for env_name, term_name in _overrides.items():
             raw = os.environ.get(env_name)
