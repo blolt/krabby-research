@@ -146,3 +146,13 @@ this campaign. Phase C begins: build KRABBY_FLAT_TERRAIN_MODE (light terrain in 
 flat env, ~80/20 flat/easy-obstacles, difficulty 0.05-0.2, frozen levels), then C0
 baseline = CB4 winner resumed +3k under terrain mode with the same reward env.
 Gates: clearance alive >=0.05 by +3k, flat metrics within 10% of CB4, completion >=0.8.
+
+## C0 baseline — COMPLETE 2026-08-18
+CB4 winner resumed +3k under KRABBY_FLAT_TERRAIN_MODE=light (80/20, diff 0.05-0.2,
+frozen levels) + CB4 reward env + clearance instrument 0.01 (model_8997).
+Train: reward 19.0, failure 5.0% (vs CB4 1.9% pure-flat — modest terrain cost),
+ep_len 982. Clearance income ~0.0000 (peaks 0.0003, raw ~0.03): lifting NOT learned.
+Flat eval: **tripod 0.660 (new best)**, completion 1.0, deficits -0.023/+0.009/+0.081
+(PASS), slip 11.1%, tippy 21.2%. Gates: flat-retention PASS, completion PASS,
+clearance FAIL (lifting lags). Per plan: C1 = clearance to shaping weight (1.8,
+teacher-validated) — the designated knob for this exact outcome.
