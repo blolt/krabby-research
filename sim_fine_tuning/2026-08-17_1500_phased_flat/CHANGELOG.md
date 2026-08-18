@@ -165,3 +165,13 @@ lifting; income drifts down as flat-majority optimization dominates. Flat eval: 
 Diagnosis: at difficulty 0.05-0.2 the obstacles are small enough to walk through/over
 without lifting — no gradient exists. Next knob per plan: difficulty raise.
 C2 = KRABBY_FLAT_TERRAIN_DIFF=0.2:0.4, one change vs C1.
+
+## C2 difficulty 0.2-0.4 — COMPLETE 2026-08-18 — SAME NULL SIGNATURE
+One change vs C1 (KRABBY_FLAT_TERRAIN_DIFF=0.2:0.4), model_8997. Train: reward 18.5,
+failure 4.9% (did NOT rise with difficulty), clearance income declining 0.0030->0.0019.
+Flat eval skipped (not a winner candidate; GPU saved). Two knobs, one signature:
+low failure + declining clearance = the policy slows/stalls at obstacles instead of
+falling, and the clearance term's gates (min_forward_speed 0.25, min_goal_progress
+0.15) exclude slow crossings from income — no gradient toward lifting. Next: video
+diagnostic of C2 on light terrain before any gate-param surgery (which would need the
+offline replay gate).
