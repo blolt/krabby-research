@@ -185,3 +185,11 @@ zero. Fix: flat-stack copy of the term relaxes gates to 0.10/0.05 (teacher copy
 untouched). Replay gate N/A: function unchanged + teacher-validated, params loosen
 toward permissiveness; the too-permissive failure mode is covered by the C3 screen's
 income trace + flat-retention eval. C3 = C2 config + relaxed gates.
+
+## C3 relaxed gates — COMPLETE 2026-08-18 — level doubled, trend still down
+Same as C2 + relaxed clearance gates (model_8997). Train: reward 18.8, failure 8.8%,
+clearance 0.0044 -> 0.0025 (end-level ~2x C2's but still declining; small final uptick).
+Diagnosis update: the CB4 reward env carries KRABBY_POWER_W=-0.001 which taxes the
+marginal work of lifting — the exact interaction FS2 exposed (power suppresses
+leg-lift). Phase C has been shaping clearance against an energy term that pays the
+policy to keep feet low. C4 = C3 minus the power term (KRABBY_POWER_W=0, one change).
