@@ -202,3 +202,11 @@ Remaining gap vs teacher-terrain lifting (v1 income 0.08-0.15): the teacher stac
 dense swing-height shaper reward_foot_clearance +2.0 does the mechanical teaching;
 the sparse outcome bonus alone has nothing to climb. C5 = C4 + KRABBY_FOOT_CLEAR_W=2.0
 (term added to flat stack as 0.0 instrument, teacher-validated params).
+
+## C5 foot-clearance shaper — COMPLETE 2026-08-18 — pays but flat
+C4 + KRABBY_FOOT_CLEAR_W=2.0 (model_8997). Train: reward 27.3, failure 7.7%.
+foot_clearance income ~0.02 (raw ~0.01 — swings graze the 0.05m band), obstacle
+bonus ~0.004; BOTH flat across the run. Five reward arms, one shape: income
+level responds to each fix, trend never grows. Suspicion moves to EXPOSURE: at 80/20
+the policy earns ~all income without lifting; teacher stages force lifting because
+obstacle-majority terrain gates progress on it. C6 = C5 + KRABBY_FLAT_TERRAIN_FLAT_FRAC=0.5.
