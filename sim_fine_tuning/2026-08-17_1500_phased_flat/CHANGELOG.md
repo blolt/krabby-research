@@ -265,3 +265,14 @@ more consolidation batches chasing tripod restoration first.
 Teacher-stack hand-off per plan: fresh lineage phased-flat-C7-2026-08-19 in
 curriculum_state.json; bridge (100 it) -> 2b1 (100 it) -> 2b2 (500/batch, §4.2b gates).
 Flat-stage KRABBY_* overrides do not apply to teacher rewards (flat-stack-only block).
+
+## 2b2 CEILING REPORT — 2026-08-19, 6 batches / 3000 iters (C7 lineage)
+Trajectory (failure / clearance / levels): 34.1/0.071/- -> 32.2/0.117 -> 28.7/0.083 ->
+33.5/0.150/2.39 -> 35.8/0.154/2.38 -> 35.2/0.186/2.48.
+GATES: clearance **0.186 PASS** (>0.15 — FIRST velocity-era pass, climbed every batch,
+still climbing at ceiling); goal_idx 1.23 PASS; failure 0.287 best-seen / 0.352 final
+vs <0.20 FAIL (plateau promotion-confounded — levels rose 2.39->2.48); ep_len 559 vs
+750 FAIL; progress 0.075 vs 0.15 FAIL. vs prior best lineage (v3): failure best
+0.287 vs 0.435, clearance 0.186 vs 0.121-never-passing. The lifting-first curriculum
+beat every prior lineage on every 2b2 metric. Awaiting user: extend past ceiling /
+frozen-levels decouple experiment / stop and evaluate.
