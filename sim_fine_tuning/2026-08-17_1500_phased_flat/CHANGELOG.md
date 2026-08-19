@@ -238,3 +238,11 @@ clearance climbs, no plateau. Flat eval: tripod 0.384 (erosion decelerating:
 0.635/0.466/0.412/0.384) but completion 0.9, slip 10.0% (lineage best), tippy 23.1% —
 robustness recovers; only strict tripod phasing relaxes. Continue batch 4 at 50/50;
 20% consolidation pass queued post-plateau to restore phasing.
+
+## C6 batch 4 — COMPLETE 2026-08-19 — acquisition phase closed
++3k (model_17994). Clearance 0.153->0.183 (windowed 0.240, late surge), growth
+slowing (+12%/batch vs +35%); failure regressed 12.0->18.0% (surge riskier), ep_len
+812, reward 21.6. Verdict: stop 50/50 acquisition at 4 batches/12k iters; start
+CONSOLIDATION at 20% exposure (FLAT_FRAC default 0.8), same terms otherwise, resume
+model_17994. Success = tripod restoration toward 0.6 + clearance retention
+(exposure-adjusted: >=~0.07 income at 20% ~= batch-4 rate).
