@@ -260,3 +260,8 @@ plastic), completion PASS, flat robustness PASS, strict tripod-phasing retention
 they score clearance/failure/ep_len/progress/goal_idx — the profile C7 is strong in.
 DECISION POINT (user): accept C7 as C winner and hand off to teacher stack, or spend
 more consolidation batches chasing tripod restoration first.
+
+## C WINNER DECLARED (user, 2026-08-19): C7 model_20993 — HAND-OFF BEGINS
+Teacher-stack hand-off per plan: fresh lineage phased-flat-C7-2026-08-19 in
+curriculum_state.json; bridge (100 it) -> 2b1 (100 it) -> 2b2 (500/batch, §4.2b gates).
+Flat-stage KRABBY_* overrides do not apply to teacher rewards (flat-stack-only block).
