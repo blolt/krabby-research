@@ -221,3 +221,12 @@ completion 0.9, slip 16.1%, tippy 31.5%. Verdict: continue (primary metric climb
 — batch 2 = resume model_8997, same env, +3k. Watch: failure recovery + tripod;
 if lifting consolidates but flat degrades further, next knob is a fraction SCHEDULE
 (50% acquisition -> 20% consolidation), not more exposure.
+
+## C6 batch 2 — COMPLETE 2026-08-18 — lifting consolidating, flat eroding
+Resume b1, +3k (model_11996). Train: clearance 0.039->0.098 (windowed 0.107 —
+**through the 0.05 gate**, still climbing), failure 28.6->20.3%, ep_len 666->747,
+reward 16.6->17.9 — all recovering during acquisition. Flat eval: tripod 0.412
+(0.635->0.466->0.412 across lineage — still eroding), completion 0.8, tippy 28.3%.
+Decision: batch 3 at 50/50 (clearance not plateaued; stopping mid-curve wastes the
+unlocked skill), THEN consolidation batch at 20% exposure to restore the flat gait —
+the tripod is the original deep skill and should restore cheaper than lifting re-learns.
