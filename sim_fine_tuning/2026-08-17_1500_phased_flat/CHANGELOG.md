@@ -276,3 +276,23 @@ vs <0.20 FAIL (plateau promotion-confounded — levels rose 2.39->2.48); ep_len 
 0.287 vs 0.435, clearance 0.186 vs 0.121-never-passing. The lifting-first curriculum
 beat every prior lineage on every 2b2 metric. Awaiting user: extend past ceiling /
 frozen-levels decouple experiment / stop and evaluate.
+
+## STOP-AND-EVALUATE (user option 3) — 2026-08-19 — LINEAGE BEATS THE POSITION-ERA TEACHER
+Fixed 2b2 course (teacher_2b2_forward, frozen levels, pinned seed):
+
+| ckpt | completion | tripod | slip | tippy | deficits low/mid/high |
+|---|---|---|---|---|---|
+| model_22688 (batch 3) | **0.8** | **0.237** | 8.9% | 14.8% | +0.05/+0.14/+0.30 |
+| model_24185 (batch 6) | 0.7 | 0.182 | 9.5% | 14.0% | +0.01/+0.15/+0.32 |
+| model_21100 (position-era baseline teacher) | 0.7 | 0.052 | - | - | - |
+
+model_22688 EXCEEDS the position-era certified teacher on the pinned scenario:
+completion 0.8 vs 0.7, tripod 0.237 vs 0.052 (4.5x). The training-side failure gate
+(<20%) was promotion-inflated: on fixed terrain the policy is better than the
+treadmill metric suggested. Weakness: high hold (0.85 m/s) deficit 0.30 — beyond the
+flat stage's trained 0.30-0.65 envelope, the known next frontier.
+ARTIFACT: model_22688 = phased-flat lineage 2b2 teacher candidate.
+Campaign disposition: Phase A (existing) -> B (spin de-scoped after 13 arms) ->
+C (lifting-first: the win) -> hand-off (bridge/2b1 records, 2b2 clearance gate first
+pass, eval beats baseline). CAMPAIGN COMPLETE pending user's next direction
+(distillation / high-speed extension / hardware).
