@@ -246,3 +246,17 @@ slowing (+12%/batch vs +35%); failure regressed 12.0->18.0% (surge riskier), ep_
 CONSOLIDATION at 20% exposure (FLAT_FRAC default 0.8), same terms otherwise, resume
 model_17994. Success = tripod restoration toward 0.6 + clearance retention
 (exposure-adjusted: >=~0.07 income at 20% ~= batch-4 rate).
+
+## C7 consolidation — COMPLETE 2026-08-19 — C-WINNER CANDIDATE (one gate deviation)
+Resume C6-b4, 20% exposure, +3k (model_20993). Train: failure 7.6%, ep_len 941,
+reward 24.4; clearance income 0.023 steady (5-6x the pre-acquisition C5 level at the
+same exposure — lifting RETAINED; below pure exposure-scaling of batch 4, so some
+crossing aggressiveness relaxed). Flat eval: **completion 1.0 (no falls)**, slip
+11.7%, tippy 27.3%, tripod 0.409 (recovery marginal from 0.384; 0.635 bar NOT met).
+Phase-boundary weight norms: C2 base 29.5/30.7 -> CB4 31.7/35.2 -> C7 37.0/57.1
+(actor/critic). Gate status: clearance PASS (income alive/steady, learned while
+plastic), completion PASS, flat robustness PASS, strict tripod-phasing retention FAIL
+(0.41 vs within-10%-of-0.635). NOTE: the 2b2 §4.2b gates do not score tripod phasing;
+they score clearance/failure/ep_len/progress/goal_idx — the profile C7 is strong in.
+DECISION POINT (user): accept C7 as C winner and hand off to teacher stack, or spend
+more consolidation batches chasing tripod restoration first.
