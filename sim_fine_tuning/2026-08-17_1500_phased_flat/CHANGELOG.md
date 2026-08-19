@@ -230,3 +230,11 @@ reward 16.6->17.9 — all recovering during acquisition. Flat eval: tripod 0.412
 Decision: batch 3 at 50/50 (clearance not plateaued; stopping mid-curve wastes the
 unlocked skill), THEN consolidation batch at 20% exposure to restore the flat gait —
 the tripod is the original deep skill and should restore cheaper than lifting re-learns.
+
+## C6 batch 3 — COMPLETE 2026-08-19 — virtuous curve
++3k (model_14995). Train: clearance 0.086->0.164 (windowed 0.145 — 2b2-gate scale on
+light terrain), failure 20.3->12.0%, ep_len 829, reward 21.1 — all recovering while
+clearance climbs, no plateau. Flat eval: tripod 0.384 (erosion decelerating:
+0.635/0.466/0.412/0.384) but completion 0.9, slip 10.0% (lineage best), tippy 23.1% —
+robustness recovers; only strict tripod phasing relaxes. Continue batch 4 at 50/50;
+20% consolidation pass queued post-plateau to restore phasing.
