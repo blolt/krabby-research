@@ -67,3 +67,10 @@ inline const char* boardPinRevisionLabel()
     return "PINS_REV3_UNO_V02";
 #endif
 }
+
+// Free on every KRABBY_PIN_REV, not just the selected one: rev 1 puts Hall on
+// D32-D37 and rev 3 on D50-D52, and Task 4 gates the Orin on D38, leaving
+// D39-D49 clear across all of them. Not LED_BUILTIN: D13 is PIN_S5_PWML.
+#ifndef STATUS_LED_PIN
+#define STATUS_LED_PIN 40
+#endif

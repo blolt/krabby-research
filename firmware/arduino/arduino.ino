@@ -6,8 +6,11 @@
 
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <math.h>
 #include "src/imu/imu_calibrator.h"
 #include "src/imu/lsm6dso_adapter.h"
+#include "src/display/ssd1306_adapter.h"
+#include "src/display/display.h"
 #include "board_pins.h"
 #include "command.h"
 #include "actuator_manager.h"
@@ -26,7 +29,26 @@
 enum BoardRole { ROLE_UNKNOWN, ROLE_FRONT, ROLE_LEFT, ROLE_RIGHT };
 BoardRole currentRole = ROLE_UNKNOWN;
 
-// M16 I2C sensor cluster is leader-only.
+ControllerDisplayState leftControllerDisplayState;
+ControllerDisplayState rightControllerDisplayState;
+ImuMeasurement latestImuMeasurement;
+Ssd1306Adapter oledDisplay;
+unsigned long lastOledDrawMilliseconds = 0;
+constexpr unsigned long OLED_REDRAW_INTERVAL_MILLISECONDS = 250;
+
+// 2h.1 compares loop timing with the panel off against every eligible refresh
+// doing a full transfer. Neither condition is reachable in normal operation, so
+// the "O" command selects between them. Normal is the default and the only mode
+// a shipped board ever leaves boot in.
+enum OledRefreshMode : uint8_t
+{
+    OLED_REFRESH_OFF,
+    OLED_REFRESH_NORMAL,
+    OLED_REFRESH_FORCED,
+};
+static uint8_t oledRefreshMode = OLED_REFRESH_NORMAL;
+
+// M16 I2C sensor cluster (IMU; later OLED/INA228/power mgmt) is leader-only.
 // ROLE_UNKNOWN also qualifies: it is the solo-board-on-USB bench case (defaults
 // to front actuators + USB serial), not a follower.
 static inline bool isI2CClusterBoard()
@@ -91,7 +113,7 @@ LinearActuator mrhy("MRHY", PIN_S3_PWMR, PIN_S3_PWML, PIN_S3_EN, A9, A3, 3);
 LinearActuator mrhl("MRHL", PIN_S4_PWMR, PIN_S4_PWML, PIN_S4_EN, A10, A4, 4);
 LinearActuator mrkl("MRKL", PIN_S5_PWMR, PIN_S5_PWML, PIN_S5_EN, A11, A5, 5);
 
-// Role → which 6 actuators this board drives (no mutation)
+// StatusDisplayRole → which 6 actuators this board drives (no mutation)
 static const size_t ACT_COUNT = 6;
 LinearActuator* ACT_LIST_FRONT[]  = { &flhy, &flhl, &flkl, &frhy, &frhl, &frkl };
 LinearActuator* ACT_LIST_LEFT[]   = { &rlhy, &rlhl, &rlkl, &mlhy, &mlhl, &mlkl };  // RL + ML
@@ -116,6 +138,9 @@ Command cmdBuf[CMD_BUF_SIZE];
 
 // TELEMETRY_INTERVAL_MS is the existing actuator telemetry cadence.
 unsigned long lastTelemetry = 0;
+// True for the one iteration following a telemetry emission — the only point in
+// the cycle with a whole slot of headroom for a blocking I2C transfer.
+bool telemetryJustEmitted = false;
 
 // --- I2C sensor cluster (Milestone 16) — leader board only ---
 // The LSM6DSO IMU rides the leader's telemetry tick; followers never touch the bus.
@@ -184,6 +209,58 @@ static void logImuCalibrationResult(ImuCalibrationResult result)
     }
 }
 
+static StatusDisplayRole displayRole(BoardRole role)
+{
+    switch (role)
+    {
+        case ROLE_FRONT: return StatusDisplayRole::Front;
+        case ROLE_LEFT: return StatusDisplayRole::Left;
+        case ROLE_RIGHT: return StatusDisplayRole::Right;
+        default: return StatusDisplayRole::Unknown;
+    }
+}
+
+static StatusDisplayModel currentDisplayModel()
+{
+    ActuatorGlyph localGlyphs[CONTROLLER_ACTUATOR_COUNT];
+    for (size_t actuator = 0; actuator < CONTROLLER_ACTUATOR_COUNT; ++actuator)
+        localGlyphs[actuator] = actuatorGlyphForCommandedDrive(
+            ACT_LIST_FRONT[actuator]->isConnected(),
+            ACT_LIST_FRONT[actuator]->currentPwm,
+            ACTUATOR_CONFIG.pwmDeadband,
+            ACT_LIST_FRONT[actuator]->attachmentVerified());
+
+    return buildStatusDisplayModel(
+        displayRole(currentRole),
+        isI2CClusterBoard(),
+        localGlyphs,
+        leftControllerDisplayState, leftSerial != nullptr,
+        rightControllerDisplayState, rightSerial != nullptr,
+        latestImuMeasurement,
+        millis());
+}
+
+static void updateDisconnectStatusLed()
+{
+    bool localConnected[CONTROLLER_ACTUATOR_COUNT];
+    for (size_t actuator = 0; actuator < CONTROLLER_ACTUATOR_COUNT; ++actuator)
+        localConnected[actuator] = ACT_LIST_FRONT[actuator]->isConnected();
+
+    const uint32_t now = millis();
+    digitalWrite(
+        STATUS_LED_PIN,
+        anyActuatorDisconnected(
+            localConnected,
+            leftControllerDisplayState,
+            isControllerDisplayStateFresh(
+                leftControllerDisplayState, leftSerial != nullptr, now),
+            rightControllerDisplayState,
+            isControllerDisplayStateFresh(
+                rightControllerDisplayState, rightSerial != nullptr, now))
+            ? HIGH
+            : LOW);
+}
+
 static void imuSetup()
 {
     const Lsm6dsoInitializationResult initResult =
@@ -209,7 +286,14 @@ static size_t leftPartialPos = 0;
 static size_t rightPartialPos = 0;
 
 // Forward only complete lines (up to and including \n) from follower serial to mainSerial.
-void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, size_t cap, size_t* partialPos)
+void forwardFullLines(
+    HardwareSerial* from,
+    HardwareSerial* to,
+    char* partial,
+    size_t cap,
+    size_t* partialPos,
+    const char* expectedRole,
+    ControllerDisplayState* displayState)
 {
     if (!from || !to || !partial || !partialPos) return;
     while (from->available())
@@ -219,7 +303,19 @@ void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, s
         {
             partial[*partialPos] = '\0';
             if (*partialPos > 0)
+            {
                 to->println(partial);
+                if (displayState)
+                {
+                    ActuatorTelemetry actuators[CONTROLLER_ACTUATOR_COUNT];
+                    if (parseActuatorTelemetry(partial, expectedRole, actuators))
+                    {
+                        updateControllerDisplayState(
+                            *displayState, actuators,
+                            ACTUATOR_CONFIG.pwmDeadband, millis());
+                    }
+                }
+            }
             *partialPos = 0;
             continue;
         }
@@ -342,7 +438,15 @@ void setup()
     actuatorManager->loadCalibration();
 
     if (isI2CClusterBoard())
+    {
+        pinMode(STATUS_LED_PIN, OUTPUT);
+        digitalWrite(STATUS_LED_PIN, LOW);
         imuSetup();
+        if (oledDisplay.initialize())
+            oledDisplay.render(currentDisplayModel());
+        else
+            Serial.println(F("OLED: initialization failed at 0x3D."));
+    }
 
     Serial.print("Krabby Ready ");
     Serial.print(boardPinRevisionLabel());
@@ -442,6 +546,30 @@ void loop()
             if (leftSerial)  { leftSerial->print("J ");  leftSerial->print(name);  leftSerial->print(" ");  leftSerial->println(pwm); }
             if (rightSerial) { rightSerial->print("J "); rightSerial->print(name); rightSerial->print(" "); rightSerial->println(pwm); }
         }
+        else if (cmdType == 'P')
+        {
+            // "P1" enables the AVR's internal pull-up on every local pot input,
+            // "P0" returns them to high-Z. 2f.1 asks whether an open position
+            // input can be forced to a rejected rail: a connected wiper is low
+            // impedance and barely moves, while an open pin has nothing holding
+            // it and rises to the rail.
+            mainSerial->read();
+            String mode = mainSerial->readStringUntil('\n');
+            mode.trim();
+            const bool pullUp = mode.toInt() != 0;
+            for (size_t actuator = 0; actuator < CONTROLLER_ACTUATOR_COUNT; ++actuator)
+                pinMode(ACT_LIST_FRONT[actuator]->pinPot, pullUp ? INPUT_PULLUP : INPUT);
+        }
+        else if (cmdType == 'O')
+        {
+            // "O0" panel off, "O1" normal, "O2" force a full transfer every refresh.
+            mainSerial->read();
+            String mode = mainSerial->readStringUntil('\n');
+            mode.trim();
+            const int requested = mode.toInt();
+            if (requested >= OLED_REFRESH_OFF && requested <= OLED_REFRESH_FORCED)
+                oledRefreshMode = (uint8_t)requested;
+        }
         else if (cmdType == 'C')
         {
             mainSerial->read();
@@ -511,18 +639,48 @@ void loop()
 
     // Drain follower serial so RX buffers don't overflow (64-byte default drops middle of ~200-byte lines).
     // Only flush once after both drains so we don't block in flush() twice per loop (~35 ms each at 115200).
-    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos);
-    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos);
+    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX,
+                     &leftPartialPos, "LEFT ", &leftControllerDisplayState);
+    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX,
+                     &rightPartialPos, "RIGHT", &rightControllerDisplayState);
 
     actuatorManager->updateAll();
 
+    if (isI2CClusterBoard())
+    {
+        updateDisconnectStatusLed();
+        // Start a transfer only in the slot just after telemetry went out. The
+        // redraw and telemetry timers are independent, so an unaligned refresh
+        // can begin late in a slot and push the emission past its deadline; a
+        // full frame is ~29 ms on a 50 ms tick, which fits only with the whole
+        // slot ahead of it. Costs at most one telemetry period of refresh delay.
+        if (oledDisplay.isInitialized() && oledRefreshMode != OLED_REFRESH_OFF &&
+            telemetryJustEmitted &&
+            millis() - lastOledDrawMilliseconds >= OLED_REDRAW_INTERVAL_MILLISECONDS)
+        {
+            lastOledDrawMilliseconds = millis();
+            // 2h.1 needs the worst case measured, and an unchanged model normally
+            // transfers nothing. Forcing the dirty state is the only way to make
+            // every eligible refresh do real work.
+            if (oledRefreshMode == OLED_REFRESH_FORCED)
+                oledDisplay.invalidate();
+            oledDisplay.render(currentDisplayModel());
+        }
+    }
+
     // Drain again in case bytes arrived during updateAll()
-    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos);
-    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos);
+    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX,
+                     &leftPartialPos, "LEFT ", &leftControllerDisplayState);
+    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX,
+                     &rightPartialPos, "RIGHT", &rightControllerDisplayState);
     mainSerial->flush();
 
+    // Cleared here and set below, so the OLED block at the top of the next
+    // iteration sees a full slot ahead of it.
+    telemetryJustEmitted = false;
     if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS)
     {
+        telemetryJustEmitted = true;
         lastTelemetry = millis();
         mainSerial->print(roleName(currentRole));
         mainSerial->print(TELEMETRY_SEGMENT_DELIMITER);
@@ -533,6 +691,7 @@ void loop()
         if (isI2CClusterBoard())
         {
             const ImuMeasurement measurement = imuSensor.measure();
+            latestImuMeasurement = measurement;
             appendImuMeasurement(*mainSerial, measurement);
         }
         mainSerial->println();

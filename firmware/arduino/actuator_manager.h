@@ -1,9 +1,12 @@
 #pragma once
 
+#include "src/actuator/actuator_constants.h"
 #include <Arduino.h>
 #include <EEPROM.h>
 #include "command.h"
 #include "hall_hw.h"
+#include "src/actuator/actuator_attachment.h"
+#include "src/actuator/pot_validity.h"
 #include "src/telemetry.h"
 
 // Linear actuator controller (w/ potentiometer feedback)
@@ -44,8 +47,11 @@ public:
     int currentTarget = 0;           // Target position (raw ADC); only used when hasTarget is true
     bool hasTarget = false;          // True only after a T (target) command; if false, motor stays idle
     unsigned long lastRampTime = 0;  // Last time PWM ramp was updated, in millis, used along with rampIntervalMs to control ramp timing
+    unsigned long lastPotProbeMs = 0; // Last open-input probe, in millis
     float avgPot = 0.0;              // Global state variable to track smoothed potentiometer value
     float avgIS = 0.0;               // Global state variable to track smoothed current sense value
+    PotValidityTracker potValidity;
+    ActuatorAttachmentTracker actuatorAttachment;
 
 
     // TODO: This should accept a name and a 'SlotConfig' struct for pin assignment, so we can reuse the pin config w/ different actuator names (on different leader/follower boards)
@@ -69,21 +75,54 @@ public:
         analogWrite(pinPwmL, 0);
         digitalWrite(pinEn, LOW);
 
-        // Initialize averaging
+        // Seed the pot tracker from a live read. Current is meaningful only while driven.
         avgPot = analogRead(pinPot);
-        avgIS = analogRead(pinIS);
+        avgIS = 0.0;
+        potValidity.reset((int)avgPot);
+        actuatorAttachment.reset();
         hasTarget = false; // No target until host sends T command
     }
 
     // Called during update to calculate new smoothed sensor readings, called internally on a fixed interval to exponentially average pot/IS readings
     void updateSensors()
     {
-        int rawPot = analogRead(pinPot);
-        int rawIS = analogRead(pinIS);
+        const int rawPot = analogRead(pinPot);
+        const int rawIS = analogRead(pinIS);
+        const bool driving = digitalRead(pinEn) == HIGH;
 
         // Exponential Moving Average
-        avgPot = (avgPot * (1.0 - controlConfig.alphaPot)) + (rawPot * controlConfig.alphaPot);
         avgIS = (avgIS * (1.0 - controlConfig.alphaIS)) + (rawIS * controlConfig.alphaIS);
+        avgPot = (avgPot * (1.0 - controlConfig.alphaPot)) + (rawPot * controlConfig.alphaPot);
+
+        potValidity.update(rawPot, driving, POT_VALIDITY_DEFAULT_LIMITS);
+        probePositionInput(driving);
+
+        actuatorAttachment.update(
+            driving && abs(currentPwm) >= ACTUATOR_ATTACHMENT_DEFAULT_LIMITS.probePwm,
+            avgIS,
+            ACTUATOR_ATTACHMENT_DEFAULT_LIMITS);
+    }
+
+    // An open position input floats in-band and can even track drive through EMI,
+    // so neither the sane-band nor the idle-slew check can see it. Enabling the
+    // internal pull-up forces it to the rail while a connected wiper, being low
+    // impedance, barely moves.
+    //
+    // Idle only: while driving, the pin picks up motor EMI and the probe would be
+    // measuring that rather than the connection. The pin returns to high-Z
+    // immediately, so position readings between probes are unbiased, and the
+    // probe read is kept out of avgPot.
+    void probePositionInput(bool driving)
+    {
+        if (driving || millis() - lastPotProbeMs < POT_PROBE_INTERVAL_MS)
+            return;
+        lastPotProbeMs = millis();
+        pinMode(pinPot, INPUT_PULLUP);
+        delayMicroseconds(POT_PROBE_SETTLE_US);
+        potValidity.notePositionProbe(
+            analogRead(pinPot),
+            potOpenProbeMinimum(maxStop, POT_VALIDITY_DEFAULT_LIMITS));
+        pinMode(pinPot, INPUT);
     }
 
     // Returns normalized position [0.0,1.0], where 0.0 = minStop, 1.0 = maxStop
@@ -96,6 +135,11 @@ public:
     }
 
     int getRawPos() const { return (int)avgPot; } // Returns smoothed RAW value
+
+    bool isConnected() const
+    {
+        return actuatorConnectionIsValid(potValidity.isValid(), actuatorAttachment);
+    }
 
     // Set position target (T command only). Only this sets hasTarget = true.
     void setTarget(float val)
@@ -116,7 +160,10 @@ public:
     // Jog: direct PWM. Does not set or clear target; when pwm is 0 we just stop.
     void manualDrive(int pwm)
     {
-        pwm = constrain(pwm, -255, 255);
+        pwm = constrain(
+            pwm,
+            -ACTUATOR_PWM_MAXIMUM_MAGNITUDE,
+            ACTUATOR_PWM_MAXIMUM_MAGNITUDE);
         if (pwm == 0)
         {
             currentPwm = 0;
@@ -132,7 +179,7 @@ public:
     // Drives actuator to desired position using controlConfig; call frequently in main loop
     void update()
     {
-        updateSensors(); // Always update sensors to recalculate avgPot/avgIS
+        updateSensors();
 
         // No target: motor chills electrically. manualDrive() directly sets PWM/EN
         // when jogging, and in the no-target state we do not override that here.
@@ -144,7 +191,10 @@ public:
             error = 0;
 
         int desiredPwm = (int)(error * controlConfig.Kp);
-        desiredPwm = constrain(desiredPwm, -255, 255);
+        desiredPwm = constrain(
+            desiredPwm,
+            -ACTUATOR_PWM_MAXIMUM_MAGNITUDE,
+            ACTUATOR_PWM_MAXIMUM_MAGNITUDE);
 
         // Ramping Logic
         if (millis() - lastRampTime >= (unsigned long)controlConfig.rampIntervalMs)
@@ -200,7 +250,7 @@ public:
     {
         out.print(name);
         out.print(TELEMETRY_FIELD_SEPARATOR);
-        out.print(getPos(), 3);
+        out.print(filteredActuatorPosition(isConnected(), getPos()), 3);
         out.print(TELEMETRY_FIELD_SEPARATOR);
         out.print((int)avgPot);
         out.print(TELEMETRY_FIELD_SEPARATOR);
@@ -219,6 +269,16 @@ public:
             out.print(hallHwGetEdgeCount((uint8_t)hallSlot));
         else
             out.print(0);
+        // Appended tenth field: whether attachment has any driven-current evidence
+        // yet. Position alone cannot carry it — nan already means disconnected.
+        out.print(TELEMETRY_FIELD_SEPARATOR);
+        out.print(attachmentVerified() ? '1' : '0');
+    }
+
+    // False until driven current has decided the channel either way.
+    bool attachmentVerified() const
+    {
+        return actuatorAttachment.state() != ActuatorAttachmentState::Unknown;
     }
 
 private:

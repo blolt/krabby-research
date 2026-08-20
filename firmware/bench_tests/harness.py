@@ -31,7 +31,8 @@ class BenchTest:
     setup: str                       # what the operator must do first
     expect: str                      # what result counts as a pass
     run: Callable[..., Result]
-    key: str = ""                    # unique id; several tests may share one ac
+    key: str = ""
+    requires: str = ""                # hardware this test needs; blocks it if absent                    # unique id; several tests may share one ac
     needs_cal_reset: bool = False
     manual: bool = False             # no serial access; operator confirms
 
@@ -112,7 +113,9 @@ def run_suite(
     results_path: str = "",
     start: int = 0,
     assume_yes: bool = False,
+    context: Optional[dict] = None,
 ) -> int:
+    context = context or {}
     records = load_results(results_path)
     for index in range(start, len(tests)):
         test = tests[index]
@@ -120,6 +123,8 @@ def run_suite(
         print(f"  Criterion : {test.criterion}")
         print(f"  Set up    : {test.setup}")
         print(f"  Passes if : {test.expect}")
+        if test.requires:
+            print(f"  Requires  : {test.requires}")
         if test.needs_cal_reset:
             print("  Note      : clears the stored IMU calibration, then reflashes (~40 s).")
         prior = records.get(test.key)
@@ -133,9 +138,9 @@ def run_suite(
             if answer == "s":
                 result = Result(None, "skipped by operator")
             else:
-                result = _execute(test, port)
+                result = _execute(test, port, context)
         else:
-            result = _execute(test, port)
+            result = _execute(test, port, context)
 
         print(f"\n  {MARK[result.passed]}")
         for line in result.detail.splitlines():
@@ -153,10 +158,10 @@ def run_suite(
     return _summarise(tests, records, results_path)
 
 
-def _execute(test: BenchTest, port: str) -> Result:
+def _execute(test: BenchTest, port: str, context: dict) -> Result:
     started = time.monotonic()
     try:
-        result = test.run(port=port)
+        result = test.run(port=port, **context)
     except Exception as exc:                          # noqa: BLE001 — bench tool
         result = Result(False, f"error: {type(exc).__name__}: {exc}")
     took = time.monotonic() - started
@@ -170,6 +175,8 @@ def _summarise(tests: List[BenchTest], records: Dict[str, dict], path: str) -> i
         record = records.get(test.key)
         print(f"  {test.ac:<{width}}  {_status_of(record):<8}  {test.title[:46]}")
     failed = [t.ac for t in tests if records.get(t.key, {}).get("passed") is False]
+    # Outstanding is not success: a suite quit partway or skipped wholesale has
+    # observed nothing, and exiting 0 would report that as a pass to any wrapper.
     outstanding = [
         t.ac for t in tests if records.get(t.key, {}).get("passed") is not True
     ]

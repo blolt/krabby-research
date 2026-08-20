@@ -48,6 +48,11 @@ endfunction()
 set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/src/test_telemetry
     arduino/src/imu/test_imu_calibrator
+    arduino/src/display/test_display
+    arduino/src/actuator/test_actuator_attachment
+    arduino/test_board_pins
+    arduino/src/actuator/test_pot_validity
+    arduino/test_units
 )
 
 # The manifest and the directory must agree in both directions: a listed test
@@ -72,3 +77,10 @@ foreach(discovered IN LISTS discovered_test_sources)
             "never build or run. Add '${discovered_path}' to the list.")
     endif()
 endforeach()
+
+target_sources(
+    test_display
+    PRIVATE
+        "${KRABBY_ARDUINO_DIR}/src/display/display.cpp"
+        "${KRABBY_ARDUINO_DIR}/src/telemetry.cpp"
+)
