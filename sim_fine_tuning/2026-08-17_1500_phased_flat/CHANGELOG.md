@@ -296,3 +296,16 @@ Campaign disposition: Phase A (existing) -> B (spin de-scoped after 13 arms) ->
 C (lifting-first: the win) -> hand-off (bridge/2b1 records, 2b2 clearance gate first
 pass, eval beats baseline). CAMPAIGN COMPLETE pending user's next direction
 (distillation / high-speed extension / hardware).
+
+## STUDENT DISTILLATION — COMPLETE 2026-08-20, 12k ceiling (model_34685)
+Loss 3.73 -> 2.08 -> 1.85 -> 1.82 (batch 3 +1.5% < 3% bar: converged). Evals vs the
+position-era student baseline model_29098:
+| scenario | model_34685 | model_29098 |
+|---|---|---|
+| 2b2: tripod / completion | **0.161** / 0.6 (4 falls) | 0.079 / **0.9** |
+| flat: tripod / completion | **0.138** / 0.5 | 0.08 / **0.8** |
+Deficits low/mid/high: +0.04/+0.14/+0.33 (2b2) — the teacher's high-speed envelope gap
+(flat stage trained 0.30-0.65, schedule demands up to 0.85) transfers to the student
+and drives the falls. Gait quality 2x the old student; robustness below it.
+Disposition: student stage recorded at ceiling; the binding constraint for both
+teacher and student is now the SPEED ENVELOPE, not terrain skill.
