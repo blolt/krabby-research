@@ -19,6 +19,9 @@ from typing import Callable, Dict, Optional
 from firmware.bench_tests import mcu
 
 # Orientation gate, kept identical to imu_bench.py's so results stay comparable.
+# High enough that the actuator is genuinely working during the active timing
+# condition, rather than idling inside the deadband.
+ACTIVE_PROBE_PWM = 200
 INVERTED_ACCEL_Z = -3.0
 UPRIGHT_ACCEL_Z = 3.0
 
@@ -45,9 +48,11 @@ def boot_log(port: str, seconds: float = 14.0) -> Measurement:
             "captured": boot.says("captured"),
             "loaded": boot.says("loaded from EEPROM"),
             "not_detected": boot.says("not detected"),
+            "oled_failed": boot.says("OLED: initialization failed"),
             "cal_line": cal_line,
         },
-        text="\n".join(f"  {l}" for l in boot.lines if "IMU CAL" in l or "Ready" in l),
+        text="\n".join(f"  {l}" for l in boot.lines
+                        if "IMU CAL" in l or "Ready" in l or "OLED" in l),
     )
 
 
@@ -63,6 +68,48 @@ def tick_timing(port: str, lines: int = 400) -> Measurement:
         text=(f"mean {stats['mean']:.2f} ms  p50 {stats['p50']:.2f}  "
               f"p95 {stats['p95']:.2f}  max {stats['max']:.2f}  min {stats['min']:.2f}  "
               f"({stats['line_bytes']} B/line, n={stats['n']})"),
+    )
+
+
+def deadline_timing(
+    port: str,
+    lines: int = 520,
+    oled: int = mcu.OLED_NORMAL,
+    joint: str = "",
+    # Telemetry fires on `millis() - last >= 50`, so the period is 50 ms plus
+    # whatever the loop overruns, and host-side arrival adds more. A healthy
+    # board sits near 51 ms, which means counting gaps over 50 would call half of
+    # a passing run late. Past 1.5x the interval an entire slot was skipped, and
+    # that is the failure the criterion is about.
+    deadline_ms: float = 75.0,
+) -> Measurement:
+    """Tick statistics under one OLED and drive condition, counting late ticks.
+
+    A mean shift says the loop got slower on average; a missed deadline says a
+    single tick blew the budget. 2h.1 fails on either, and only the second is
+    visible in the maximum, so both are reported.
+    """
+    with mcu.open_port(port) as ser:
+        mcu.oled_mode(ser, oled)
+        if joint:
+            mcu.jog(ser, joint, ACTIVE_PROBE_PWM)
+        mcu.collect(ser, 6)                      # discard the transition
+        samples = mcu.collect(ser, lines, timeout=90.0)
+        if joint:
+            mcu.hold_all(ser)
+        mcu.oled_mode(ser, mcu.OLED_NORMAL)
+
+    stats = mcu.interval_stats(samples)
+    if not stats:
+        return Measurement(text="too few lines to measure", ok=False)
+    gaps = [(b.at - a.at) * 1000.0 for a, b in zip(samples, samples[1:])]
+    late = sum(1 for g in gaps if g > deadline_ms)
+    stats["late"] = late
+    stats["deadline_ms"] = deadline_ms
+    return Measurement(
+        values=stats,
+        text=(f"mean {stats['mean']:.2f} ms  p95 {stats['p95']:.2f}  "
+              f"max {stats['max']:.2f}  late(>{deadline_ms:.0f}ms) {late}/{len(gaps)}"),
     )
 
 
@@ -176,9 +223,197 @@ def stream(port: str, seconds: float = 20.0) -> Measurement:
 CHECKS: Dict[str, Callable[..., Measurement]] = {
     "boot": boot_log,
     "timing": tick_timing,
+    "deadline": deadline_timing,
     "gravity": gravity_magnitude,
     "resting-gyro": resting_gyro,
     "motion": peak_motion,
     "flip": orientation_flip,
     "stream": stream,
 }
+
+
+# ------------------------------------------------------------------ joints
+def joint_report(port: str, lines: int = 20) -> Measurement:
+    """Per-joint connected flag, position and raw channels, from the last line seen."""
+    with mcu.open_port(port) as ser:
+        samples = mcu.collect(ser, lines)
+    if not samples:
+        return Measurement(text="no telemetry lines arrived", ok=False)
+    joints = mcu.joints_of(samples[-1])
+    if not joints:
+        return Measurement(text="lines arrived but no joint segments parsed", ok=False)
+    rows = [
+        f"  {j.name}  pos {'nan' if not j.connected else f'{j.pos:.3f}'}"
+        f"  pot {j.pot:>4}  cur {j.current:>4}  pwm {j.pwm}"
+        for j in joints
+    ]
+    return Measurement(
+        values={
+            "count": len(joints),
+            "connected": sum(1 for j in joints if j.connected),
+            "disconnected": ",".join(j.name for j in joints if not j.connected),
+            "names": ",".join(j.name for j in joints),
+        },
+        text="\n".join(rows),
+    )
+
+
+def diagnostics_survive_disconnect(port: str, lines: int = 40) -> Measurement:
+    """For channels reporting nan position, check the raw fields still update.
+
+    A filtered channel must keep streaming its diagnostics; a frozen pot or
+    current field would mean the whole segment stopped rather than just position.
+    """
+    with mcu.open_port(port) as ser:
+        samples = mcu.collect(ser, lines)
+    series: dict = {}
+    for s in samples:
+        for j in mcu.joints_of(s):
+            series.setdefault(j.name, []).append((j.connected, j.pot, j.current))
+    filtered = {n: v for n, v in series.items() if any(not c for c, _, _ in v)}
+    if not filtered:
+        return Measurement(
+            values={"filtered": 0},
+            text="no channel is reporting a filtered (nan) position",
+        )
+    rows, all_live = [], True
+    for name, values in sorted(filtered.items()):
+        pots = {p for _, p, _ in values}
+        currents = {c for _, _, c in values}
+        live = len(pots) > 1 or len(currents) > 1
+        all_live = all_live and live
+        rows.append(f"  {name}: {len(values)} samples, "
+                    f"{len(pots)} distinct pot, {len(currents)} distinct current"
+                    f"{'' if live else '   <-- frozen'}")
+    return Measurement(
+        values={"filtered": len(filtered), "all_diagnostics_live": all_live},
+        text="\n".join(rows),
+        ok=all_live,
+    )
+
+
+def jog_and_watch(port: str, joint: str, pwm: int, lines: int = 30) -> Measurement:
+    """Drive one actuator, report what its segment did, then stop it.
+
+    Leaves the actuator held. Used to put a channel into a known drive state so a
+    rendered glyph or an indicator can be judged against it.
+    """
+    with mcu.open_port(port) as ser:
+        mcu.collect(ser, 2)
+        mcu.jog(ser, joint, pwm)
+        samples = mcu.collect(ser, lines)
+        mcu.hold_all(ser)
+    rows = [j for s in samples for j in mcu.joints_of(s) if j.name == joint]
+    if not rows:
+        return Measurement(text=f"{joint} never appeared in telemetry", ok=False)
+    driven = [j for j in rows if any(j.pwm)]
+    pots = {j.pot for j in rows}
+    return Measurement(
+        values={"samples": len(rows), "driven_samples": len(driven),
+                "distinct_pot": len(pots), "commanded_pwm": pwm,
+                "connected": all(j.connected for j in rows)},
+        text=(f"{joint} at pwm {pwm}: {len(driven)}/{len(rows)} samples show drive, "
+              f"{len(pots)} distinct pot values, "
+              f"connected={all(j.connected for j in rows)}"),
+    )
+
+
+CHECKS.update({
+    "joints": joint_report,
+    "diagnostics": diagnostics_survive_disconnect,
+})
+
+
+def filtering_rate(port: str, lines: int = 200) -> Measurement:
+    """How often each channel reports a filtered (nan) position, and its pot jitter.
+
+    Distinguishes a latched disconnect from intermittent flicker. A channel that is
+    genuinely unplugged reports nan on essentially every line, because the latched
+    state persists while idle. A few percent means the validity detector is
+    tripping on healthy hardware — its idle-jitter threshold is too tight for this
+    harness, not that the channel is disconnected.
+
+    Note the jitter figures are computed from the smoothed pot at the telemetry
+    rate, while the detector reads the raw pin at loop rate. Loop-rate excursions
+    the detector acts on are invisible here, so treat these as a lower bound.
+    """
+    from collections import defaultdict
+
+    with mcu.open_port(port) as ser:
+        samples = mcu.collect(ser, lines)
+    if not samples:
+        return Measurement(text="no telemetry lines arrived", ok=False)
+    series = defaultdict(list)
+    for s in samples:
+        for j in mcu.joints_of(s):
+            series[j.name].append((j.connected, j.pot))
+
+    rows, rates = [], {}
+    for name in sorted(series):
+        values = series[name]
+        nan = sum(1 for connected, _ in values if not connected)
+        rate = nan / len(values)
+        rates[name] = rate
+        pots = [p for _, p in values]
+        deltas = sorted(abs(b - a) for a, b in zip(pots, pots[1:])) or [0]
+        verdict = ("latched" if rate > 0.9 else
+                   "flicker" if rate > 0.0 else "clean")
+        rows.append(f"  {name}  nan {rate * 100:5.1f}%  pot {min(pots)}-{max(pots)}  "
+                    f"|dpot| p50 {deltas[len(deltas) // 2]} max {deltas[-1]}   {verdict}")
+    latched = [n for n, r in rates.items() if r > 0.9]
+    flickering = [n for n, r in rates.items() if 0.0 < r <= 0.9]
+    return Measurement(
+        values={"lines": len(samples), "latched": ",".join(latched),
+                "flickering": ",".join(flickering),
+                "latched_count": len(latched), "flickering_count": len(flickering)},
+        text="\n".join(rows),
+    )
+
+
+CHECKS["filtering"] = filtering_rate
+
+
+def jog_then_observe_idle(port: str, joint: str, pwm: int,
+                          drive_lines: int = 30, idle_lines: int = 20) -> Measurement:
+    """Drive a channel, stop, and keep watching — all on one serial connection.
+
+    Attachment state lives in RAM and `init()` resets it, so re-opening the port
+    re-asserts DTR, reboots the board and erases the very latch a disconnect test
+    is trying to observe. The drive and the idle observation therefore have to
+    share one session; a criterion phrased as "persists while idle" cannot be
+    checked across a reconnect.
+    """
+    with mcu.open_port(port) as ser:
+        mcu.collect(ser, 2)
+        mcu.jog(ser, joint, pwm)
+        driven = mcu.collect(ser, drive_lines)
+        mcu.hold_all(ser)
+        idle = mcu.collect(ser, idle_lines)
+
+    driven_rows = [j for s in driven for j in mcu.joints_of(s) if j.name == joint]
+    idle_rows = [j for s in idle for j in mcu.joints_of(s) if j.name == joint]
+    if not driven_rows or not idle_rows:
+        return Measurement(text=f"{joint} never appeared in telemetry", ok=False)
+
+    commanded = [j for j in driven_rows if any(j.pwm)]
+    disconnected_driven = sum(1 for j in driven_rows if not j.connected)
+    disconnected_idle = sum(1 for j in idle_rows if not j.connected)
+    return Measurement(
+        values={
+            "commanded_samples": len(commanded),
+            "driven_lines": len(driven_rows),
+            "idle_lines": len(idle_rows),
+            "disconnected_driven": disconnected_driven,
+            "disconnected_idle": disconnected_idle,
+            "latched_while_driven": disconnected_driven > 0,
+            "retained_while_idle": disconnected_idle == len(idle_rows),
+            "pot_span": max(j.pot for j in driven_rows) - min(j.pot for j in driven_rows),
+        },
+        text=(f"{joint} at pwm {pwm}: {len(commanded)}/{len(driven_rows)} lines show the "
+              f"drive command\n"
+              f"  while driven: disconnected on {disconnected_driven}/{len(driven_rows)}\n"
+              f"  after stop  : disconnected on {disconnected_idle}/{len(idle_rows)}"),
+    )
+
+
+CHECKS["latch"] = jog_then_observe_idle
