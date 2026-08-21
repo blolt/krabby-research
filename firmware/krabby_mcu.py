@@ -5,6 +5,7 @@ import time
 import threading
 import logging
 from typing import Dict, Optional
+from firmware.interfaces.battery_telemetry import BatteryTelemetry
 from firmware.interfaces.imu_telemetry import ImuTelemetry
 from firmware.interfaces.joint_telemetry import JointTelemetry
 from firmware.interfaces.telemetry_constants import TELEMETRY_LINE_PREFIXES
@@ -73,6 +74,10 @@ class KrabbyMCUSDK:
         #                          init/read failure)
         #   imu.valid is True    — fresh sample.
         self.imu: Optional[ImuTelemetry] = None
+        # Latest BATT frame. Emitted on the power-poll cadence rather than every
+        # tick, and omitted entirely when either monitor is down, so None means
+        # "no trustworthy reading" rather than "not supported".
+        self.battery: Optional[BatteryTelemetry] = None
 
         self._imu_stale_warned = False
 
@@ -102,7 +107,13 @@ class KrabbyMCUSDK:
             self.running = True
             self.last_error = None
             self._imu_stale_warned = False
-            self.imu = None  # drop any sample cached from a prior connection
+            # Drop any sample cached from a prior connection. This connect()
+            # deliberately does not reset the board, so the hardware may well
+            # still be fine - but a sample held across a disconnect is of
+            # unknown age, and None has to keep meaning "nothing read this
+            # session" rather than "something, once".
+            self.imu = None
+            self.battery = None
             self.thread = threading.Thread(target=self._reader_loop, daemon=True)
             self.thread.start()
             logger.info(f"Connected to {self.port}")
@@ -186,6 +197,8 @@ class KrabbyMCUSDK:
 
     def _parse_telemetry_line(self, line: str):
         parsed = parse_telemetry_line(line)
+        if parsed.battery is not None:
+            self.battery = parsed.battery
         if parsed.imu is not None:
             self._store_imu(parsed.imu)
         if not parsed.joints:

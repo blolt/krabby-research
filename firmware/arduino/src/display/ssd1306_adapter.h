@@ -52,11 +52,11 @@ public:
         if (full || model.roll.value != previousModel_.roll.value ||
             model.pitch.value != previousModel_.pitch.value)
             drawTilt(model);
-        if (full || model.packVoltage.value != previousModel_.packVoltage.value)
+        if (full || model.packDecivolts != previousModel_.packDecivolts)
             drawVolts(model);
 
         for (int battery = 0; battery < 2; ++battery)
-            if (full || model.batteryLevel[battery] != previousModel_.batteryLevel[battery])
+            if (full || model.batteryFill[battery] != previousModel_.batteryFill[battery])
                 drawBattery(model, battery);
 
         if (full || model.frontPresent != previousModel_.frontPresent ||
@@ -114,10 +114,14 @@ private:
 
     void drawVolts(const StatusDisplayModel &model)
     {
-        const int decivolts =
-            static_cast<int>(lround(model.packVoltage.value * 10.0f));
         char text[10];
-        snprintf(text, sizeof(text), "%d.%dV", decivolts / 10, abs(decivolts % 10));
+        if (model.packDecivolts == PACK_DECIVOLTS_NO_SIGNAL)
+            snprintf(text, sizeof(text), "--.-V");
+        else
+        {
+            const int decivolts = model.packDecivolts;
+            snprintf(text, sizeof(text), "%d.%dV", decivolts / 10, abs(decivolts % 10));
+        }
         drawTextField(SSD1306_HEADER_VOLTS_X, SSD1306_HEADER_VOLTS_CHARS, text);
     }
 
@@ -133,12 +137,19 @@ private:
         driver_.rectangleFill(x + SSD1306_BATTERY_WIDTH, SSD1306_BATTERY_Y + nubY,
                               SSD1306_BATTERY_NUB_WIDTH, SSD1306_BATTERY_NUB_HEIGHT);
 
-        const float raw = model.batteryLevel[battery];
-        const float level = raw < 0.0f ? 0.0f : (raw > 1.0f ? 1.0f : raw);
-        const int fillWidth =
-            static_cast<int>(lround((SSD1306_BATTERY_WIDTH - 2) * level));
-        if (fillWidth > 0)
-            driver_.rectangleFill(x + 1, SSD1306_BATTERY_Y + 1, fillWidth,
+        const int8_t fill = model.batteryFill[battery];
+        if (fill == BATTERY_FILL_NO_SIGNAL)
+        {
+            // Dotted centre line: the outline still reads as a battery, but the
+            // broken fill says the source is gone rather than the pack is flat.
+            const int centreY = SSD1306_BATTERY_Y + SSD1306_BATTERY_HEIGHT / 2;
+            for (int dot = 0; dot < SSD1306_BATTERY_FILL_WIDTH;
+                 dot += SSD1306_BATTERY_NO_SIGNAL_STEP)
+                driver_.pixel(x + 1 + dot, centreY);
+            return;
+        }
+        if (fill > 0)
+            driver_.rectangleFill(x + 1, SSD1306_BATTERY_Y + 1, fill,
                                   SSD1306_BATTERY_HEIGHT - 2);
     }
 

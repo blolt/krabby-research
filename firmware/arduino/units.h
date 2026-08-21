@@ -160,3 +160,135 @@ constexpr DegreesPerSecond RadiansPerSecond::toDegreesPerSecond() const
 {
     return DegreesPerSecond(value / RADIANS_PER_DEGREE);
 }
+
+// Electrical and time quantities for the power bus. Same struct shape as the
+// motion units above: a named wrapper that stops a bare float standing in for
+// a quantity, without yet defining operations between them.
+struct Amps
+{
+    float value;
+
+    constexpr Amps()
+        : value(0.0f)
+    {
+    }
+
+    explicit constexpr Amps(float value)
+        : value(value)
+    {
+    }
+};
+
+struct MilliAmps
+{
+    float value;
+
+    constexpr MilliAmps()
+        : value(0.0f)
+    {
+    }
+
+    explicit constexpr MilliAmps(float value)
+        : value(value)
+    {
+    }
+};
+
+struct Watts
+{
+    float value;
+
+    constexpr Watts()
+        : value(0.0f)
+    {
+    }
+
+    explicit constexpr Watts(float value)
+        : value(value)
+    {
+    }
+};
+
+struct MilliWatts
+{
+    float value;
+
+    constexpr MilliWatts()
+        : value(0.0f)
+    {
+    }
+
+    explicit constexpr MilliWatts(float value)
+        : value(value)
+    {
+    }
+};
+
+// Accumulated charge, as the INA228 reports it.
+struct Coulombs
+{
+    float value;
+
+    constexpr Coulombs()
+        : value(0.0f)
+    {
+    }
+
+    explicit constexpr Coulombs(float value)
+        : value(value)
+    {
+    }
+};
+
+struct Ohms
+{
+    float value;
+
+    constexpr Ohms()
+        : value(0.0f)
+    {
+    }
+
+    explicit constexpr Ohms(float value)
+        : value(value)
+    {
+    }
+};
+
+struct Milliseconds
+{
+    float value;
+
+    constexpr Milliseconds()
+        : value(0.0f)
+    {
+    }
+
+    explicit constexpr Milliseconds(float value)
+        : value(value)
+    {
+    }
+};
+
+// The INA228 library reports current in mA and power in mW while the telemetry
+// frame carries amps and watts, so the conversion happens once here rather than
+// as a bare /1000.0f at each call site.
+constexpr Amps toAmps(MilliAmps current)
+{
+    return Amps(current.value / 1000.0f);
+}
+
+constexpr MilliAmps toMilliAmps(Amps current)
+{
+    return MilliAmps(current.value * 1000.0f);
+}
+
+constexpr Watts toWatts(MilliWatts power)
+{
+    return Watts(power.value / 1000.0f);
+}
+
+constexpr MilliWatts toMilliWatts(Watts power)
+{
+    return MilliWatts(power.value * 1000.0f);
+}

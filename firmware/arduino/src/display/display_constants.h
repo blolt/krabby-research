@@ -5,6 +5,7 @@
 
 static constexpr size_t STATUS_DISPLAY_JOINTS_PER_LEG = 3;
 static constexpr uint32_t CONTROLLER_DISPLAY_TIMEOUT_MILLISECONDS = 500;
+
 // A full frame is ~1.25 kB, so ~29 ms on the wire here and ~115 ms at the
 // 100 kHz sensor clock, which would not fit TELEMETRY_INTERVAL_MS.
 static constexpr uint32_t SSD1306_TRANSFER_BUS_CLOCK_HZ = 400000UL;
@@ -89,6 +90,12 @@ static constexpr int SSD1306_BATTERY_HEIGHT = 7;
 static constexpr int SSD1306_BATTERY_GAP = 4;
 static constexpr int SSD1306_BATTERY_X = 2;
 static constexpr int SSD1306_BATTERY_Y = 11;
+// Interior fill span: the outline's two side walls are not fillable.
+static constexpr int SSD1306_BATTERY_FILL_WIDTH = SSD1306_BATTERY_WIDTH - 2;
+// "No signal" draws every other pixel along the bar's centre line, so the gauge
+// still reads as a battery that has lost its source rather than an empty one.
+static constexpr int SSD1306_BATTERY_NO_SIGNAL_STEP = 2;
+
 static constexpr int SSD1306_BATTERY_NUB_WIDTH = 2;
 static constexpr int SSD1306_BATTERY_NUB_HEIGHT = 3;
 static constexpr int SSD1306_BATTERY_PITCH =

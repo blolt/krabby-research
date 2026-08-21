@@ -1,6 +1,8 @@
 #include <stdint.h>
 
 #include "src/display/display.h"
+#include <math.h>
+
 #include "unity.h"
 
 namespace
@@ -10,6 +12,11 @@ const char *VALID_LEFT =
     " C 0.2 0 0 1 1 40 0 0; D 0.3 0 0 0 0 0 0 0;"
     " E 0.4 0 0 0 0 0 0 0; F 0.5 0 0 0 0 0 0 0";
 }
+
+// Battery inputs for the model builder. Defaults stand in for "no BATT frame
+// read yet", which is the state at boot and whenever the monitors are down.
+const float HALF_FULL_BATTERIES[2] = {0.5f, 0.5f};
+const float NO_BATTERY_READING[2] = {0.0f, 0.0f};
 
 void setUp() {}
 void tearDown() {}
@@ -91,6 +98,27 @@ static void test_unverified_follower_channel_renders_unverified()
         state, line, "LEFT ", 20, 1000));
     TEST_ASSERT_EQUAL_INT((int)ActuatorGlyph::Unverified, (int)state.glyphs[0]);
     TEST_ASSERT_EQUAL_INT((int)ActuatorGlyph::Hold, (int)state.glyphs[1]);
+}
+
+// 3g.11: the bars show the two measured batteries, so a diverging pair renders
+// as two different fills rather than being hidden by one averaged value.
+static void test_model_carries_the_battery_measurement()
+{
+    ActuatorGlyph localGlyphs[CONTROLLER_ACTUATOR_COUNT];
+    for (size_t i = 0; i < CONTROLLER_ACTUATOR_COUNT; ++i)
+        localGlyphs[i] = ActuatorGlyph::Hold;
+    const ControllerDisplayState peer;
+    const float diverging[2] = {0.9f, 0.2f};
+
+    const StatusDisplayModel model = buildStatusDisplayModel(
+        StatusDisplayRole::Front, true, localGlyphs,
+        peer, false, peer, false, ImuMeasurement(),
+        Volts(25.6f), diverging, true, 1000);
+
+    TEST_ASSERT_EQUAL_INT16(256, model.packDecivolts);
+    // 0.9 and 0.2 of the 16 px interior, quantized to what is drawn.
+    TEST_ASSERT_EQUAL_INT8(14, model.batteryFill[0]);
+    TEST_ASSERT_EQUAL_INT8(3, model.batteryFill[1]);
 }
 
 static void test_glyph_boundaries_and_disconnection()
@@ -194,7 +222,7 @@ static void test_leg_mapping_disconnect_scan_and_model_equality()
     // Battery is a Task 3 placeholder, so a change to it is the one difference
     // that could otherwise pass the redraw check unnoticed.
     StatusDisplayModel batteryChanged = sameModel;
-    batteryChanged.batteryLevel[1] = 0.5f;
+    batteryChanged.batteryFill[1] = 8;
     TEST_ASSERT_FALSE(statusDisplayModelsEqual(sameModel, batteryChanged));
 }
 
@@ -307,7 +335,8 @@ static void test_model_maps_legs_by_peer_freshness()
     const StatusDisplayModel model = buildStatusDisplayModel(
         StatusDisplayRole::Front, true, localGlyphs,
         left, true, right, true,
-        accelerationSample(0, 0, METERS_PER_SECOND_SQUARED_PER_G), now);
+        accelerationSample(0, 0, METERS_PER_SECOND_SQUARED_PER_G),
+        Volts(25.6f), HALF_FULL_BATTERIES, true, now);
 
     TEST_ASSERT_EQUAL_INT((int)StatusDisplayRole::Front, (int)model.role);
     TEST_ASSERT_TRUE(model.frontPresent);
@@ -342,20 +371,87 @@ static void test_model_keeps_last_tilt_when_the_sample_is_invalid()
 
     const StatusDisplayModel model = buildStatusDisplayModel(
         StatusDisplayRole::Left, false, localGlyphs,
-        peer, false, peer, false, failed, 0);
+        peer, false, peer, false, failed,
+        Volts(), NO_BATTERY_READING, true, 0);
 
     TEST_ASSERT_EQUAL_FLOAT(0.0f, model.roll.value);
     TEST_ASSERT_EQUAL_FLOAT(0.0f, model.pitch.value);
 }
 
+// A dead monitor must not leave its last reading on screen. The poll reports
+// both monitors' liveness directly, so the model reads that fact rather than
+// inferring it from how long ago a value arrived.
+static void test_an_invalid_battery_reading_shows_no_signal()
+{
+    ActuatorGlyph glyphs[CONTROLLER_ACTUATOR_COUNT];
+    for (size_t i = 0; i < CONTROLLER_ACTUATOR_COUNT; ++i)
+        glyphs[i] = ActuatorGlyph::Hold;
+    const ControllerDisplayState peer;
+    const float level[2] = {0.9f, 0.8f};
+
+    StatusDisplayModel good = buildStatusDisplayModel(
+        StatusDisplayRole::Front, true, glyphs, peer, false, peer, false,
+        ImuMeasurement(), Volts(25.6f), level, true, 1000);
+    TEST_ASSERT_EQUAL_INT8(14, good.batteryFill[0]);
+    TEST_ASSERT_EQUAL_INT16(256, good.packDecivolts);
+
+    // A stale pack voltage is the worst case: Task 4 reads its shutdown
+    // decisions off the same number.
+    StatusDisplayModel down = buildStatusDisplayModel(
+        StatusDisplayRole::Front, true, glyphs, peer, false, peer, false,
+        ImuMeasurement(), Volts(25.6f), level, false, 1000);
+    TEST_ASSERT_EQUAL_INT8(BATTERY_FILL_NO_SIGNAL, down.batteryFill[0]);
+    TEST_ASSERT_EQUAL_INT8(BATTERY_FILL_NO_SIGNAL, down.batteryFill[1]);
+    TEST_ASSERT_EQUAL_INT16(PACK_DECIVOLTS_NO_SIGNAL, down.packDecivolts);
+}
+
+// Before the first successful poll there is nothing to show, and the same flag
+// carries that: latestBatteryValid starts false.
+static void test_battery_reads_as_no_signal_before_the_first_poll()
+{
+    ActuatorGlyph glyphs[CONTROLLER_ACTUATOR_COUNT];
+    for (size_t i = 0; i < CONTROLLER_ACTUATOR_COUNT; ++i)
+        glyphs[i] = ActuatorGlyph::Hold;
+    const ControllerDisplayState peer;
+    const float level[2] = {0.9f, 0.8f};
+
+    const StatusDisplayModel model = buildStatusDisplayModel(
+        StatusDisplayRole::Front, true, glyphs, peer, false, peer, false,
+        ImuMeasurement(), Volts(25.6f), level, false, 0);
+    TEST_ASSERT_EQUAL_INT8(BATTERY_FILL_NO_SIGNAL, model.batteryFill[0]);
+    TEST_ASSERT_EQUAL_INT16(PACK_DECIVOLTS_NO_SIGNAL, model.packDecivolts);
+}
+
+// 2h.2: the redraw check compares what will be drawn. Raw floats made almost
+// every frame differ under an exact !=, forcing a transfer for a change too
+// small to move a single pixel.
+static void test_levels_within_one_pixel_do_not_force_a_redraw()
+{
+    // 16 px interior: 1/32 apart quantizes to the same pixel count.
+    TEST_ASSERT_EQUAL_INT8(batteryFillPixels(0.500f), batteryFillPixels(0.510f));
+    // A full pixel apart does differ.
+    TEST_ASSERT_NOT_EQUAL(batteryFillPixels(0.50f), batteryFillPixels(0.5625f));
+
+    TEST_ASSERT_EQUAL_INT8(0, batteryFillPixels(0.0f));
+    TEST_ASSERT_EQUAL_INT8(SSD1306_BATTERY_FILL_WIDTH, batteryFillPixels(1.0f));
+    TEST_ASSERT_EQUAL_INT8(0, batteryFillPixels(-0.5f));
+    TEST_ASSERT_EQUAL_INT8(SSD1306_BATTERY_FILL_WIDTH, batteryFillPixels(2.0f));
+    // A non-finite level renders empty, never an unpredictable fill width.
+    TEST_ASSERT_EQUAL_INT8(0, batteryFillPixels(NAN));
+}
+
 int main()
 {
     UNITY_BEGIN();
+    RUN_TEST(test_an_invalid_battery_reading_shows_no_signal);
+    RUN_TEST(test_battery_reads_as_no_signal_before_the_first_poll);
+    RUN_TEST(test_levels_within_one_pixel_do_not_force_a_redraw);
     RUN_TEST(test_nine_field_segment_reads_as_verified);
     RUN_TEST(test_tenth_field_carries_attachment_evidence);
     RUN_TEST(test_multi_character_attachment_field_is_rejected);
     RUN_TEST(test_eleven_field_segment_is_rejected);
     RUN_TEST(test_unverified_follower_channel_renders_unverified);
+    RUN_TEST(test_model_carries_the_battery_measurement);
     RUN_TEST(test_glyph_boundaries_and_disconnection);
     RUN_TEST(test_unverified_attachment_is_distinct_from_hold);
     RUN_TEST(test_controller_update_is_transactional_and_decodes_all_states);

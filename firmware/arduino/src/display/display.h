@@ -35,14 +35,23 @@ struct ControllerDisplayState
     bool seen;
 };
 
+// No trustworthy reading: the bar draws as a dotted centre line and the header
+// voltage as dashes, so "we lost the monitor" is distinct from "the pack is flat".
+static constexpr int8_t BATTERY_FILL_NO_SIGNAL = -1;
+static constexpr int16_t PACK_DECIVOLTS_NO_SIGNAL = INT16_MIN;
+
 struct StatusDisplayModel
 {
     StatusDisplayModel();
 
     StatusDisplayRole role;
     ActuatorGlyph legs[CONTROLLER_ACTUATOR_COUNT][STATUS_DISPLAY_JOINTS_PER_LEG];
-    float batteryLevel[2];
-    Volts packVoltage;
+    // Quantized to what the display can actually show: filled pixel count, and
+    // the tenths of a volt the header prints. Storing the raw floats made almost
+    // every frame differ under statusDisplayModelsEqual's exact !=, forcing a
+    // redraw for changes too small to move a pixel (Task 2, 2h.2).
+    int8_t batteryFill[2];
+    int16_t packDecivolts;
     Degrees roll;
     Degrees pitch;
     bool frontPresent;
@@ -82,6 +91,12 @@ StatusDisplayModel buildStatusDisplayModel(
     const ControllerDisplayState &right,
     bool rightAssigned,
     const ImuMeasurement &measurement,
+    // Latest battery measurement, or defaults when no BATT frame has been read.
+    // Passed in rather than sampled so the model stays free of the sketch's
+    // globals and testable on the host.
+    Volts packVoltage,
+    const float (&batteryLevel)[2],
+    bool batteryValid,
     uint32_t nowMilliseconds);
 
 // True when any actuator this board can see is disconnected. The caller owns
@@ -95,5 +110,7 @@ bool anyActuatorDisconnected(
 
 bool hasDisconnectedActuator(
     const bool (&connected)[CONTROLLER_ACTUATOR_COUNT]);
+int8_t batteryFillPixels(float level);
+
 bool statusDisplayModelsEqual(const StatusDisplayModel &left, const StatusDisplayModel &right);
 const char *statusDisplayRoleLabel(StatusDisplayRole role);
