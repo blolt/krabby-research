@@ -16,6 +16,16 @@
 #include "actuator_manager.h"
 #include "src/imu/imu_constants.h"
 #include "src/telemetry.h"
+#include <Adafruit_INA228.h>
+#include "src/power_bus/battery_level.h"
+#include "src/power_bus/battery_split.h"
+#include "src/power_bus/ina228_adapter.h"
+#include "src/power_bus/ina_voltage.h"
+#include "src/power_bus/shunt_calibration.h"
+#include "src/power_bus/voltage_calibration.h"
+#include "src/power_bus/power_calibration_protocol.h"
+#include "src/power_bus/power_calibration_storage.h"
+#include "src/power_bus/power_bus_constants.h"
 #include "version.h"
 
 // --- Serial: left follower = Serial1 (TX1/RX1 on Krabby-Uno v0.1 shield), right follower = Serial2 ---
@@ -142,6 +152,42 @@ unsigned long lastTelemetry = 0;
 // the cycle with a whole slot of headroom for a blocking I2C transfer.
 bool telemetryJustEmitted = false;
 
+// INA228 power monitors (Task 3): Pack measures total pack V/I/P/charge across
+// the external shunt; Midpoint senses only the series junction's bus voltage,
+// its current inputs tied to Pack-. Leader-only, sharing the IMU/OLED bus.
+// Each owns its own liveness so one missing board cannot suppress the other.
+Ina228Monitor inaPack(INA228_PACK_I2C_ADDR, /*configuresShunt=*/true);
+Ina228Monitor inaMidpoint(INA228_MID_I2C_ADDR, /*configuresShunt=*/false);
+
+// Per-board VBUS offset trims and the shunt scale (AC 3i), captured on the bench
+// against a DMM and persisted with a magic-last write so a torn write reloads as
+// identity rather than as a plausible wrong number.
+static_assert(sizeof(PowerCalibrationData) == EEPROM_INA_CAL_SIZE,
+              "update EEPROM_INA_CAL_SIZE in power_bus_constants.h");
+constexpr PowerCalibrationStorageRules POWER_CALIBRATION_STORAGE_RULES = {
+    EEPROM_INA_CAL_MAGIC,
+    EEPROM_INA_CAL_SCHEMA,
+    INA228_CAL_MAX_VOFFSET_V,
+    INA228_CAL_MIN_GAIN,
+    INA228_CAL_MAX_GAIN};
+PowerCalibrationData inaCal = identityPowerCalibration();
+
+// Latest battery measurement, kept for the panel. The BATT segment goes out on
+// the power-poll cadence while the OLED redraws on its own, so the renderer
+// reads the last measurement rather than sampling the monitors itself.
+Volts latestPackVoltage;
+float latestBatteryLevel[2] = {0.0f, 0.0f};
+// Both monitors' liveness from the most recent poll, which is what the OLED
+// needs to know. No timestamp: the poll reports the failure directly.
+bool latestBatteryValid = false;
+// Last trustworthy per-monitor readings, so a failed monitor's fields carry its
+// last good numbers rather than the driver's failure sentinel.
+struct LastGoodPack { Volts voltage; Amps current; Watts power; Coulombs charge; };
+LastGoodPack lastGoodPack = {Volts(0.0f), Amps(0.0f), Watts(0.0f), Coulombs(0.0f)};
+Volts lastGoodMidpointVoltage(0.0f);
+BatterySplit lastGoodSplit = {0.0f, 0.0f, false};
+bool latestBatteryEverUpdated = false;
+
 // --- I2C sensor cluster (Milestone 16) — leader board only ---
 // The LSM6DSO IMU rides the leader's telemetry tick; followers never touch the bus.
 Lsm6dsoAdapter imuSensor;
@@ -237,6 +283,9 @@ static StatusDisplayModel currentDisplayModel()
         leftControllerDisplayState, leftSerial != nullptr,
         rightControllerDisplayState, rightSerial != nullptr,
         latestImuMeasurement,
+        latestPackVoltage,
+        latestBatteryLevel,
+        latestBatteryValid,
         millis());
 }
 
@@ -259,6 +308,254 @@ static void updateDisconnectStatusLed()
                 rightControllerDisplayState, rightSerial != nullptr, now))
             ? HIGH
             : LOW);
+}
+
+// Bring both monitors up on the bus imuSetup() already began. Per-device: a
+// missing board must not block the other. The Pack accumulator is zeroed here so
+// pack_charge counts from this boot; a later recovery deliberately does not.
+static void inaPersistCal()
+{
+    persistPowerCalibration(
+        EEPROM, EEPROM_INA_CAL_ADDR, POWER_CALIBRATION_STORAGE_RULES, inaCal);
+}
+
+static void printPowerCalibration()
+{
+    // F() keeps these literals in flash; this bench-only text would otherwise
+    // cost most of a kilobyte of the Mega's 8 KB of SRAM.
+    Serial.print(F("POWER CAL: packVoltageOffset=")); Serial.print(inaCal.packVoltageOffset, 4);
+    Serial.print(F(" midpointVoltageOffset="));      Serial.print(inaCal.midpointVoltageOffset, 4);
+    Serial.print(F(" packShuntCal="));               Serial.println(inaCal.packShuntCal, 5);
+}
+
+static void printPowerCalibrationUsage()
+{
+    Serial.println(F("POWER CAL usage (leader bench only):"));
+    Serial.println(F("  C PWR_SENSE VOLTAGE <packReferenceVolts> <midpointReferenceVolts>"));
+    Serial.println(F("  C PWR_SENSE CURRENT <knownAmps>"));
+    Serial.println(F("  C PWR_SENSE SHOW"));
+    Serial.println(F("  C PWR_SENSE ?"));
+}
+
+// One calibration command, the leading 'C' already consumed. Bare C keeps the
+// existing whole-controller actuator calibration; C PWR_SENSE is leader-only and
+// is never forwarded to followers.
+//
+// Every path that could produce a bad number returns BEFORE writing, so a
+// mistyped bench reference leaves the previous calibration untouched.
+static void handleCalibrationCommand(const String& line)
+{
+    int idx = 0;
+    const int len = line.length();
+    String tokenStorage[5];
+    const char* tokens[5];
+    size_t tokenCount = 0;
+    while (tokenCount < 5)
+    {
+        tokenStorage[tokenCount] = nextTok(line, idx, len);
+        if (tokenStorage[tokenCount].length() == 0)
+            break;
+        tokens[tokenCount] = tokenStorage[tokenCount].c_str();
+        ++tokenCount;
+    }
+
+    if (isActuatorCalibrationCommand(tokenCount, tokens))
+    {
+        actuatorManager->startAutoCalibration();
+        if (leftSerial) leftSerial->println(CALIBRATION_COMMAND_PREFIX);
+        if (rightSerial) rightSerial->println(CALIBRATION_COMMAND_PREFIX);
+        return;
+    }
+
+    PowerCalibrationCommand command = {
+        PowerCalibrationOperation::Invalid, 0.0f, 0.0f};
+    if (!parsePowerCalibrationCommand(tokenCount, tokens, command))
+    {
+        Serial.println(F("POWER CAL: invalid command; no write."));
+        printPowerCalibrationUsage();
+        return;
+    }
+
+    if (command.operation == PowerCalibrationOperation::Show)
+    {
+        printPowerCalibration();
+        return;
+    }
+    if (command.operation == PowerCalibrationOperation::Help)
+    {
+        printPowerCalibrationUsage();
+        return;
+    }
+
+    // Gate each capture on exactly the monitors it reads, so a Pack-only shunt
+    // trim still works with the Midpoint board absent.
+    if (!inaPack.isUp())
+    {
+        Serial.println(F("POWER CAL: Pack monitor offline; aborting (no write)."));
+        return;
+    }
+
+    if (command.operation == PowerCalibrationOperation::Voltage)
+    {
+        if (!inaMidpoint.isUp())
+        {
+            Serial.println(F("POWER CAL: Midpoint offline; voltage calibration needs both; aborting (no write)."));
+            return;
+        }
+        VoltageOffsets offsets = {
+            Volts(inaCal.packVoltageOffset),
+            Volts(inaCal.midpointVoltageOffset)};
+        const VoltageCalibrationLimits limits = {
+            Volts(INA228_CAL_PACK_REF_MAX_V),
+            Volts(INA228_CAL_MID_REF_MAX_V),
+            Volts(INA228_CAL_MAX_VOFFSET_V)};
+        if (!captureVoltageOffsets(
+                inaPack.device(), inaMidpoint.device(),
+                Volts(command.firstReference),
+                Volts(command.secondReference),
+                limits, offsets))
+        {
+            Serial.println(F("POWER CAL: invalid reference, reading, or solved offset; aborting (no write)."));
+            return;
+        }
+        inaCal.packVoltageOffset = offsets.packVoltageOffset.value;
+        inaCal.midpointVoltageOffset = offsets.midpointVoltageOffset.value;
+        inaPersistCal();
+        Serial.println(F("POWER CAL: voltage offsets saved and applied."));
+        printPowerCalibration();
+        return;
+    }
+
+    if (command.operation == PowerCalibrationOperation::Current)
+    {
+        // The operator forces a known current through the pack shunt, signed to
+        // match the sensor's convention.
+        const Amps knownCurrent(command.firstReference);
+        const Amps measuredCurrent =
+            toAmps(MilliAmps(inaPack.device().readCurrent()));
+        float trim = inaCal.packShuntCal;
+        if (!calculateShuntTrim(
+                knownCurrent, measuredCurrent,
+                Amps(INA228_CAL_MIN_SHUNT_TRIM_A),
+                INA228_CAL_MIN_GAIN, INA228_CAL_MAX_GAIN, trim))
+        {
+            Serial.println(F("POWER CAL: invalid current pair or solved shunt trim; aborting (no write)."));
+            return;
+        }
+        inaCal.packShuntCal = trim;
+        inaPersistCal();
+        Serial.println(F("POWER CAL: Pack current calibration saved and applied."));
+        printPowerCalibration();
+        return;
+    }
+}
+
+static void inaSetup()
+{
+    // Addresses printed from the constants rather than restated, so the boot log
+    // cannot disagree with what begin() was actually given.
+    const bool packUp = inaPack.begin(&Wire);
+    Serial.print(F("INA: Pack (0x"));
+    Serial.print(INA228_PACK_I2C_ADDR, HEX);
+    Serial.println(packUp
+        ? F(") online, external shunt calibrated.")
+        : F(") init FAILED; BATT fields marked invalid."));
+
+    const bool midpointUp = inaMidpoint.begin(&Wire);
+    Serial.print(F("INA: Midpoint (0x"));
+    Serial.print(INA228_MID_I2C_ADDR, HEX);
+    Serial.println(midpointUp ? F(") online.") : F(") init FAILED."));
+
+    Serial.println(loadPowerCalibration(
+            EEPROM, EEPROM_INA_CAL_ADDR, POWER_CALIBRATION_STORAGE_RULES, inaCal)
+        ? F("POWER CAL: loaded from EEPROM.")
+        : F("POWER CAL: none/invalid; running identity trims."));
+}
+
+// Appends the BATT segment, or nothing.
+//
+// Recovery here is silent by design: a Serial print would splice boot text into
+// the open telemetry line. Each monitor carries its own retry state, so a good
+// Pack read cannot mask a wedged Midpoint.
+static void battAppendTelemetry(Print& out)
+{
+    const uint32_t now = millis();
+
+    // Both monitors are read and judged before either verdict is acted on, each
+    // against its own reading. Library units are mixed - readBusVoltage() V,
+    // readCurrent() mA, readPower() mW, readCharge() C - which is why each is
+    // wrapped in its own unit type.
+    const float packV = inaPack.isUp()
+        ? readCorrectedInaBusVoltage(
+            inaPack.device(), Volts(inaCal.packVoltageOffset)).value
+        : NAN;
+    const float midpointV = inaMidpoint.isUp()
+        ? readCorrectedInaBusVoltage(
+            inaMidpoint.device(), Volts(inaCal.midpointVoltageOffset)).value
+        : NAN;
+
+    // isUp gates the value because a monitor that is down was not read at all.
+    // The range check doubles as the liveness test: a failed I2C read returns
+    // Adafruit_BusIO_Register's -1 sentinel, which scales to about 52,429 V and
+    // so falls outside every plausible bound. That is load-bearing and implicit -
+    // were the sentinel ever 0, BATTERY_PACK_V_MIN is 0.0 and would accept it, so
+    // a dead monitor would read as a valid 0 V forever. Ina228Monitor::isPresent()
+    // is the explicit test if this needs hardening.
+    const bool packOk = inaPack.isUp() && batteryPackVoltageIsValid(packV);
+    const bool midpointOk = inaMidpoint.isUp() && batteryCellVoltageIsValid(midpointV);
+    inaPack.noteRead(packOk, &Wire, now);
+    inaMidpoint.noteRead(midpointOk, &Wire, now);
+
+    // Last trustworthy readings. The frame is emitted every tick regardless, the
+    // same append-only way as the Task 1 IMU segment (TASK-3 §4), so a monitor
+    // that has failed still carries its last good numbers with its valid byte
+    // clear rather than suppressing the other monitor's working fields.
+    if (packOk)
+    {
+        lastGoodPack.voltage = Volts(packV);
+        lastGoodPack.current = applyShuntTrim(
+            toAmps(MilliAmps(inaPack.device().readCurrent())), inaCal.packShuntCal);
+        lastGoodPack.power = applyShuntTrim(
+            toWatts(MilliWatts(inaPack.device().readPower())), inaCal.packShuntCal);
+        lastGoodPack.charge = applyShuntTrim(
+            Coulombs(inaPack.device().readCharge()), inaCal.packShuntCal);
+    }
+    if (midpointOk)
+        lastGoodMidpointVoltage = Volts(midpointV);
+
+    // The split needs both, so it is only recomputed when both are trustworthy;
+    // otherwise the last pair stands, flagged by the valid bytes.
+    BatterySplit split;
+    if (packOk && midpointOk &&
+        calculateBatterySplit(packV, midpointV, INA228_DIVERGENCE_THRESHOLD, split))
+    {
+        lastGoodSplit = split;
+    }
+
+    const BatteryTelemetryFrame frame = {
+        lastGoodPack.voltage,
+        lastGoodPack.current,
+        lastGoodPack.power,
+        lastGoodPack.charge,
+        Volts(lastGoodSplit.batteryA),
+        Volts(lastGoodSplit.batteryB),
+        lastGoodSplit.diverged,
+        PACK_REGION_NORMAL,
+        packOk,
+        midpointOk
+    };
+    appendBatteryTelemetry(out, frame);
+
+    latestBatteryValid = packOk && midpointOk;
+    if (!latestBatteryValid)
+        return;
+
+    // 3g.11: the bars show the two measured batteries, not the pack average, so
+    // a diverging pair is visible as two different fills rather than hidden by
+    // halving the total.
+    latestPackVoltage = frame.packVoltage;
+    latestBatteryLevel[0] = BatteryLevel::fromVoltage(frame.batteryAVoltage).value();
+    latestBatteryLevel[1] = BatteryLevel::fromVoltage(frame.batteryBVoltage).value();
 }
 
 static void imuSetup()
@@ -442,6 +739,7 @@ void setup()
         pinMode(STATUS_LED_PIN, OUTPUT);
         digitalWrite(STATUS_LED_PIN, LOW);
         imuSetup();
+        inaSetup();
         if (oledDisplay.initialize())
             oledDisplay.render(currentDisplayModel());
         else
@@ -573,10 +871,7 @@ void loop()
         else if (cmdType == 'C')
         {
             mainSerial->read();
-            mainSerial->readStringUntil('\n');
-            actuatorManager->startAutoCalibration();
-            if (leftSerial)  leftSerial->println("C");
-            if (rightSerial) rightSerial->println("C");
+            handleCalibrationCommand(mainSerial->readStringUntil('\n'));
         }
         else if (cmdType == 'H')
         {
@@ -678,10 +973,13 @@ void loop()
     // Cleared here and set below, so the OLED block at the top of the next
     // iteration sees a full slot ahead of it.
     telemetryJustEmitted = false;
-    if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS)
+    // One millis() for the whole tick. Re-reading it per subsystem gave each its
+    // own epoch, which is what let the power gate below drift past the period.
+    const uint32_t tickNow = millis();
+    if (telemetryPollDue(tickNow, lastTelemetry))
     {
         telemetryJustEmitted = true;
-        lastTelemetry = millis();
+        lastTelemetry = tickNow;
         mainSerial->print(roleName(currentRole));
         mainSerial->print(TELEMETRY_SEGMENT_DELIMITER);
         mainSerial->print(TELEMETRY_FIELD_SEPARATOR);
@@ -693,6 +991,12 @@ void loop()
             const ImuMeasurement measurement = imuSensor.measure();
             latestImuMeasurement = measurement;
             appendImuMeasurement(*mainSerial, measurement);
+            // Both monitors are read on this tick, at POWER_POLL_INTERVAL, which
+            // is the tick period (AC 3h.6). A second gate here once stamped its
+            // own timestamp later in the tick than lastTelemetry, so its period
+            // was effectively 50 ms + the actuator print + the IMU read and it
+            // dropped a BATT segment whenever that overran.
+            battAppendTelemetry(*mainSerial);
         }
         mainSerial->println();
         mainSerial->flush();  // ensure full line is sent before next loop (avoids two "LEFT;" in one buffer on host)

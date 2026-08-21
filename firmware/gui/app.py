@@ -105,15 +105,23 @@ class ImuRow:
         "gY",
         "gZ",
         "die°C",
-        "state",
+        "freshness",
     ]
 
     @staticmethod
     def resolve_state(imu, age_seconds: Optional[float]) -> tuple[str, str]:
+        """How much to trust the sample, from two different causes.
+
+        "down" is the sensor's own valid byte (TASK-1:105, "0 = sensor not
+        responding"); "stale" is that no line has arrived recently. These were
+        once "STALE" and "stale", distinguished only by letter case, which no
+        operator can read at a glance and no code can branch on safely. The
+        vocabulary now matches the BATT row's monitors column.
+        """
         if imu is None:
             return "—", ""
         if not imu.valid:
-            return "STALE", STATE_COLOR_STALE
+            return "down", STATE_COLOR_STALE
         if age_seconds is not None and age_seconds > SENSOR_STALE_S:
             return "stale", STATE_COLOR_STALE
         return "fresh", STATE_COLOR_OK
@@ -182,6 +190,142 @@ class ImuRow:
         self._state_lbl.configure(foreground=col)
 
 
+
+def _state_label(value) -> str:
+    """Defined values show their name; an unknown byte shows the raw number so a
+    newer firmware is visible rather than silently mapped onto something known."""
+    return value.name if hasattr(value, "name") else str(value)
+
+
+class BattRow:
+    """Pack and per-battery readout, in the same idiom as ImuRow.
+
+    Reuses ImuRow's latch so a value persists between frames, and the state
+    column reports how old the latched sample is: blanking the row would read as
+    a dropout rather than as a gap between updates.
+
+    region and diverge are parsed frame fields and are each shown in their own
+    column (AC 3g.10); the GUI reports what the firmware said rather than
+    re-deriving behaviour from the combination.
+
+    freshness is the one thing no frame can carry - how long ago the sample
+    arrived - so the column is named for that and holds nothing else. It shared a
+    cell with divergence once, under the name "state", which made the pair that
+    matters most unreportable: a pack that was diverging when it went quiet. A
+    column called "state" invites any state into it; one called "freshness" does
+    not.
+
+    Note what this column can and cannot distinguish. The firmware omits the BATT
+    segment when a monitor fails rather than sending one marked faulty, so a dead
+    INA228 and an unplugged leader both arrive as silence. It means "we stopped
+    hearing", and cannot be decomposed further without a wire change.
+    """
+
+    # The first four are the Pack monitor's own measurements, so they carry the
+    # prefix rather than leaving bare units to be read as a units row. Charge is
+    # named separately because it is an accumulator, not an instantaneous value.
+    COLS = ["", "pack V", "pack A", "pack W", "charge C", "battA", "battB",
+            "region", "diverge", "pack", "mid", "freshness"]
+    # Numeric columns fit in 7; the word columns do not. "DIVERGED" is 8, and a
+    # clipped fault label is worse than none.
+    COL_WIDTHS = {"region": 8, "diverge": 9, "pack": 6, "mid": 6, "freshness": 9}
+    # Columns whose colour carries meaning, so their labels are kept by name
+    # rather than by an offset from the end of COLS.
+    COLOURED = ("diverge", "pack", "mid", "freshness")
+
+    @staticmethod
+    def resolve_state(battery, age_seconds: Optional[float]) -> tuple[str, str]:
+        """How old the latched sample is. Says nothing about its contents."""
+        if battery is None:
+            return "—", ""
+        if age_seconds is not None and age_seconds > SENSOR_STALE_S:
+            return "stale", STATE_COLOR_STALE
+        return "fresh", STATE_COLOR_OK
+
+    @staticmethod
+    def resolve_monitor(valid: Optional[bool]) -> tuple[str, str]:
+        """One monitor's liveness, straight from its own valid byte.
+
+        A column each rather than one combined cell, because the two monitors
+        fail and recover independently — the same reason the frame carries two
+        bytes instead of one four-valued field. This is what the firmware knows;
+        freshness is only what the GUI can infer.
+        """
+        if valid is None:
+            return "—", ""
+        return ("up", STATE_COLOR_OK) if valid else ("DOWN", STATE_COLOR_STALE)
+
+    @staticmethod
+    def resolve_divergence(battery) -> tuple[str, str]:
+        """The frame's divergence field, reported on its own terms. Whether it is
+        still current is the freshness column's business, not this one's."""
+        if battery is None:
+            return "—", ""
+        if battery.divergence:
+            return "DIVERGED", STATE_COLOR_STALE
+        return "ok", STATE_COLOR_OK
+
+    def __init__(self, parent: tk.Widget):
+        self._sample = None
+        self._sample_timestamp: Optional[float] = None
+        ttk.Label(parent, text="BATT", font=FONT_SENSOR_LABEL, width=6, anchor="w").grid(
+            row=3, column=0, padx=4, pady=2, sticky="w"
+        )
+        for c, h in enumerate(self.COLS):
+            if not h:
+                continue
+            ttk.Label(parent, text=h, font=FONT_SENSOR_HEADER, anchor="e").grid(
+                row=2, column=c, padx=4, sticky="e"
+            )
+        self._vars = [tk.StringVar(value="—") for _ in self.COLS]
+        for c in range(1, len(self.COLS)):
+            ttk.Label(
+                parent,
+                textvariable=self._vars[c],
+                font=FONT_SENSOR_VALUE,
+                width=self.COL_WIDTHS.get(self.COLS[c], 7),
+                anchor="e",
+            ).grid(row=3, column=c, padx=4)
+        self._lbl = {name: parent.grid_slaves(row=3, column=self.COLS.index(name))[0]
+                     for name in self.COLOURED}
+
+    def update(self, battery, now: float):
+        self._sample, self._sample_timestamp = ImuRow.latch_sample(
+            self._sample, self._sample_timestamp, battery, now
+        )
+        battery = self._sample
+        age_seconds = (
+            None if self._sample_timestamp is None else now - self._sample_timestamp
+        )
+        if battery is None:
+            for v in self._vars[1:]:
+                v.set("—")
+            for lbl in self._lbl.values():
+                lbl.configure(foreground="")
+            return
+        fmt = [
+            None,
+            f"{battery.pack_volts:.2f}",
+            f"{battery.pack_current_amperes:+.2f}",
+            f"{battery.pack_power_watts:.1f}",
+            f"{battery.pack_charge_coulombs:.0f}",
+            f"{battery.battery_a_volts:.2f}",
+            f"{battery.battery_b_volts:.2f}",
+            _state_label(battery.pack_region),
+        ]
+        for c, text in enumerate(fmt):
+            if text is not None:
+                self._vars[c].set(text)
+        for name, (text, colour) in (
+            ("diverge", self.resolve_divergence(battery)),
+            ("pack", self.resolve_monitor(battery.pack_valid)),
+            ("mid", self.resolve_monitor(battery.midpoint_valid)),
+            ("freshness", self.resolve_state(battery, age_seconds)),
+        ):
+            self._vars[self.COLS.index(name)].set(text)
+            self._lbl[name].configure(foreground=colour)
+
+
 class KrabbyTestGUI(tk.Tk):
     def __init__(self, port: Optional[str] = None, baud: int = DEFAULT_BAUD):
         super().__init__()
@@ -220,6 +364,7 @@ class KrabbyTestGUI(tk.Tk):
         imu_frame = ttk.Frame(self, padding=(8, 0))
         imu_frame.pack(fill="x")
         self._imu_row = ImuRow(imu_frame)
+        self._batt_row = BattRow(imu_frame)
 
         sep = ttk.Separator(self, orient="horizontal")
         sep.pack(fill="x", pady=4)
@@ -282,7 +427,9 @@ class KrabbyTestGUI(tk.Tk):
             jt = self._mcu.joints.get(name)
             jr.update_from_telemetry(jt)
 
-        self._imu_row.update(self._mcu.imu, time.time())
+        now = time.time()
+        self._imu_row.update(self._mcu.imu, now)
+        self._batt_row.update(self._mcu.battery, now)
 
         if self._mcu.last_error:
             self._status_var.set(f"Error: {self._mcu.last_error}")

@@ -32,10 +32,10 @@ _REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from firmware.bench_tests import calibrate, capture, checks, task1, task2  # noqa: E402
+from firmware.bench_tests import calibrate, capture, checks, task1, task2, task3  # noqa: E402
 from firmware.bench_tests.harness import choose_start, load_results, run_suite  # noqa: E402
 
-SUITES = {"task1": task1.TESTS, "task2": task2.TESTS}
+SUITES = {"task1": task1.TESTS, "task2": task2.TESTS, "task3": task3.TESTS}
 # Names as the firmware spells them (arduino.ino ACT_LIST_FRONT and the follower
 # lists); handleJog compares case-sensitively.
 def _joint(value: str) -> str:

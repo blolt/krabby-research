@@ -24,10 +24,11 @@ class TestResolveImuState:
         assert text == "—"
         assert col == ""
 
-    def test_sensor_stale_beats_link_fresh(self):
-        # valid=0 (sensor present, not responding) is STALE even at age 0.
+    def test_sensor_down_beats_link_fresh(self):
+        # valid=0 (sensor present, not responding) reads "down" even at age 0,
+        # and is a different word from "stale" rather than a different case.
         text, col = ImuRow.resolve_state(_sample(valid=False), 0.0)
-        assert text == "STALE"
+        assert text == "down"
         assert col == STATE_COLOR_STALE
 
     def test_link_stale_when_age_exceeds_window(self):

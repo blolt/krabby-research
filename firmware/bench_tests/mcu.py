@@ -132,6 +132,11 @@ def joints_of(sample: Sample) -> list:
     return parse_telemetry_line(sample.line).joints
 
 
+def battery_of(sample: Sample):
+    """Parsed BATT segment from one line, or None when the frame was omitted."""
+    return parse_telemetry_line(sample.line).battery
+
+
 def parse_full(raw: str):
     """Everything on one line — joints, IMU, and the bench raw burst."""
     return parse_telemetry_line(raw)

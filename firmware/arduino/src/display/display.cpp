@@ -16,8 +16,10 @@ ControllerDisplayState::ControllerDisplayState()
 }
 
 StatusDisplayModel::StatusDisplayModel()
-    : role(StatusDisplayRole::Unknown), legs{}, batteryLevel{0.0f, 0.0f},
-      packVoltage(), roll(), pitch(), frontPresent(false),
+    : role(StatusDisplayRole::Unknown), legs{},
+      batteryFill{BATTERY_FILL_NO_SIGNAL, BATTERY_FILL_NO_SIGNAL},
+      packDecivolts(PACK_DECIVOLTS_NO_SIGNAL),
+      roll(), pitch(), frontPresent(false),
       leftPresent(false), rightPresent(false)
 {
     for (size_t leg = 0; leg < CONTROLLER_ACTUATOR_COUNT; ++leg)
@@ -93,7 +95,7 @@ bool hasDisconnectedActuator(
 bool statusDisplayModelsEqual(const StatusDisplayModel &left, const StatusDisplayModel &right)
 {
     if (left.role != right.role ||
-        left.packVoltage.value != right.packVoltage.value ||
+        left.packDecivolts != right.packDecivolts ||
         left.roll.value != right.roll.value ||
         left.pitch.value != right.pitch.value ||
         left.frontPresent != right.frontPresent ||
@@ -101,13 +103,24 @@ bool statusDisplayModelsEqual(const StatusDisplayModel &left, const StatusDispla
         left.rightPresent != right.rightPresent)
         return false;
     for (size_t battery = 0; battery < 2; ++battery)
-        if (left.batteryLevel[battery] != right.batteryLevel[battery])
+        if (left.batteryFill[battery] != right.batteryFill[battery])
             return false;
     for (size_t leg = 0; leg < CONTROLLER_ACTUATOR_COUNT; ++leg)
         for (size_t joint = 0; joint < STATUS_DISPLAY_JOINTS_PER_LEG; ++joint)
             if (left.legs[leg][joint] != right.legs[leg][joint])
                 return false;
     return true;
+}
+
+// Quantize a 0..1 level to the pixel count the bar will actually draw. Doing it
+// here rather than in the renderer is what lets statusDisplayModelsEqual compare
+// what is drawn instead of the float that produced it.
+int8_t batteryFillPixels(float level)
+{
+    if (!isfinite(level))
+        return 0;
+    const float clamped = level < 0.0f ? 0.0f : (level > 1.0f ? 1.0f : level);
+    return static_cast<int8_t>(lround(SSD1306_BATTERY_FILL_WIDTH * clamped));
 }
 
 const char *statusDisplayRoleLabel(StatusDisplayRole role)
@@ -146,10 +159,26 @@ StatusDisplayModel buildStatusDisplayModel(
     const ControllerDisplayState &right,
     bool rightAssigned,
     const ImuMeasurement &measurement,
+    Volts packVoltage,
+    const float (&batteryLevel)[2],
+    bool batteryValid,
     uint32_t nowMilliseconds)
 {
     StatusDisplayModel model;
     model.role = role;
+
+    // batteryValid is both monitors' liveness from the most recent poll, which
+    // the firmware already knows. It replaced a 500 ms expiry that inferred the
+    // same fact from elapsed time - a threshold only needed because the poll used
+    // to omit the frame rather than report the failure.
+    model.packDecivolts =
+        (batteryValid && isfinite(packVoltage.value))
+            ? static_cast<int16_t>(lround(packVoltage.value * 10.0f))
+            : PACK_DECIVOLTS_NO_SIGNAL;
+    for (size_t battery = 0; battery < 2; ++battery)
+        model.batteryFill[battery] =
+            batteryValid ? batteryFillPixels(batteryLevel[battery])
+                         : BATTERY_FILL_NO_SIGNAL;
     model.frontPresent = frontPresent;
     model.leftPresent =
         isControllerDisplayStateFresh(left, leftAssigned, nowMilliseconds);

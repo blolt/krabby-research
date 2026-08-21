@@ -417,3 +417,68 @@ def jog_then_observe_idle(port: str, joint: str, pwm: int,
 
 
 CHECKS["latch"] = jog_then_observe_idle
+
+
+# ------------------------------------------------------------------ power bus
+def battery_report(port: str, lines: int = 40) -> Measurement:
+    """Latest BATT frame, and how many monitors are answering.
+
+    The frame is emitted every tick regardless of whether the monitors answered,
+    so its presence says nothing about them: pack_valid and midpoint_valid do.
+    Reporting a count rather than a boolean is what makes 3d.1 checkable — two
+    devices must answer at two distinct addresses, and one address answering
+    twice looks identical on the wire unless you count them.
+
+    When a validity byte is 0 that monitor's fields carry its last trustworthy
+    reading, which looks entirely plausible. Do not calibrate against them.
+    """
+    with mcu.open_port(port) as ser:
+        samples = mcu.collect(ser, lines)
+    if not samples:
+        return Measurement(text="no telemetry", ok=False)
+
+    frames = [b for b in (mcu.battery_of(s) for s in samples) if b is not None]
+    if not frames:
+        return Measurement(
+            values={"monitors": 0, "frames": 0, "lines": len(samples)},
+            text=(f"no BATT segment in {len(samples)} lines — the leader is not "
+                  "emitting one at all (wrong board, or telemetry stopped)"),
+            ok=False,
+        )
+
+    latest = frames[-1]
+    # Straight from the frame's own validity bytes rather than inferred from the
+    # frame's presence, which no longer carries that information.
+    monitors = int(latest.pack_valid) + int(latest.midpoint_valid)
+    down = [n for n, ok in (("pack", latest.pack_valid),
+                            ("midpoint", latest.midpoint_valid)) if not ok]
+    return Measurement(
+        ok=(monitors == 2),
+        values={
+            "monitors": monitors,
+            "pack_valid": latest.pack_valid,
+            "midpoint_valid": latest.midpoint_valid,
+            "frames": len(frames),
+            "lines": len(samples),
+            "pack_volts": latest.pack_volts,
+            "pack_amps": latest.pack_current_amperes,
+            "pack_watts": latest.pack_power_watts,
+            "pack_coulombs": latest.pack_charge_coulombs,
+            "battery_a": latest.battery_a_volts,
+            "battery_b": latest.battery_b_volts,
+            "diverged": latest.divergence,
+        },
+        text=(f"{len(frames)}/{len(samples)} lines carry BATT   "
+              f"monitors up: {monitors}/2"
+              + (f"   DOWN: {', '.join(down)}  (fields below are last-good, "
+                 "do not calibrate against them)" if down else "") + "\n"
+              f"  pack   {latest.pack_volts:.3f} V  {latest.pack_current_amperes:+.3f} A  "
+              f"{latest.pack_power_watts:.2f} W  {latest.pack_charge_coulombs:.1f} C\n"
+              f"  batt A {latest.battery_a_volts:.3f} V   batt B {latest.battery_b_volts:.3f} V"
+              f"   diverged={latest.divergence}\n"
+              f"  derived: A+B = {latest.battery_a_volts + latest.battery_b_volts:.3f} V "
+              f"against pack {latest.pack_volts:.3f} V"),
+    )
+
+
+CHECKS["battery"] = battery_report

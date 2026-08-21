@@ -53,6 +53,17 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/test_board_pins
     arduino/src/actuator/test_pot_validity
     arduino/test_units
+    arduino/src/power_bus/test_ina_recovery
+    arduino/src/power_bus/test_battery_level
+    arduino/src/power_bus/test_battery_split
+    arduino/src/power_bus/test_battery_telemetry
+    arduino/src/power_bus/test_ina_pack_config
+    arduino/src/power_bus/test_ina_pack_lifecycle
+    arduino/src/power_bus/test_ina_voltage
+    arduino/src/power_bus/test_power_calibration_protocol
+    arduino/src/power_bus/test_power_calibration_storage
+    arduino/src/power_bus/test_shunt_calibration
+    arduino/src/telemetry/test_telemetry_poll
 )
 
 # The manifest and the directory must agree in both directions: a listed test
