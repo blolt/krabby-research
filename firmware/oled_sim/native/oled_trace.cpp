@@ -20,7 +20,7 @@ struct SimulatedState
 {
     SimulatedState()
         : role(ROLE_FRONT), rollDegrees(0.0f), pitchDegrees(0.0f),
-          isImuValid(true), batteryVolts{13.3f, 13.3f},
+          isImuValid(true), isBatteryValid(true), batteryVolts{13.3f, 13.3f},
           isFrontPresent(true), isLeftPresent(true), isRightPresent(true), actuators{}
     {
         for (ActuatorId actuatorId = ActuatorId::FLHY;
@@ -33,6 +33,7 @@ struct SimulatedState
     float rollDegrees;
     float pitchDegrees;
     bool isImuValid;
+    bool isBatteryValid;
     float batteryVolts[2];
     bool isFrontPresent;
     bool isLeftPresent;
@@ -100,6 +101,7 @@ bool applyField(SimulatedState &state, const char *key, char *value)
     else if (strcmp(key, "roll") == 0) state.rollDegrees = static_cast<float>(atof(value));
     else if (strcmp(key, "pitch") == 0) state.pitchDegrees = static_cast<float>(atof(value));
     else if (strcmp(key, "imu") == 0) state.isImuValid = atoi(value) != 0;
+    else if (strcmp(key, "battery_valid") == 0) state.isBatteryValid = atoi(value) != 0;
     else if (strcmp(key, "battery") == 0) return parsePair(value, state.batteryVolts);
     else if (strcmp(key, "front") == 0)
         state.isFrontPresent = atoi(value) != 0;
@@ -168,7 +170,8 @@ DisplayFrame buildFrame(const SimulatedState &state)
         MOVE_THRESHOLD);
     const Volts batteryVoltage[2] = {
         Volts(state.batteryVolts[0]), Volts(state.batteryVolts[1])};
-    setBatteryVoltages(frame, batteryVoltage);
+    if (state.isBatteryValid)
+        setBatteryVoltages(frame, batteryVoltage);
     return frame;
 }
 
