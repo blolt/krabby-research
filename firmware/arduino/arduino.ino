@@ -18,7 +18,6 @@
 #include "src/imu/imu_constants.h"
 #include "src/telemetry.h"
 #include <Adafruit_INA228.h>
-#include "src/power_bus/battery_level.h"
 #include "src/power_bus/battery_split.h"
 #include "src/power_bus/ina228_adapter.h"
 #include "src/power_bus/ina_voltage.h"
@@ -141,8 +140,8 @@ bool wasTelemetryEmittedOnPreviousLoop = false;
 // the external shunt; Midpoint senses only the series junction's bus voltage,
 // its current inputs tied to Pack-. Leader-only, sharing the IMU/OLED bus.
 // Each owns its own liveness so one missing board cannot suppress the other.
-Ina228Monitor inaPack(INA228_PACK_I2C_ADDR, /*configuresShunt=*/true);
-Ina228Monitor inaMidpoint(INA228_MID_I2C_ADDR, /*configuresShunt=*/false);
+Ina228Adapter inaPack(INA228_PACK_I2C_ADDR, Ina228Role::Pack);
+Ina228Adapter inaMidpoint(INA228_MID_I2C_ADDR, Ina228Role::Midpoint);
 
 // Per-board VBUS offset trims and the shunt scale (AC 3i), captured on the bench
 // against a DMM and persisted with a magic-last write so a torn write reloads as
@@ -161,10 +160,9 @@ PowerCalibrationData inaCal = identityPowerCalibration();
 // the power-poll cadence while the OLED redraws on its own, so the renderer
 // reads the last measurement rather than sampling the monitors itself.
 Volts latestPackVoltage;
-float latestBatteryLevel[2] = {0.0f, 0.0f};
-// Both monitors' liveness from the most recent poll, which is what the OLED
-// needs to know. No timestamp: the poll reports the failure directly.
-bool latestBatteryValid = false;
+Volts latestBatteryVoltage[2];
+bool latestPackVoltageValid = false;
+bool latestBatteryValid[2] = {false, false};
 // Last trustworthy per-monitor readings, so a failed monitor's fields carry its
 // last good numbers rather than the driver's failure sentinel.
 struct LastGoodPack { Volts voltage; Amps current; Watts power; Coulombs charge; };
@@ -249,6 +247,58 @@ static void inaPersistCal()
         EEPROM, EEPROM_INA_CAL_ADDR, POWER_CALIBRATION_STORAGE_RULES, inaCal);
 }
 
+static bool readInaRegister(
+    uint8_t address, uint8_t reg, uint8_t *bytes, uint8_t byteCount)
+{
+    Wire.beginTransmission(address);
+    Wire.write(reg);
+    if (Wire.endTransmission(false) != 0 ||
+        Wire.requestFrom(address, byteCount) != byteCount)
+        return false;
+
+    for (uint8_t i = 0; i < byteCount; ++i)
+        bytes[i] = Wire.read();
+    return true;
+}
+
+static void printInaDiagnostics(const __FlashStringHelper *label, Ina228Adapter& monitor)
+{
+    uint8_t adcConfig[2];
+    uint8_t vbus[3];
+    const bool adcOk = readInaRegister(
+        monitor.address(), INA2XX_REG_ADCCFG, adcConfig, sizeof(adcConfig));
+    const bool vbusOk = readInaRegister(
+        monitor.address(), INA2XX_REG_VBUS, vbus, sizeof(vbus));
+
+    Serial.print(F("POWER INA: "));
+    Serial.print(label);
+    if (!adcOk || !vbusOk)
+    {
+        Serial.println(F(" register read failed"));
+        return;
+    }
+
+    const uint16_t adcRaw =
+        (static_cast<uint16_t>(adcConfig[0]) << 8) | adcConfig[1];
+    const uint32_t vbusRaw =
+        (static_cast<uint32_t>(vbus[0]) << 16) |
+        (static_cast<uint32_t>(vbus[1]) << 8) |
+        vbus[2];
+    const float decodedVoltage =
+        static_cast<float>(vbusRaw >> 4) * 195.3125f / 1000000.0f;
+
+    Serial.print(F(" adc=0x"));
+    Serial.print(adcRaw, HEX);
+    Serial.print(F(" mode=0x"));
+    Serial.print(adcRaw >> 12, HEX);
+    Serial.print(F(" vbus=0x"));
+    Serial.print(vbusRaw, HEX);
+    Serial.print(F(" decoded="));
+    Serial.print(decodedVoltage, 4);
+    Serial.print(F(" library="));
+    Serial.println(monitor.device().readBusVoltage(), 4);
+}
+
 static void printPowerCalibration()
 {
     // F() keeps these literals in flash; this bench-only text would otherwise
@@ -256,6 +306,8 @@ static void printPowerCalibration()
     Serial.print(F("POWER CAL: packVoltageOffset=")); Serial.print(inaCal.packVoltageOffset, 4);
     Serial.print(F(" midpointVoltageOffset="));      Serial.print(inaCal.midpointVoltageOffset, 4);
     Serial.print(F(" packShuntCal="));               Serial.println(inaCal.packShuntCal, 5);
+    printInaDiagnostics(F("Pack"), inaPack);
+    printInaDiagnostics(F("Midpoint"), inaMidpoint);
 }
 
 static void printPowerCalibrationUsage()
@@ -429,7 +481,7 @@ static void battAppendTelemetry(Print& out)
     // Adafruit_BusIO_Register's -1 sentinel, which scales to about 52,429 V and
     // so falls outside every plausible bound. That is load-bearing and implicit -
     // were the sentinel ever 0, BATTERY_PACK_V_MIN is 0.0 and would accept it, so
-    // a dead monitor would read as a valid 0 V forever. Ina228Monitor::isPresent()
+    // a dead monitor would read as a valid 0 V forever. Ina228Adapter::isPresent()
     // is the explicit test if this needs hardening.
     const bool packOk = inaPack.isUp() && batteryPackVoltageIsValid(packV);
     const bool midpointOk = inaMidpoint.isUp() && batteryCellVoltageIsValid(midpointV);
@@ -456,8 +508,9 @@ static void battAppendTelemetry(Print& out)
     // The split needs both, so it is only recomputed when both are trustworthy;
     // otherwise the last pair stands, flagged by the valid bytes.
     BatterySplit split;
-    if (packOk && midpointOk &&
-        calculateBatterySplit(packV, midpointV, INA228_DIVERGENCE_THRESHOLD, split))
+    const bool splitOk = packOk && midpointOk &&
+        calculateBatterySplit(packV, midpointV, INA228_DIVERGENCE_THRESHOLD, split);
+    if (splitOk)
     {
         lastGoodSplit = split;
     }
@@ -476,16 +529,20 @@ static void battAppendTelemetry(Print& out)
     };
     appendBatteryTelemetry(out, frame);
 
-    latestBatteryValid = packOk && midpointOk;
-    if (!latestBatteryValid)
-        return;
+    // A working midpoint can disprove the Pack reading. A missing midpoint
+    // cannot: Pack voltage remains independently useful on its own.
+    latestPackVoltageValid =
+        packVoltageIsDisplayable(packOk, midpointOk, splitOk);
+    if (packOk)
+        latestPackVoltage = Volts(packV);
 
-    // 3g.11: the bars show the two measured batteries, not the pack average, so
-    // a diverging pair is visible as two different fills rather than hidden by
-    // halving the total.
-    latestPackVoltage = frame.packVoltage;
-    latestBatteryLevel[0] = BatteryLevel::fromVoltage(frame.batteryAVoltage).value();
-    latestBatteryLevel[1] = BatteryLevel::fromVoltage(frame.batteryBVoltage).value();
+    latestBatteryValid[0] = midpointOk;
+    if (midpointOk)
+        latestBatteryVoltage[0] = Volts(midpointV);
+
+    latestBatteryValid[1] = splitOk;
+    if (splitOk)
+        latestBatteryVoltage[1] = Volts(split.batteryB);
 }
 
 static void imuSetup()

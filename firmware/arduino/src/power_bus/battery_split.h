@@ -36,6 +36,12 @@ inline bool batteryCellVoltageIsValid(float cellVoltage)
         cellVoltage <= BATTERY_CELL_V_MAX;
 }
 
+inline bool packVoltageIsDisplayable(
+    bool packValid, bool midpointValid, bool splitValid)
+{
+    return packValid && (!midpointValid || splitValid);
+}
+
 inline bool calculateBatterySplit(
     float packVoltage,
     float midpointVoltage,

@@ -62,6 +62,11 @@ def _measured_against_meter(prompt: str, question: str):
     return run
 
 
+def _recovers_after_replug(port: str, **_) -> Result:
+    measurement = checks.ina_reconnect(port)
+    return Result(measurement.ok, measurement.text)
+
+
 TESTS = [
     # ---- safety and assembly, in the order the loom is built
     BenchTest(
@@ -222,5 +227,14 @@ TESTS = [
         run=_measured_against_meter(
             "measure the series junction with a DMM",
             "does reported midpoint voltage match, and the derived split look right?"),
+    ),
+    BenchTest(
+        ac="e2e.ina-reconnect", title="INA228 monitors and OLED recover after disconnects",
+        criterion="Each INA228 can disappear and return without resetting the Mega",
+        setup="Both monitors and the OLED connected. Disconnect only the prompted Qwiic "
+              "connector; do not disturb pack, shunt, or Kelvin wiring.",
+        expect="The matching validity byte clears while absent, both bytes recover after "
+               "reconnection, and the OLED removes and restores power data.",
+        run=_recovers_after_replug,
     ),
 ]
