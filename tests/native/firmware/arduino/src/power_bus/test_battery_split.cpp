@@ -142,6 +142,14 @@ static void test_cell_voltage_validity_bounds()
     TEST_ASSERT_FALSE(batteryCellVoltageIsValid(INFINITY));
 }
 
+static void test_pack_display_rejects_a_pair_contradicted_by_midpoint()
+{
+    TEST_ASSERT_TRUE(packVoltageIsDisplayable(true, false, false));
+    TEST_ASSERT_TRUE(packVoltageIsDisplayable(true, true, true));
+    TEST_ASSERT_FALSE(packVoltageIsDisplayable(true, true, false));
+    TEST_ASSERT_FALSE(packVoltageIsDisplayable(false, true, false));
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -149,6 +157,7 @@ int main()
     RUN_TEST(test_a_bad_midpoint_does_not_condemn_the_pack);
     RUN_TEST(test_an_implausible_pair_is_not_a_midpoint_fault);
     RUN_TEST(test_cell_voltage_validity_bounds);
+    RUN_TEST(test_pack_display_rejects_a_pair_contradicted_by_midpoint);
     RUN_TEST(test_exact_and_fractional_splits_use_pack_minus_midpoint);
     RUN_TEST(test_voltage_boundaries_are_inclusive);
     RUN_TEST(test_divergence_threshold_is_strict);

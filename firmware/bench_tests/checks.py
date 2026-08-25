@@ -565,3 +565,68 @@ def battery_report(port: str, lines: int = 40) -> Measurement:
 
 
 CHECKS["battery"] = battery_report
+
+
+def _battery_state_count(samples, pack_valid: bool, midpoint_valid: bool):
+    frames = [b for b in (mcu.battery_of(s) for s in samples) if b is not None]
+    matching = sum(
+        1 for frame in frames
+        if frame.pack_valid is pack_valid and
+        frame.midpoint_valid is midpoint_valid
+    )
+    return matching, len(frames)
+
+
+def ina_reconnect(port: str) -> Measurement:
+    """Disconnect and recover each INA228 without reopening serial."""
+    with mcu.open_port(port) as ser:
+        print("     waiting for both INA228 monitors...")
+        baseline = mcu.collect(ser, 40)
+
+        input("     UNPLUG only Pack INA228 Qwiic (0x41), then press Enter > ")
+        pack_absent = mcu.collect(ser, 80)
+        input("     RECONNECT Pack INA228 Qwiic, then press Enter > ")
+        pack_recovered = mcu.collect(ser, 120)
+        pack_visual = input(
+            "     did the OLED lose and restore power data without a Mega reset? [y/N] > "
+        ).strip().lower().startswith("y")
+
+        input("     UNPLUG only Midpoint INA228 Qwiic (0x40), then press Enter > ")
+        midpoint_absent = mcu.collect(ser, 80)
+        input("     RECONNECT Midpoint INA228 Qwiic, then press Enter > ")
+        midpoint_recovered = mcu.collect(ser, 120)
+        midpoint_visual = input(
+            "     did the OLED lose and restore power data without a Mega reset? [y/N] > "
+        ).strip().lower().startswith("y")
+
+    phases = {
+        "baseline": _battery_state_count(baseline, True, True),
+        "pack_absent": _battery_state_count(pack_absent, False, True),
+        "pack_recovered": _battery_state_count(pack_recovered, True, True),
+        "midpoint_absent": _battery_state_count(midpoint_absent, True, False),
+        "midpoint_recovered": _battery_state_count(midpoint_recovered, True, True),
+    }
+    minimums = {
+        "baseline": 20,
+        "pack_absent": 40,
+        "pack_recovered": 40,
+        "midpoint_absent": 40,
+        "midpoint_recovered": 40,
+    }
+    telemetry_ok = all(phases[name][0] >= minimums[name] for name in phases)
+    detail = "; ".join(
+        f"{name.replace('_', ' ')} {matching}/{frames}"
+        for name, (matching, frames) in phases.items()
+    )
+    return Measurement(
+        values={
+            **{f"{name}_matching": value[0] for name, value in phases.items()},
+            "pack_oled_recovered": pack_visual,
+            "midpoint_oled_recovered": midpoint_visual,
+        },
+        text=(f"{detail}; OLED pack={pack_visual}, midpoint={midpoint_visual}"),
+        ok=telemetry_ok and pack_visual and midpoint_visual,
+    )
+
+
+CHECKS["ina-reconnect"] = ina_reconnect

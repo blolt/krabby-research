@@ -13,9 +13,22 @@ static_assert(!std::is_convertible<float, Volts>::value,
 void setUp() {}
 void tearDown() {}
 
+struct RecordingIna
+{
+    float voltage;
+    int reads;
+
+    float readBusVoltage()
+    {
+        ++reads;
+        return voltage;
+    }
+};
+
 static float corrected(float rawVoltage, float offset)
 {
-    return correctInaBusVoltage(Volts(rawVoltage), Volts(offset)).value();
+    RecordingIna ina = {rawVoltage, 0};
+    return readCorrectedInaBusVoltage(ina, Volts(offset)).value();
 }
 
 static void test_offset_correction_applies_once()
@@ -91,18 +104,6 @@ static void test_nonfinite_corrected_inputs_propagate_for_caller_validation()
     TEST_ASSERT_TRUE(isnan(corrected(24.0f, nan)));
     TEST_ASSERT_TRUE(isinf(corrected(24.0f, inf)));
 }
-
-struct RecordingIna
-{
-    float voltage;
-    int reads;
-
-    float readBusVoltage()
-    {
-        ++reads;
-        return voltage;
-    }
-};
 
 static VoltageCalibrationLimits calibrationLimits()
 {
