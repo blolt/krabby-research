@@ -44,6 +44,7 @@ IMU tilt, then calls `buildDisplayFrame`. Simulated battery voltages pass throug
 | `role` | `str` | `FRONT`/`LEFT`/`RIGHT`/`UNKWN` | ≤5 glyphs |
 | `legs` | `[(y,h,k)]×6` | 6 legs `[FL,FR,ML,MR,RL,RR]`, each (yaw, hip, knee) | `hold`/`extend`/`retract`/`disc`/`unverified` |
 | `battery_volts` | `(float,float)` | battery A/B voltages | volts; negative means unavailable |
+| `battery_valid` | `bool` | simulated monitor readings available | — |
 | `front`,`left`,`right` | `bool` | board present/detected (v0.2 groups by side) | — |
 | `roll`,`pitch` | `int` | degrees from IMU | **clamped ±99** for display |
 | `imu_valid` | `bool` | IMU measurement succeeded | — |

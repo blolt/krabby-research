@@ -126,3 +126,12 @@ def test_an_invalid_scene_is_rejected_before_it_reaches_the_binary():
         KrabState(legs=[("hold", "hold", "hold")] * 5).to_fields()
     with pytest.raises(ValueError):
         KrabState(battery_volts=(12.7,)).to_fields()
+
+
+def test_unavailable_monitors_clear_voltage_labels_and_replay_cleanly():
+    states = [KrabState(), KrabState(battery_valid=False), KrabState()]
+    frames = render_sequence(states)
+    for state, frame in zip(states, frames):
+        assert lit(frame) == lit(render(state))
+    calls, = trace([states[1]])
+    assert sum(call.endswith("--.-V") for call in calls) == 3
