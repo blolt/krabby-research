@@ -38,6 +38,17 @@ struct DisplayFrame
 
 void setBatteryVoltages(DisplayFrame &frame, const Volts (&voltage)[2]);
 
+// Pack voltage and battery A remain useful when only one monitor is working.
+void setBatteryMeasurements(
+    DisplayFrame &frame,
+    Volts packVoltage,
+    bool isPackVoltageValid,
+    const Volts (&voltage)[2],
+    const bool (&isBatteryValid)[2]);
+
+int8_t batteryFillPixels(float level);
+int16_t displayPackDecivolts(Volts voltage);
+
 DisplayFrame buildDisplayFrame(
     BoardRole role,
     const ControllerFreshnessTracker (&controllerFreshnessTrackers)[BOARD_ROLE_COUNT],

@@ -2,8 +2,8 @@
 
 #include "unity.h"
 
-#include "src/power_bus/battery_split.h"
-#include "src/power_bus/power_bus_constants.h"
+#include "src/power_monitor/battery_split.h"
+#include "src/power_monitor/power_monitor_constants.h"
 
 void setUp() {}
 void tearDown() {}
@@ -13,17 +13,17 @@ static void assertSplit(
     float midpointVoltage,
     float expectedA,
     float expectedB,
-    bool expectedDivergence)
+    bool expectedIsDiverged)
 {
     BatterySplit result = {-1.0f, -1.0f, false};
     TEST_ASSERT_TRUE(calculateBatterySplit(
         packVoltage,
         midpointVoltage,
-        INA228_DIVERGENCE_THRESHOLD,
+        BATTERY_DIVERGENCE_THRESHOLD,
         result));
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, expectedA, result.batteryA);
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, expectedB, result.batteryB);
-    TEST_ASSERT_EQUAL(expectedDivergence, result.diverged);
+    TEST_ASSERT_EQUAL(expectedIsDiverged, result.isDiverged);
     TEST_ASSERT_FLOAT_WITHIN(
         0.00001f, packVoltage, result.batteryA + result.batteryB);
 }
@@ -56,10 +56,10 @@ static void test_non_finite_inputs_are_rejected_without_mutating_result()
     const float nan = std::numeric_limits<float>::quiet_NaN();
     const float inf = std::numeric_limits<float>::infinity();
     const float invalidInputs[][3] = {
-        {nan, 12.0f, INA228_DIVERGENCE_THRESHOLD.value()},
-        {inf, 12.0f, INA228_DIVERGENCE_THRESHOLD.value()},
-        {24.0f, nan, INA228_DIVERGENCE_THRESHOLD.value()},
-        {24.0f, inf, INA228_DIVERGENCE_THRESHOLD.value()},
+        {nan, 12.0f, BATTERY_DIVERGENCE_THRESHOLD.value()},
+        {inf, 12.0f, BATTERY_DIVERGENCE_THRESHOLD.value()},
+        {24.0f, nan, BATTERY_DIVERGENCE_THRESHOLD.value()},
+        {24.0f, inf, BATTERY_DIVERGENCE_THRESHOLD.value()},
         {24.0f, 12.0f, nan},
         {24.0f, 12.0f, inf},
     };
@@ -74,19 +74,19 @@ static void test_non_finite_inputs_are_rejected_without_mutating_result()
             result));
         TEST_ASSERT_EQUAL_FLOAT(1.0f, result.batteryA);
         TEST_ASSERT_EQUAL_FLOAT(2.0f, result.batteryB);
-        TEST_ASSERT_TRUE(result.diverged);
+        TEST_ASSERT_TRUE(result.isDiverged);
     }
 }
 
 static void test_out_of_range_inputs_and_impossible_pairs_are_rejected()
 {
     const float invalidInputs[][3] = {
-        {-0.001f, 0.0f, INA228_DIVERGENCE_THRESHOLD.value()},
-        {40.001f, 20.0f, INA228_DIVERGENCE_THRESHOLD.value()},
-        {24.0f, -0.001f, INA228_DIVERGENCE_THRESHOLD.value()},
-        {24.0f, 20.001f, INA228_DIVERGENCE_THRESHOLD.value()},
-        {10.0f, 10.001f, INA228_DIVERGENCE_THRESHOLD.value()},
-        {40.0f, 19.999f, INA228_DIVERGENCE_THRESHOLD.value()},
+        {-0.001f, 0.0f, BATTERY_DIVERGENCE_THRESHOLD.value()},
+        {40.001f, 20.0f, BATTERY_DIVERGENCE_THRESHOLD.value()},
+        {24.0f, -0.001f, BATTERY_DIVERGENCE_THRESHOLD.value()},
+        {24.0f, 20.001f, BATTERY_DIVERGENCE_THRESHOLD.value()},
+        {10.0f, 10.001f, BATTERY_DIVERGENCE_THRESHOLD.value()},
+        {40.0f, 19.999f, BATTERY_DIVERGENCE_THRESHOLD.value()},
         {24.0f, 12.0f, -0.001f},
     };
 
@@ -110,14 +110,14 @@ static void test_out_of_range_inputs_and_impossible_pairs_are_rejected()
 // attribution half is these two functions being separate, which can.
 static void test_a_bad_pack_does_not_condemn_the_midpoint()
 {
-    TEST_ASSERT_FALSE(batteryPackVoltageIsValid(NAN));
-    TEST_ASSERT_TRUE(batteryCellVoltageIsValid(6.6f));
+    TEST_ASSERT_FALSE(isBatteryPackVoltageValid(NAN));
+    TEST_ASSERT_TRUE(isBatteryCellVoltageValid(6.6f));
 }
 
 static void test_a_bad_midpoint_does_not_condemn_the_pack()
 {
-    TEST_ASSERT_TRUE(batteryPackVoltageIsValid(13.2f));
-    TEST_ASSERT_FALSE(batteryCellVoltageIsValid(NAN));
+    TEST_ASSERT_TRUE(isBatteryPackVoltageValid(13.2f));
+    TEST_ASSERT_FALSE(isBatteryCellVoltageValid(NAN));
 }
 
 // An implausible *pair* is not a Midpoint fault. The Midpoint reports an
@@ -126,7 +126,7 @@ static void test_a_bad_midpoint_does_not_condemn_the_pack()
 // Midpoint on the pair would retry a device that is answering correctly.
 static void test_an_implausible_pair_is_not_a_midpoint_fault()
 {
-    TEST_ASSERT_TRUE(batteryCellVoltageIsValid(6.6f));
+    TEST_ASSERT_TRUE(isBatteryCellVoltageValid(6.6f));
 
     BatterySplit split;
     TEST_ASSERT_FALSE(calculateBatterySplit(3.0f, 6.6f, Volts(0.5f), split));
@@ -134,20 +134,20 @@ static void test_an_implausible_pair_is_not_a_midpoint_fault()
 
 static void test_cell_voltage_validity_bounds()
 {
-    TEST_ASSERT_TRUE(batteryCellVoltageIsValid(0.0f));
-    TEST_ASSERT_TRUE(batteryCellVoltageIsValid(20.0f));
-    TEST_ASSERT_FALSE(batteryCellVoltageIsValid(-0.1f));
-    TEST_ASSERT_FALSE(batteryCellVoltageIsValid(20.1f));
-    TEST_ASSERT_FALSE(batteryCellVoltageIsValid(NAN));
-    TEST_ASSERT_FALSE(batteryCellVoltageIsValid(INFINITY));
+    TEST_ASSERT_TRUE(isBatteryCellVoltageValid(0.0f));
+    TEST_ASSERT_TRUE(isBatteryCellVoltageValid(20.0f));
+    TEST_ASSERT_FALSE(isBatteryCellVoltageValid(-0.1f));
+    TEST_ASSERT_FALSE(isBatteryCellVoltageValid(20.1f));
+    TEST_ASSERT_FALSE(isBatteryCellVoltageValid(NAN));
+    TEST_ASSERT_FALSE(isBatteryCellVoltageValid(INFINITY));
 }
 
 static void test_pack_display_rejects_a_pair_contradicted_by_midpoint()
 {
-    TEST_ASSERT_TRUE(packVoltageIsDisplayable(true, false, false));
-    TEST_ASSERT_TRUE(packVoltageIsDisplayable(true, true, true));
-    TEST_ASSERT_FALSE(packVoltageIsDisplayable(true, true, false));
-    TEST_ASSERT_FALSE(packVoltageIsDisplayable(false, true, false));
+    TEST_ASSERT_TRUE(isPackVoltageDisplayable(true, false, false));
+    TEST_ASSERT_TRUE(isPackVoltageDisplayable(true, true, true));
+    TEST_ASSERT_FALSE(isPackVoltageDisplayable(true, true, false));
+    TEST_ASSERT_FALSE(isPackVoltageDisplayable(false, true, false));
 }
 
 int main()

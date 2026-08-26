@@ -135,3 +135,10 @@ def test_unavailable_monitors_clear_voltage_labels_and_replay_cleanly():
         assert lit(frame) == lit(render(state))
     calls, = trace([states[1]])
     assert sum(call.endswith("--.-V") for call in calls) == 3
+
+
+def test_large_roll_changes_clear_the_entire_tilt_field():
+    states = [KrabState(roll=180), KrabState(roll=-107), KrabState(roll=0)]
+    frames = render_sequence(states)
+    for state, frame in zip(states, frames):
+        assert lit(frame) == lit(render(state))

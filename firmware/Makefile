@@ -94,9 +94,10 @@ test-native-coverage: test-native
 	$(CTEST) --test-dir "$(NATIVE_COVERAGE_BUILD)" --output-on-failure
 	$(CMAKE) -E chdir "$(REPO_ROOT)" $(GCOVR) --root . "$(NATIVE_COVERAGE_BUILD)" \
 		--gcov-executable "$(GCOV)" \
-		--filter 'firmware/arduino/units\.h$$' \
+		--gcov-exclude-directory '.*/CMakeFiles/oled_trace\.dir/.*' \
+		--filter 'firmware/arduino/src/units/.*' \
 		--filter 'firmware/arduino/actuator_manager\.h$$' \
-		--filter 'firmware/arduino/src/(actuator|display|imu)/.*' \
+		--filter 'firmware/arduino/src/(actuator|cli|display|imu|power_monitor)/.*' \
 		--exclude-unreachable-branches --exclude-throw-branches \
 		--txt --print-summary --fail-under-line 90 --fail-under-branch 88
 

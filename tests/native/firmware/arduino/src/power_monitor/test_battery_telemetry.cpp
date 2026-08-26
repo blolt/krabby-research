@@ -67,8 +67,8 @@ private:
 };
 
 static BatteryTelemetryFrame distinctiveFrame(
-    bool diverged, uint8_t packRegion,
-    bool packValid = true, bool midpointValid = true)
+    bool isDiverged, uint8_t packRegion,
+    bool isPackValid = true, bool isMidpointValid = true)
 {
     const BatteryTelemetryFrame frame = {
         Volts(26.55f),
@@ -77,10 +77,10 @@ static BatteryTelemetryFrame distinctiveFrame(
         Coulombs(1450.2f),
         Volts(13.35f),
         Volts(13.20f),
-        diverged,
+        isDiverged,
         packRegion,
-        packValid,
-        midpointValid
+        isPackValid,
+        isMidpointValid
     };
     return frame;
 }

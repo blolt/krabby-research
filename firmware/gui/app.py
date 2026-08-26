@@ -103,7 +103,7 @@ class ImuRow:
         "gY",
         "gZ",
         "die°C",
-        "freshness",
+        "state",
     ]
 
     @staticmethod
@@ -174,7 +174,7 @@ SENSOR_STALE_S = 1.0
 class BattRow:
     """Pack and per-battery readout, in the same idiom as ImuRow.
 
-    Reuses ImuRow's latch so a value persists between frames, and the state
+    Latches each sample so a value persists between frames, and the state
     column reports how old the latched sample is: blanking the row would read as
     a dropout rather than as a gap between updates.
 
@@ -189,10 +189,8 @@ class BattRow:
     column called "state" invites any state into it; one called "freshness" does
     not.
 
-    Note what this column can and cannot distinguish. The firmware omits the BATT
-    segment when a monitor fails rather than sending one marked faulty, so a dead
-    INA228 and an unplugged leader both arrive as silence. It means "we stopped
-    hearing", and cannot be decomposed further without a wire change.
+    Each monitor's validity byte reports sensor health; freshness reports the
+    age of the most recently received BATT frame.
     """
 
     # The first four are the Pack monitor's own measurements, so they carry the

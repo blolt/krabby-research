@@ -2,7 +2,7 @@
 
 #include "unity.h"
 
-#include "src/power_bus/power_calibration_protocol.h"
+#include "src/cli/power_calibration_command.h"
 
 void setUp() {}
 void tearDown() {}
@@ -70,6 +70,14 @@ static void test_missing_wrong_and_partial_tokens_are_invalid()
     }
 }
 
+static void test_token_comparison_rejects_nulls_and_mismatched_lengths()
+{
+    TEST_ASSERT_FALSE(powerCalibrationTokenEquals(nullptr, "SHOW"));
+    TEST_ASSERT_FALSE(powerCalibrationTokenEquals("SHOW", nullptr));
+    TEST_ASSERT_FALSE(powerCalibrationTokenEquals("SHOW", "SHOWING"));
+    TEST_ASSERT_FALSE(powerCalibrationTokenEquals("SHOWING", "SHOW"));
+}
+
 static void test_valid_numbers_are_parsed_exactly()
 {
     const char* tokens[] = {
@@ -110,6 +118,13 @@ static void test_invalid_numbers_do_not_mutate_result()
             parsePowerCalibrationNumber(invalid[index], result));
         TEST_ASSERT_EQUAL_FLOAT(99.0f, result);
     }
+}
+
+static void test_number_too_large_for_float_is_rejected()
+{
+    float result = 99.0f;
+    TEST_ASSERT_FALSE(parsePowerCalibrationNumber("1e39", result));
+    TEST_ASSERT_EQUAL_FLOAT(99.0f, result);
 }
 
 static void test_complete_commands_require_exact_argument_counts()
@@ -180,6 +195,21 @@ static void test_invalid_complete_commands_preserve_prior_result()
         PowerCalibrationOperation::Show, 99.0f, 98.0f};
     TEST_ASSERT_FALSE(parsePowerCalibrationCommand(0, nullptr, result));
     TEST_ASSERT_EQUAL_FLOAT(99.0f, result.firstReference);
+
+    const char* oneToken[] = {"PWR_SENSE"};
+    TEST_ASSERT_FALSE(parsePowerCalibrationCommand(1, oneToken, result));
+
+    const char* badFirstVoltage[] = {
+        "PWR_SENSE", "VOLTAGE", "bad", "12.0"};
+    const char* badSecondVoltage[] = {
+        "PWR_SENSE", "VOLTAGE", "25.0", "bad"};
+    const char* invalidOperation[] = {"PWR_SENSE", "RESET"};
+    TEST_ASSERT_FALSE(parsePowerCalibrationCommand(
+        4, badFirstVoltage, result));
+    TEST_ASSERT_FALSE(parsePowerCalibrationCommand(
+        4, badSecondVoltage, result));
+    TEST_ASSERT_FALSE(parsePowerCalibrationCommand(
+        2, invalidOperation, result));
 }
 
 int main()
@@ -189,8 +219,10 @@ int main()
     RUN_TEST(test_actuator_calibration_accepts_only_bare_or_explicit_target);
     RUN_TEST(test_complete_tokens_select_each_operation_case_insensitively);
     RUN_TEST(test_missing_wrong_and_partial_tokens_are_invalid);
+    RUN_TEST(test_token_comparison_rejects_nulls_and_mismatched_lengths);
     RUN_TEST(test_valid_numbers_are_parsed_exactly);
     RUN_TEST(test_invalid_numbers_do_not_mutate_result);
+    RUN_TEST(test_number_too_large_for_float_is_rejected);
     RUN_TEST(test_complete_commands_require_exact_argument_counts);
     RUN_TEST(test_invalid_complete_commands_preserve_prior_result);
     return UNITY_END();

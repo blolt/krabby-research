@@ -1,32 +1,15 @@
-"""Serial primitives shared by the bench tests.
-
-Nothing here decides pass or fail; it only talks to the board and parses what
-comes back, using the same interfaces the production host code uses.
-"""
+"""Serial primitives for the Task 3 power-monitor bench suite."""
 from __future__ import annotations
 
-import os
-import statistics
-import sys
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional, Tuple
 
 import serial
 
-_REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-if _REPO_ROOT not in sys.path:
-    sys.path.insert(0, _REPO_ROOT)
+from firmware.interfaces.telemetry_frame import TelemetryFrame
+from firmware.krabby_mcu import DEFAULT_BAUD
 
-from firmware.interfaces.imu_telemetry import ImuTelemetry  # noqa: E402
-from firmware.interfaces.telemetry_constants import TELEMETRY_LINE_PREFIXES  # noqa: E402
-from firmware.interfaces.telemetry_parser import parse_telemetry_line  # noqa: E402
-from firmware.krabby_mcu import DEFAULT_BAUD  # noqa: E402
-
-RADIANS_TO_DEGREES = 57.29577951308232
-
-# The leader's own emissions. TELEMETRY_LINE_PREFIXES also covers the LEFT/RIGHT
-# lines it forwards from followers, which belong to a different board's loop.
 LEADER_PREFIXES = ("FRONT;", "UNKWN;")
 
 
@@ -68,7 +51,7 @@ def await_telemetry(ser: serial.Serial, seconds: float = 8.0) -> bool:
     started = time.monotonic()
     while time.monotonic() - started < seconds:
         raw = ser.readline().decode("utf-8", errors="replace")
-        if raw.startswith(TELEMETRY_LINE_PREFIXES):
+        if TelemetryFrame.is_telemetry_line(raw):
             ser.reset_input_buffer()
             return True
     return False
@@ -93,7 +76,7 @@ def reset_and_collect(
         raw = ser.readline().decode("utf-8", errors="replace").rstrip()
         if not raw:
             continue
-        if raw.startswith(TELEMETRY_LINE_PREFIXES):
+        if TelemetryFrame.is_telemetry_line(raw):
             samples.append(Sample(time.monotonic() - started, raw))
         else:
             boot.lines.append(raw)
@@ -101,7 +84,7 @@ def reset_and_collect(
 
 
 def collect(ser: serial.Serial, count: int, timeout: float = 40.0,
-            role: str = LEADER_PREFIXES) -> List[Sample]:
+            role: Tuple[str, ...] = LEADER_PREFIXES) -> List[Sample]:
     """Gather `count` telemetry lines without resetting.
 
     Defaults to the leader's own lines. A leader with followers attached also
@@ -122,92 +105,6 @@ def collect(ser: serial.Serial, count: int, timeout: float = 40.0,
     return out
 
 
-def parse_line(raw: str) -> Optional[ImuTelemetry]:
-    """Parse a raw wire line through the production parser."""
-    return parse_telemetry_line(raw).imu
-
-
-def joints_of(sample: Sample) -> list:
-    """Parsed joint segments from one telemetry line."""
-    return parse_telemetry_line(sample.line).joints
-
-
 def battery_of(sample: Sample):
-    """Parsed BATT segment from one line, or None when the frame was omitted."""
-    return parse_telemetry_line(sample.line).battery
-
-
-def parse_full(raw: str):
-    """Everything on one line — joints, IMU, and the bench raw burst."""
-    return parse_telemetry_line(raw)
-
-
-def send(ser: serial.Serial, command: str) -> None:
-    """Write one command line and let the firmware pick it up on the next tick."""
-    ser.write((command + "\n").encode())
-    ser.flush()
-    time.sleep(0.15)
-
-
-def jog(ser: serial.Serial, joint: str, pwm: int) -> None:
-    """Drive one actuator directly. `hold_all` stops everything again.
-
-    No space after the J: the firmware consumes one character then reads the name
-    up to the next space, so "J FLHY 200" parses the name as empty and silently
-    drives nothing.
-    """
-    send(ser, f"J{joint} {pwm}")
-
-
-def hold_all(ser: serial.Serial) -> None:
-    send(ser, "H")
-
-
-OLED_OFF, OLED_NORMAL, OLED_FORCED = 0, 1, 2
-
-
-def oled_mode(ser: serial.Serial, mode: int) -> None:
-    """Select panel off / normal / a full transfer on every eligible refresh.
-
-    Only the middle one occurs in normal operation; the other two exist so 2h.1
-    can compare the loop against both extremes.
-    """
-    send(ser, f"O{mode}")
-
-
-def imu_of(sample: Sample) -> Optional[ImuTelemetry]:
-    """Parse through the production parser, so a wire-format change breaks here too."""
-    return parse_line(sample.line)
-
-
-def interval_stats(samples: List[Sample]) -> dict:
-    """Inter-arrival statistics in milliseconds."""
-    if len(samples) < 3:
-        return {}
-    gaps = [
-        (b.at - a.at) * 1000.0 for a, b in zip(samples, samples[1:])
-    ]
-    gaps.sort()
-    return {
-        "n": len(gaps),
-        "mean": statistics.mean(gaps),
-        "p50": gaps[len(gaps) // 2],
-        "p95": gaps[int(len(gaps) * 0.95)],
-        "max": gaps[-1],
-        "min": gaps[0],
-        "line_bytes": max(len(s.line) for s in samples),
-    }
-
-
-def gyro_degrees(samples: List[Sample]) -> List[Tuple[float, float, float]]:
-    out = []
-    for s in samples:
-        imu = imu_of(s)
-        if imu is not None and imu.valid:
-            out.append(tuple(v for v in imu.gyro_dps))
-    return out
-
-
-def accel_magnitude(imu: ImuTelemetry) -> float:
-    ax, ay, az = imu.accel_g
-    return (ax * ax + ay * ay + az * az) ** 0.5
+    """Parsed BATT segment from one line, or None when none was received."""
+    return TelemetryFrame.parse_line(sample.line).battery

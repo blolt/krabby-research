@@ -1,5 +1,7 @@
 #pragma once
 
+// TODO: Consolidate serial command parsing and dispatch from arduino.ino here.
+
 #include <errno.h>
 #include <math.h>
 #include <stdlib.h>
