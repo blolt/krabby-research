@@ -38,6 +38,38 @@ void setBatteryVoltages(DisplayFrame &frame, const Volts (&voltage)[2])
             ? voltage[0].value() + voltage[1].value() : -1.0f);
 }
 
+void setBatteryMeasurements(
+    DisplayFrame &frame,
+    Volts packVoltage,
+    bool isPackVoltageValid,
+    const Volts (&voltage)[2],
+    const bool (&isBatteryValid)[2])
+{
+    const Volts availableVoltage[2] = {
+        isBatteryValid[0] ? voltage[0] : Volts(-1.0f),
+        isBatteryValid[1] ? voltage[1] : Volts(-1.0f),
+    };
+    setBatteryVoltages(frame, availableVoltage);
+    frame.packVoltage = isPackVoltageValid ? packVoltage : Volts(-1.0f);
+}
+
+int8_t batteryFillPixels(float level)
+{
+    if (!isfinite(level) || level <= 0.0f)
+        return 0;
+    if (level >= 1.0f)
+        return SSD1306_BATTERY_FILL_WIDTH;
+    return static_cast<int8_t>(lround(SSD1306_BATTERY_FILL_WIDTH * level));
+}
+
+int16_t displayPackDecivolts(Volts voltage)
+{
+    const float volts = voltage.value();
+    return isfinite(volts) && volts >= 0.0f && volts <= 99.9f
+        ? static_cast<int16_t>(lround(volts * 10.0f))
+        : BATTERY_DECIVOLTS_NO_SIGNAL;
+}
+
 ActuatorGlyph selectActuatorGlyph(
     const ActuatorStatus &status,
     int moveThreshold)
@@ -56,7 +88,7 @@ ActuatorGlyph selectActuatorGlyph(
 bool displayFramesEqual(const DisplayFrame &left, const DisplayFrame &right)
 {
     if (left.role != right.role ||
-        left.packVoltage.value() != right.packVoltage.value() ||
+        displayPackDecivolts(left.packVoltage) != displayPackDecivolts(right.packVoltage) ||
         left.roll.value() != right.roll.value() ||
         left.pitch.value() != right.pitch.value())
         return false;
@@ -69,7 +101,8 @@ bool displayFramesEqual(const DisplayFrame &left, const DisplayFrame &right)
         if (left.actuators[actuatorId] != right.actuators[actuatorId])
             return false;
     for (size_t battery = 0; battery < 2; ++battery)
-        if (left.batteryLevel[battery] != right.batteryLevel[battery] ||
+        if (batteryFillPixels(left.batteryLevel[battery]) !=
+                batteryFillPixels(right.batteryLevel[battery]) ||
             left.batteryDecivolts[battery] != right.batteryDecivolts[battery])
             return false;
     return true;

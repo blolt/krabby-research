@@ -13,10 +13,10 @@ struct BatterySplit
 {
     float batteryA;
     float batteryB;
-    bool diverged;
+    bool isDiverged;
 };
 
-inline bool batteryPackVoltageIsValid(float packVoltage)
+inline bool isBatteryPackVoltageValid(float packVoltage)
 {
     return
         isfinite(packVoltage) &&
@@ -28,7 +28,7 @@ inline bool batteryPackVoltageIsValid(float packVoltage)
 // apart from calculateBatterySplit because that function answers a different
 // question - whether the *pair* describes two sane batteries - and answers it
 // false when the Pack is the wrong one.
-inline bool batteryCellVoltageIsValid(float cellVoltage)
+inline bool isBatteryCellVoltageValid(float cellVoltage)
 {
     return
         isfinite(cellVoltage) &&
@@ -36,10 +36,10 @@ inline bool batteryCellVoltageIsValid(float cellVoltage)
         cellVoltage <= BATTERY_CELL_V_MAX;
 }
 
-inline bool packVoltageIsDisplayable(
-    bool packValid, bool midpointValid, bool splitValid)
+inline bool isPackVoltageDisplayable(
+    bool isPackValid, bool isMidpointValid, bool isSplitValid)
 {
-    return packValid && (!midpointValid || splitValid);
+    return isPackValid && (!isMidpointValid || isSplitValid);
 }
 
 inline bool calculateBatterySplit(
@@ -49,7 +49,7 @@ inline bool calculateBatterySplit(
     BatterySplit& result)
 {
     const float divergenceThresholdVolts = divergenceThreshold.value();
-    if (!batteryPackVoltageIsValid(packVoltage) ||
+    if (!isBatteryPackVoltageValid(packVoltage) ||
         !isfinite(midpointVoltage) ||
         midpointVoltage < BATTERY_CELL_V_MIN ||
         midpointVoltage > BATTERY_CELL_V_MAX ||
@@ -65,7 +65,7 @@ inline bool calculateBatterySplit(
 
     result.batteryA = midpointVoltage;
     result.batteryB = batteryB;
-    result.diverged =
+    result.isDiverged =
         fabs(result.batteryA - result.batteryB) >
             divergenceThresholdVolts;
     return true;

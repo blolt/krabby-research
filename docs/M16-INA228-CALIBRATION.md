@@ -14,9 +14,9 @@ and that desolder was done on the already-A0-bridged board.
 The upper battery is derived on-board as `battB = packV - battA`, so it inherits
 both boards' VBUS trims — calibrate both monitors before trusting divergence.
 
-Calibration values persist in EEPROM at `EEPROM_INA_CAL_ADDR` (byte 66, block
-`PowerCalibrationData`, magic `0xC8`). They survive reflash and power-cycle and
-load automatically at boot (`inaSetup` -> `loadPowerCalibration`). An uncalibrated board
+Calibration values persist in EEPROM at `EEPROM_POWER_CAL_ADDR` (byte 66, block
+`PowerCalibrationRecord`, magic `0xC8`). They survive reflash and power-cycle and
+load automatically at boot (`powerMonitorSetup` -> `PowerCalibration::load`). An uncalibrated board
 runs identity trims (offset 0, shunt 1): its readings remain uncorrected rather
 than being changed by invalid persisted calibration.
 
@@ -39,15 +39,16 @@ packCharge = rawCharge_pack * packShuntCal
 ## Invalid captures do not replace the active calibration
 
 Every capture path validates *before* it writes EEPROM. A reference or a solved
-trim outside the bounds in `power_bus_constants.h`
-(`INA228_CAL_*`) is rejected with a `... aborting (no write)` message and the
+trim outside the bounds in `power_monitor_constants.h`
+(`POWER_CAL_*`) is rejected with a `... aborting (no write)` message and the
 prior calibration stays in force. Persistence uses a magic-last write:
 
 - If power fails before the invalid marker is written, the prior valid block
   remains.
 - After the invalid marker is written and before the final valid magic byte, the
   partial block is rejected on restart and identity calibration is used.
-- After the final magic byte is written, the new complete block loads.
+- After the final magic byte is written, firmware reads the complete block back
+  and applies it only if it exactly matches the candidate calibration.
 
 ## Serial command reference (`C PWR_SENSE`)
 
@@ -71,8 +72,8 @@ voltage. `knownAmps` is signed to match the Pack INA228 convention.
 You need:
 
 - The leader board flashed and on USB. The boot log—not `C PWR_SENSE SHOW`—must show
-  `INA: Pack (0x41) online` and
-  `INA: Midpoint (0x40) online`).
+  `POWER MONITOR: Pack (INA228 0x41) online` and
+  `POWER MONITOR: Midpoint (INA228 0x40) online`).
 - A calibrated bench DMM.
 - A known voltage source near the normal operating point, either the real 24 V
   Pack or a suitably rated bench supply connected to the Pack/Midpoint sense
@@ -156,7 +157,7 @@ in the normal operating band for the best fit.
    because it fits its capture point.
 
 A near-zero measured or requested current is rejected
-(`INA228_CAL_MIN_SHUNT_TRIM_A`) since dividing by it is meaningless.
+(`POWER_CAL_MIN_SHUNT_TRIM_A`) since dividing by it is meaningless.
 
 ## Verifying against a DMM
 
@@ -221,14 +222,14 @@ power, and accumulated charge in `battAppendTelemetry` and is captured by
 `C PWR_SENSE CURRENT`. Identity (1.0) until a current calibration is run, so an
 uncalibrated board's shunt-derived measurements remain uncorrected rather than
 being scaled by invalid persisted data. It is bounded to
-`[INA228_CAL_MIN_GAIN, INA228_CAL_MAX_GAIN]` on both capture and EEPROM load,
+`[POWER_CAL_MIN_GAIN, POWER_CAL_MAX_GAIN]` on both capture and EEPROM load,
 so a garbage value can never scale the readings wildly.
 
 ## EEPROM layout
 
-See `power_bus_constants.h`. The INA block is 14 bytes at address 66-79:
+See `eeprom_layout.h`. The power-calibration block is 14 bytes at address 66-79:
 `magic(0xC8) + schema(1) + packVoltageOffset + midpointVoltageOffset + packShuntCal`
 (three floats). `static_assert`s pin
-`sizeof(PowerCalibrationData) == EEPROM_INA_CAL_SIZE`, so a layout change that forgets the
+`sizeof(PowerCalibrationRecord) == EEPROM_POWER_CAL_SIZE`, so a layout change that forgets the
 size constant fails to compile rather than corrupting a neighbor block. Bump
-`EEPROM_INA_CAL_SCHEMA` on any field reshuffle.
+`EEPROM_POWER_CAL_SCHEMA` on any field reshuffle.

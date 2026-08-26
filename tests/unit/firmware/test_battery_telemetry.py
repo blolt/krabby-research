@@ -253,3 +253,16 @@ class TestSdkStorage:
 
         assert sdk.battery is None
         assert sdk.imu is None
+
+
+def test_battery_segments_share_the_consolidated_telemetry_parser():
+    from firmware.interfaces.telemetry_frame import TelemetryFrame
+
+    frame = TelemetryFrame.parse_line(
+        "FRONT; FLHY 0.50 0 100 500 101 0 0 0 1;"
+        "IMU 0 0 9.807 0 0 0 25 1;" + BATT_SEG + ";BATT malformed"
+    )
+    assert len(frame.joints) == 1
+    assert frame.joints[0].name == "FLHY"
+    assert frame.imu.valid is True
+    assert frame.battery == _parse()

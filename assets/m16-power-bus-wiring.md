@@ -111,7 +111,7 @@ external shunt's Kelvin taps**, and the onboard-shunt desolder was done on the
 board that already had A0 bridged. Electrically identical — only the labels move.
 
 Recorded as a deviation against 3c, 3d, 3h.1 and 3h.2. The constants live in
-`firmware/arduino/src/power_bus/power_bus_constants.h`.
+`firmware/arduino/src/power_monitor/power_monitor_constants.h`.
 
 ## What the firmware reports
 

@@ -72,9 +72,8 @@ class KrabbyMCUSDK:
         #                          the IMU segment
         # imu distinguishes unseen, invalid, and valid samples.
         self.imu: Optional[ImuTelemetry] = None
-        # Latest BATT frame. Emitted on the power-poll cadence rather than every
-        # tick, and omitted entirely when either monitor is down, so None means
-        # "no trustworthy reading" rather than "not supported".
+        # Latest BATT frame, emitted every leader telemetry tick. Each monitor
+        # carries its own validity flag; None means no frame this session.
         self.battery: Optional[BatteryTelemetry] = None
 
         self.last_feedback_ts = None

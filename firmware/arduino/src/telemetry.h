@@ -16,7 +16,7 @@ static constexpr uint16_t TELEMETRY_INTERVAL_MS = 50;
 //
 // Unsigned subtraction intentionally preserves the elapsed duration across the
 // uint32_t millis() rollover.
-inline bool telemetryPollDue(uint32_t now, uint32_t previousPoll)
+inline bool isTelemetryPollDue(uint32_t now, uint32_t previousPoll)
 {
     return static_cast<uint32_t>(now - previousPoll) >= TELEMETRY_INTERVAL_MS;
 }
@@ -46,28 +46,28 @@ const char *boardTelemetryRoleLabel(BoardRole role);
 
 template <typename Output>
 void appendImuMeasurement(
-    Output &output,
+    Output &out,
     const ImuMeasurement &measurement)
 {
-    output.print(TELEMETRY_SEGMENT_DELIMITER);
-    output.print(IMU_TELEMETRY_TAG);
-    output.print(TELEMETRY_FIELD_SEPARATOR);
+    out.print(TELEMETRY_SEGMENT_DELIMITER);
+    out.print(IMU_TELEMETRY_TAG);
+    out.print(TELEMETRY_FIELD_SEPARATOR);
 
     for (uint8_t axis = 0; axis < 3; ++axis)
     {
-        output.print(measurement.acceleration[axis].value(), 3);
-        output.print(TELEMETRY_FIELD_SEPARATOR);
+        out.print(measurement.acceleration[axis].value(), 3);
+        out.print(TELEMETRY_FIELD_SEPARATOR);
     }
 
     for (uint8_t axis = 0; axis < 3; ++axis)
     {
-        output.print(measurement.angularRate[axis].value(), 4);
-        output.print(TELEMETRY_FIELD_SEPARATOR);
+        out.print(measurement.angularRate[axis].value(), 4);
+        out.print(TELEMETRY_FIELD_SEPARATOR);
     }
 
-    output.print(measurement.temperature.value(), 1);
-    output.print(TELEMETRY_FIELD_SEPARATOR);
-    output.print(measurement.didSucceed() ? 1 : 0);
+    out.print(measurement.temperature.value(), 1);
+    out.print(TELEMETRY_FIELD_SEPARATOR);
+    out.print(measurement.didSucceed() ? 1 : 0);
 }
 
 // ---- Battery segment (Task 3) ----
@@ -102,14 +102,14 @@ struct BatteryTelemetryFrame
     Coulombs packCharge;
     Volts batteryAVoltage;
     Volts batteryBVoltage;
-    bool diverged;
+    bool isDiverged;
     uint8_t packRegion;
     // Per-monitor liveness, the same convention as the IMU segment's valid byte
     // (TASK-1 §4). One byte each because the two monitors fail and recover
     // independently. When a byte is 0 its fields carry the last trustworthy
     // reading, not the library's failure sentinel.
-    bool packValid;
-    bool midpointValid;
+    bool isPackValid;
+    bool isMidpointValid;
 };
 
 template <typename Output>
@@ -132,11 +132,11 @@ inline void appendBatteryTelemetry(
     out.print(TELEMETRY_FIELD_SEPARATOR);
     out.print(frame.batteryBVoltage.value(), 2);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.diverged ? 1 : 0);
+    out.print(frame.isDiverged ? 1 : 0);
     out.print(TELEMETRY_FIELD_SEPARATOR);
     out.print(frame.packRegion);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.packValid ? 1 : 0);
+    out.print(frame.isPackValid ? 1 : 0);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.midpointValid ? 1 : 0);
+    out.print(frame.isMidpointValid ? 1 : 0);
 }
