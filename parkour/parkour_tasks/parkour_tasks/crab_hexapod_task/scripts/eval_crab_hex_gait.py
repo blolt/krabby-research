@@ -488,7 +488,7 @@ def main() -> None:
             if mesh is not None:
                 buf["terrain_z"][t] = _terrain_z_under_feet(fp, mesh, device)
             else:
-                buf["terrain_z"][t] = (robot.data.root_pos_w[:, 2] - 1.0).unsqueeze(1).expand(-1, 6)
+                buf["terrain_z"][t] = (robot.data.root_pos_w[:, 2] - 1.05).unsqueeze(1).expand(-1, 6)
             buf["root_pos_w"][t] = robot.data.root_pos_w
             buf["root_quat_w"][t] = robot.data.root_quat_w
             buf["root_lin_vel_b"][t] = robot.data.root_lin_vel_b

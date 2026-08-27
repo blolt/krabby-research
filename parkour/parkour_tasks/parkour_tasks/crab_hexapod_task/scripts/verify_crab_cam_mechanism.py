@@ -178,7 +178,10 @@ def main() -> None:
     from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg import CAM_VEL_SCALE
     from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import THETA_HIP_MAX
 
-    hard_limit_rad = math.radians(32.0)  # Body_Hip USD hard limit (see crab_simple.usda)
+    # Body_Hip hard limit, read LIVE from the articulation (was a stale 32-deg constant
+    # that let a hard-stop contact pass silently after the 2026-08-20 limit change to 28).
+    body_hip_ids, _ = robot.find_joints([".*_Body_Hip_RevoluteJoint"], preserve_order=True)
+    hard_limit_rad = float(robot.data.joint_pos_limits[0, body_hip_ids, 1].max().item())
     env_dt = float(env.unwrapped.step_dt)
     max_pos_err = default_err
     max_hip_abs = 0.0

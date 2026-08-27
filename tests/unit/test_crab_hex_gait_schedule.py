@@ -173,7 +173,8 @@ def test_load_manifest_roundtrip(tmp_path):
 
 def test_load_manifest_rejects_bad_version(tmp_path):
     path = tmp_path / "m.json"
-    path.write_text(json.dumps({"manifest_version": 2, "scenarios": []}))
+    # Versions 1 and 2 are both live (v2 = gait-formation scenarios, 2026-08-20).
+    path.write_text(json.dumps({"manifest_version": 3, "scenarios": []}))
     with pytest.raises(S.ManifestError, match="manifest_version"):
         S.load_manifest(path)
 

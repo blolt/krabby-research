@@ -144,8 +144,10 @@ def load_manifest(path: str | Path) -> tuple[list[Scenario], dict[str, Any]]:
     if not isinstance(data, dict):
         raise ManifestError(f"{path}: top level must be a mapping")
     version = data.get("manifest_version")
-    if version != 1:
-        raise ManifestError(f"{path}: unsupported manifest_version {version!r} (expected 1)")
+    # v2 (gait-formation campaign, 2026-08-20) uses the same schema; it exists as a
+    # separate file only because v1's holds are pinned to committed baselines.
+    if version not in (1, 2):
+        raise ManifestError(f"{path}: unsupported manifest_version {version!r} (expected 1 or 2)")
 
     file_defaults = dict(DEFAULTS)
     file_defaults.update(data.get("defaults", {}) or {})

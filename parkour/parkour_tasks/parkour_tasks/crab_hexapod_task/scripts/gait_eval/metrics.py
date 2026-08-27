@@ -559,11 +559,19 @@ def tracking_metrics(
     cmd: np.ndarray,
     root_lin_vel_b: np.ndarray,
     root_ang_vel_b: np.ndarray,
+    *,
+    ratio_min_cmd: float | None = None,
 ) -> dict:
     """Commanded minus actual base velocity, per axis. Both in the base frame.
 
     Signed mean is reported alongside mean-abs and RMS: mean-abs alone hides systematic undershoot,
     which is the failure mode the speed-forcing reward terms are suspected of causing.
+
+    When ``ratio_min_cmd`` is given, the vx entry also carries ``ratio`` = actual_mean/cmd_mean --
+    but only when ``|cmd_mean| > ratio_min_cmd`` (below the env's lin-vel clip the command is a
+    stop by construction, so a ratio there is noise over ~zero). The 2026-08-21 creep-audit found
+    policies at 0.92 schedule completion moving at 15-30% of command; completion alone cannot see
+    that, this ratio can.
     """
     cmd = np.asarray(cmd, dtype=np.float64)
     lin = np.asarray(root_lin_vel_b, dtype=np.float64)
@@ -581,6 +589,12 @@ def tracking_metrics(
             "cmd_mean": float(cmd[:, k].mean()) if e.size else None,
             "actual_mean": float(actual[:, k].mean()) if e.size else None,
         }
+    if ratio_min_cmd is not None:
+        vx = out["vx"]
+        if vx["cmd_mean"] is not None and abs(vx["cmd_mean"]) > ratio_min_cmd:
+            vx["ratio"] = vx["actual_mean"] / vx["cmd_mean"]
+        else:
+            vx["ratio"] = None
     return out
 
 

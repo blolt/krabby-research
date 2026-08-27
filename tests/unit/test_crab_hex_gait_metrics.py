@@ -257,6 +257,67 @@ def test_tracking_metrics_signed_mean_exposes_undershoot():
     assert res["vx"]["mean_abs"] == pytest.approx(0.3)
 
 
+def test_tracking_ratio_flags_creep_and_gates_on_command_floor():
+    """The creep-audit metric: a 0.92-completion policy moving at 20% of command must score
+    ratio ~0.2, and sub-clip (stop-by-construction) commands must report None, not a huge or
+    divide-by-near-zero ratio."""
+    n = 100
+    creep = M.tracking_metrics(
+        np.tile(np.array([0.35, 0.0, 0.0]), (n, 1)),
+        np.tile(np.array([0.07, 0.0, 0.0]), (n, 1)),
+        np.zeros((n, 3)),
+        ratio_min_cmd=0.2,
+    )
+    assert creep["vx"]["ratio"] == pytest.approx(0.2)
+    stand = M.tracking_metrics(
+        np.tile(np.array([0.1, 0.0, 0.0]), (n, 1)),
+        np.tile(np.array([0.05, 0.0, 0.0]), (n, 1)),
+        np.zeros((n, 3)),
+        ratio_min_cmd=0.2,
+    )
+    assert stand["vx"]["ratio"] is None
+    # Without the floor argument the key is absent entirely (backward-compatible shape).
+    legacy = M.tracking_metrics(
+        np.tile(np.array([0.35, 0.0, 0.0]), (n, 1)),
+        np.tile(np.array([0.07, 0.0, 0.0]), (n, 1)),
+        np.zeros((n, 3)),
+    )
+    assert "ratio" not in legacy["vx"]
+
+
+def test_aggregate_surfaces_tracking_ratio_and_by_hold():
+    """Aggregate must carry the tracking ratio so gates can read it from scenario_metrics.json
+    without re-touching raw npz."""
+    from gait_eval import report as R
+
+    def _ep(idx, ratio, achieved):
+        return {
+            "env_index": idx,
+            "termination_reason": "schedule_complete",
+            "completed_schedule": True,
+            "n_steps": 100,
+            "tripod_score": None,
+            "tippy_tap_fraction": None,
+            "slip_ratio_mean": None,
+            "tracking_ratio": ratio,
+            "holds": {
+                "low": {
+                    "tripod": {"tripod_score": None, "low_confidence": True},
+                    "tracking": {
+                        "vx": {"cmd_mean": 0.35, "actual_mean": achieved, "ratio": ratio}
+                    },
+                }
+            },
+        }
+
+    agg = R.aggregate([_ep(0, 0.2, 0.07), _ep(1, 0.4, 0.14)])
+    assert agg["tracking_ratio"]["median"] == pytest.approx(0.3)
+    hold = agg["tracking_by_hold"]["low"]
+    assert hold["cmd_vx_mean"] == pytest.approx(0.35)
+    assert hold["achieved_vx"]["mean"] == pytest.approx(0.105)
+    assert hold["ratio"]["n"] == 2
+
+
 def test_action_metrics_reports_reversals_per_joint_group():
     """CamShaft reversals are a distinct pathology from knee reversals (the cam is meant to spin one
     way), so a flat 18-DOF mean would wash the signal out."""

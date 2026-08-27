@@ -231,12 +231,16 @@ def main() -> None:
         clip_lo, clip_hi = float(clip[0]), float(clip[1])
 
     def _nominal_effort(jname: str) -> float:
+        # NOTE(hardware-measurements, 2026-08-20): matches the screw-emulator caps in
+        # crab_hex_scene_cfg.py (hip 480, knee 80) and the hardware yaw motor (cam 20).
         if "Body_Hip" in jname:
             return 600.0
+        if "Body_CamShaft" in jname:
+            return 20.0
         if "Hip_Femur" in jname:
-            return 1500.0
+            return 480.0
         if "Femur_Tibia" in jname:
-            return 800.0
+            return 80.0
         return 600.0
 
     print("\n=== Crab joint drive check ===", flush=True)

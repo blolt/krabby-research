@@ -61,6 +61,7 @@ def score_episode(
     fall_trim = int(round(float(scenario.get_default("fall_exclusion_s")) / dt))
     min_cycles = int(scenario.get_default("min_cycles"))
     slip_thresh = float(scenario.get_default("slip_speed_threshold"))
+    lin_vel_clip = float(scenario.get_default("lin_vel_clip"))
     ended_in_fall = term_reason in ("fall", "hard_fall")
 
     contact_all = raw["foot_force_norm"][:, env_idx, :] > threshold
@@ -94,13 +95,19 @@ def score_episode(
         )
         entry: dict[str, Any] = {"label": label, "tripod": tri, "n_steps": int(idx.size)}
 
-        if tri["valid"]:
-            entry["air_time"] = M.air_time_metrics(contact, dt=dt)
+        # Tracking needs steps, not contact cycles: a policy with no measurable gait window can
+        # still be creeping at 20% of command, and that is exactly the case the ratio must catch
+        # (2026-08-21 creep-audit). So it is gated on window length only, never on tripod validity.
+        if idx.size >= min_window_steps:
             entry["tracking"] = M.tracking_metrics(
                 raw["cmd_applied"][idx, env_idx, :],
                 raw["root_lin_vel_b"][idx, env_idx, :],
                 raw["root_ang_vel_b"][idx, env_idx, :],
+                ratio_min_cmd=lin_vel_clip,
             )
+
+        if tri["valid"]:
+            entry["air_time"] = M.air_time_metrics(contact, dt=dt)
             entry["slip"] = M.slip_metrics(
                 contact,
                 raw["foot_pos_w"][idx, env_idx],
@@ -166,6 +173,13 @@ def score_episode(
         out["tripod_score"] = None
     out["tippy_tap_fraction"] = out["air_time_episode"].get("tippy_tap_fraction")
     out["slip_ratio_mean"] = out["slip_episode"]["pooled_slip_ratio"]["mean"]
+    # Episode tracking ratio: mean over walking holds (ratio is None on sub-clip commands).
+    ratios = [
+        h["tracking"]["vx"]["ratio"]
+        for h in out["holds"].values()
+        if h.get("tracking") and h["tracking"]["vx"].get("ratio") is not None
+    ]
+    out["tracking_ratio"] = float(np.mean(ratios)) if ratios else None
     return out
 
 
@@ -235,12 +249,36 @@ def aggregate(episodes: list[dict]) -> dict:
             if score is not None and not hold["tripod"].get("low_confidence"):
                 per_hold.setdefault(label, []).append(score)
 
+    # Velocity tracking (creep-audit, 2026-08-21): schedule completion is blind to a policy that
+    # survives by abandoning the command, so achieved-vs-commanded is aggregated first-class.
+    track_ratios = [e["tracking_ratio"] for e in episodes if e.get("tracking_ratio") is not None]
+    track_by_hold: dict[str, dict[str, list[float]]] = {}
+    for e in episodes:
+        for label, hold in e["holds"].items():
+            tr = hold.get("tracking")
+            if not tr or tr["vx"]["actual_mean"] is None:
+                continue
+            slot = track_by_hold.setdefault(label, {"cmd": [], "achieved": [], "ratio": []})
+            slot["cmd"].append(tr["vx"]["cmd_mean"])
+            slot["achieved"].append(tr["vx"]["actual_mean"])
+            if tr["vx"].get("ratio") is not None:
+                slot["ratio"].append(tr["vx"]["ratio"])
+
     n_eps = len(episodes)
     return {
         "n_episodes": n_eps,
         "n_unscored_episodes": n_eps - len(scores),
         "tripod_score": _stats(scores),
         "tripod_score_by_hold": {k: _stats(v) for k, v in per_hold.items()},
+        "tracking_ratio": _stats(track_ratios),
+        "tracking_by_hold": {
+            k: {
+                "cmd_vx_mean": float(np.mean(v["cmd"])),
+                "achieved_vx": _stats(v["achieved"]),
+                "ratio": _stats(v["ratio"]),
+            }
+            for k, v in track_by_hold.items()
+        },
         "tippy_tap_fraction": _stats(tips),
         "slip_ratio": _stats(slips),
         "shaft_one_direction_ratio": _stats(spin_ratios),
@@ -266,14 +304,25 @@ def summary_text(run_meta: dict, episodes: list[dict]) -> str:
         f"p25={agg['tripod_score']['p25']}  p75={agg['tripod_score']['p75']}",
         f"tippy_tap_fraction median={agg['tippy_tap_fraction']['median']}",
         f"slip_ratio         median={agg['slip_ratio']['median']}",
+        f"tracking_ratio     median={agg['tracking_ratio']['median']}  "
+        f"(achieved/commanded vx, walking holds; n={agg['tracking_ratio']['n']})",
         f"schedule_completion_rate={agg['schedule_completion_rate']}",
         f"terminations={agg['termination_reasons']}",
     ]
-    if agg["tripod_score_by_hold"]:
+    if agg["tripod_score_by_hold"] or agg["tracking_by_hold"]:
         lines.append("")
         lines.append("by hold:")
-        for label, st in agg["tripod_score_by_hold"].items():
-            lines.append(f"  {label:>8}: tripod median={st['median']} (n={st['n']})")
+        labels = dict.fromkeys(list(agg["tracking_by_hold"]) + list(agg["tripod_score_by_hold"]))
+        for label in labels:
+            tri = agg["tripod_score_by_hold"].get(label)
+            trk = agg["tracking_by_hold"].get(label)
+            tri_txt = f"tripod median={tri['median']} (n={tri['n']})" if tri else "tripod n/a"
+            trk_txt = (
+                f"cmd {trk['cmd_vx_mean']:.2f} -> achieved {trk['achieved_vx']['median']:.3f} m/s"
+                if trk
+                else "tracking n/a"
+            )
+            lines.append(f"  {label:>8}: {trk_txt} | {tri_txt}")
     for key in ("command_override_warning", "obs_dim_warning"):
         if run_meta.get(key):
             lines.append(f"\n[WARN] {run_meta[key]}")
@@ -309,6 +358,7 @@ def write_run(
                         {
                             "env_index": e["env_index"],
                             "tripod_score": e["tripod_score"],
+                            "tracking_ratio": e["tracking_ratio"],
                             "tippy_tap_fraction": e["tippy_tap_fraction"],
                             "slip_ratio_mean": e["slip_ratio_mean"],
                             "termination_reason": e["termination_reason"],
