@@ -1,0 +1,136 @@
+"""Pin ``assets/crab_simple.usda`` to its generator and the measured-dimensions module.
+
+Two guarantees, both pure-text / stdlib (no Isaac Sim):
+
+1. The committed asset is EXACTLY what ``assets/scripts/generate_crab_simple.py`` emits
+   from ``crab_hex_dimensions.py`` -- hand-edits to the USDA (the pre-2026-08-20 workflow,
+   which accumulated anchor-vs-translate drift) now fail CI: edit the dimensions module and
+   regenerate instead.
+2. The masses in the asset add up to the measured hardware totals: 6 x 26.2 lb legs +
+   350 lb body = ~230.06 kg, with the per-link split summing exactly per leg.
+"""
+
+import importlib.util
+import re
+from pathlib import Path
+
+import pytest
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+USDA_PATH = REPO_ROOT / "assets" / "crab_simple.usda"
+GENERATOR_PATH = REPO_ROOT / "assets" / "scripts" / "generate_crab_simple.py"
+
+
+def _load(name: str, path: Path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+dims = _load(
+    "crab_hex_dimensions",
+    REPO_ROOT
+    / "parkour"
+    / "parkour_tasks"
+    / "parkour_tasks"
+    / "crab_hexapod_task"
+    / "mdp"
+    / "crab_hex_dimensions.py",
+)
+generator = _load("generate_crab_simple", GENERATOR_PATH)
+
+
+def test_committed_asset_matches_generator():
+    generated = generator.generate()
+    committed = USDA_PATH.read_text()
+    assert committed == generated, (
+        "assets/crab_simple.usda differs from its generator output. Never hand-edit the "
+        "asset: change crab_hex_dimensions.py (or the generator) and run "
+        "python3 assets/scripts/generate_crab_simple.py"
+    )
+
+
+def _masses_by_prim(text: str) -> dict[str, float]:
+    """{prim_name: physics:mass} for every Cube/Mesh prim in the asset."""
+    masses: dict[str, float] = {}
+    # Tempered dot: never scan across the next prim definition (the massless ground
+    # CollisionMesh would otherwise swallow the first leg's mass line).
+    pattern = re.compile(
+        r'def (?:Cube|Mesh) "(?P<name>\w+)"(?:(?!def ).)*?physics:mass = (?P<mass>[\d.]+)',
+        re.DOTALL,
+    )
+    pos = 0
+    while True:
+        m = pattern.search(text, pos)
+        if not m:
+            break
+        masses[m.group("name")] = float(m.group("mass"))
+        pos = m.start() + 1
+    return masses
+
+
+@pytest.fixture(scope="module")
+def prim_masses() -> dict[str, float]:
+    return _masses_by_prim(USDA_PATH.read_text())
+
+
+def test_per_leg_mass_sums_to_measured_leg_weight(prim_masses):
+    expected_leg_kg = dims.LEG_MASS_LB * dims.LB_TO_KG
+    for leg in ("FL", "FR", "ML", "MR", "RL", "RR"):
+        total = sum(
+            prim_masses[f"{leg}_{link}"]
+            for link in ("Hip", "Femur", "Tibia", "Footpad", "CamShaft")
+        )
+        assert total == pytest.approx(expected_leg_kg, abs=1e-4), f"{leg} mass sum"
+
+
+def test_total_mass_matches_hardware(prim_masses):
+    total = sum(prim_masses.values())
+    expected = dims.BODY_MASS_LB * dims.LB_TO_KG + 6.0 * dims.LEG_MASS_LB * dims.LB_TO_KG
+    assert total == pytest.approx(expected, abs=1e-3)
+    assert total == pytest.approx(230.06, abs=0.05)
+
+
+def test_body_keeps_full_measured_mass(prim_masses):
+    """Cam rotors are budgeted inside the legs' 26.2 lb, never subtracted from the body."""
+    assert prim_masses["body"] == pytest.approx(
+        dims.BODY_MASS_LB * dims.LB_TO_KG, abs=1e-4
+    )
+
+
+def test_center_of_mass_authored_on_all_leg_links():
+    """Mesh-era links author CoM + diagonal inertia explicitly (hip/femur/tibia x 6)."""
+    text = USDA_PATH.read_text()
+    com_lines = re.findall(r"physics:centerOfMass = \((.*?)\)", text)
+    assert len(com_lines) == 18, "expected authored centerOfMass on all 18 leg-link meshes"
+    diag_lines = re.findall(r"float3 physics:diagonalInertia", text)
+    assert len(diag_lines) == 24, "18 leg meshes + 6 camshaft rotors author diagonalInertia"
+
+
+def test_mesh_ply_mass_consistent_with_outline_area():
+    """Tripwire for outline/inertia regressions: the polygon-derived plywood mass of each
+    part (area x 1 in thickness x ply density) must land within a loose band of the
+    dimensions module's volume estimate that the link masses were normalized from."""
+    import importlib.util as _ilu
+
+    gspec = _ilu.spec_from_file_location("gen", GENERATOR_PATH)
+    gen = _ilu.module_from_spec(gspec)
+    gspec.loader.exec_module(gen)
+    IN = dims.IN_TO_M
+    t = dims.PLY_THICKNESS_IN * IN
+    for name, est_in3 in (
+        ("HIP_OUTLINE_IN", dims.HIP_PLATE_LENGTH_IN * dims.HIP_PLATE_WIDTH_IN),
+        ("FEMUR_OUTLINE_IN", dims.FEMUR_PART_LENGTH_IN * dims.FEMUR_WIDTH_IN),
+        (
+            "TIBIA_OUTLINE_IN",
+            dims.TIBIA_PART_LENGTH_IN * dims.TIBIA_WIDTH_IN * dims.TIBIA_TAPER_VOLUME_FACTOR,
+        ),
+    ):
+        outline = [(a * IN, b * IN) for a, b in getattr(gen.profiles, name)]
+        area = abs(gen._signed_area(gen.ensure_ccw(outline)))
+        poly_kg = area * t * dims.PLY_DENSITY_KG_M3
+        est_kg = est_in3 * dims.PLY_THICKNESS_IN * (IN**3) * dims.PLY_DENSITY_KG_M3
+        assert 0.6 * est_kg < poly_kg < 1.15 * est_kg, (
+            f"{name}: polygon ply mass {poly_kg:.3f} kg vs volume estimate {est_kg:.3f} kg"
+        )
