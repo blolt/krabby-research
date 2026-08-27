@@ -1,52 +1,72 @@
 """Pin the measured-hardware joint limits in ``assets/crab_simple.usda``.
 
-Pure-text parse of the USD -- no Isaac Sim needed. Guards the 2026-08-13 geometry
-alignment (hardware measurements: yaw +-28.5 deg cam-constrained, hip 35-160 deg from
-straight-down vertical, knee 40-165 deg interior angle) against a silent revert by a
-future asset regeneration. The right-leg (FR/MR/RR) knee limits are mirrored because
-those joints carry a 180-degree frame flip (``localRot0 = (0, 0, 1, 0)``).
+Pure-text parse of the USD -- no Isaac Sim needed. Guards the 2026-08-20 hardware
+measurement set (physical robot: yaw +-25 deg cam throw, hip 45-150 deg measured from
+vertical-UP, knee 5-140 deg interior angle) against a silent revert by a future asset
+regeneration. The right-leg (FR/MR/RR) knee limits are mirrored because those joints carry
+a 180-degree frame flip (``localRot0 = (0, 0, 1, 0)``).
 
-Conventions (see plan/campaign notes):
-  hip:   sim = 90 deg - hw, positive = femur down  -> [-70, +55]
-  knee L: interior = 90 deg - sim                  -> [-75, +50]
-  knee R: sign-flipped frame                       -> [-50, +75]
-  Body_Hip: passive, cam-slaved; hard +-32 so soft (0.9x) = +-28.8 > THETA_HIP_MAX
+Conventions (see crab_hex_dimensions.py, the single source of truth):
+  hip:   sim = 90 - (180 - from_up), positive = femur down -> [-45, +60]
+  knee L: sim = 90 - interior                              -> [-50, +85]
+  knee R: sign-flipped frame                               -> [-85, +50]
+  Body_Hip: passive, cam-slaved; hard +-28 so soft (0.9x) = +-25.2 > 25.0 cam throw
+
+The expected values are written out literally AND recomputed from crab_hex_dimensions --
+a change to either the USD, the dimensions module, or the convention arithmetic fails here.
 """
 
+import importlib.util
 import math
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
-USDA_PATH = Path(__file__).resolve().parents[2] / "assets" / "crab_simple.usda"
+REPO_ROOT = Path(__file__).resolve().parents[2]
+USDA_PATH = REPO_ROOT / "assets" / "crab_simple.usda"
+_DIMS_PATH = (
+    REPO_ROOT
+    / "parkour"
+    / "parkour_tasks"
+    / "parkour_tasks"
+    / "crab_hexapod_task"
+    / "mdp"
+    / "crab_hex_dimensions.py"
+)
+_spec = importlib.util.spec_from_file_location("crab_hex_dimensions", _DIMS_PATH)
+dims = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(dims)
 
 LEFT_LEGS = ("FL", "ML", "RL")
 RIGHT_LEGS = ("FR", "MR", "RR")
 ALL_LEGS = LEFT_LEGS + RIGHT_LEGS
 
-# joint-name template -> {leg-prefix: (lower_deg, upper_deg)}
+# joint-name template -> {leg-prefix: (lower_deg, upper_deg)} -- hardware table, literal.
 EXPECTED_LIMITS = {
-    "{leg}_Body_Hip_RevoluteJoint": {leg: (-32.0, 32.0) for leg in ALL_LEGS},
-    "{leg}_Hip_Femur_RevoluteJoint": {leg: (-70.0, 55.0) for leg in ALL_LEGS},
+    "{leg}_Body_Hip_RevoluteJoint": {leg: (-28.0, 28.0) for leg in ALL_LEGS},
+    "{leg}_Hip_Femur_RevoluteJoint": {leg: (-45.0, 60.0) for leg in ALL_LEGS},
     "{leg}_Femur_Tibia_RevoluteJoint": {
-        **{leg: (-75.0, 50.0) for leg in LEFT_LEGS},
-        **{leg: (-50.0, 75.0) for leg in RIGHT_LEGS},
-    },
-}
-
-# init-state defaults from crab_hex_scene_cfg.py (radians)
-DEFAULTS_RAD = {
-    "{leg}_Body_Hip_RevoluteJoint": {leg: 0.0 for leg in ALL_LEGS},
-    "{leg}_Hip_Femur_RevoluteJoint": {leg: 0.30 for leg in ALL_LEGS},
-    "{leg}_Femur_Tibia_RevoluteJoint": {
-        **{leg: -0.07 for leg in LEFT_LEGS},
-        **{leg: 0.10 for leg in RIGHT_LEGS},
+        **{leg: (-50.0, 85.0) for leg in LEFT_LEGS},
+        **{leg: (-85.0, 50.0) for leg in RIGHT_LEGS},
     },
 }
 
 SOFT_LIMIT_FACTOR = 0.9  # crab_hex_scene_cfg.py soft_joint_pos_limit_factor
-THETA_HIP_MAX = 0.4981432  # crab_hex_cam_mapping.py, asin(K)
+THETA_HIP_MAX = math.asin(dims.YAW_K)  # 25.0 deg exactly: K derived from measured throw
+
+
+def test_literal_table_matches_dimensions_module():
+    """The literal table above and the conversion arithmetic in crab_hex_dimensions agree."""
+    assert dims.HIP_SIM_LIMITS_DEG == pytest.approx((-45.0, 60.0))
+    assert dims.KNEE_SIM_LIMITS_LEFT_DEG == pytest.approx((-50.0, 85.0))
+    assert dims.KNEE_SIM_LIMITS_RIGHT_DEG == pytest.approx((-85.0, 50.0))
+    assert dims.YAW_HARD_LIMIT_DEG == pytest.approx(28.0)
+    # And that the arithmetic still encodes the raw hardware measurements:
+    assert dims.HIP_ROM_FROM_UP_DEG == (45.0, 150.0)
+    assert dims.KNEE_INTERIOR_ROM_DEG == (5.0, 140.0)
+    assert dims.YAW_THROW_DEG == 25.0
 
 
 def _parse_joint_blocks(text: str) -> dict[str, dict[str, float]]:
@@ -101,13 +121,28 @@ def test_right_leg_knee_limits_mirror_left(joint_blocks):
 
 @pytest.mark.parametrize("template", sorted(EXPECTED_LIMITS))
 def test_defaults_inside_soft_limits(joint_blocks, template):
-    """soft_joint_pos_limit_factor scales the range about its midpoint."""
+    """soft_joint_pos_limit_factor scales the range about its midpoint. Defaults are the
+    actuator mid-stroke poses from crab_hex_linkage (needs torch, like the cam check)."""
+    mdp_dir = str(_DIMS_PATH.parent)
+    if mdp_dir not in sys.path:
+        sys.path.insert(0, mdp_dir)
+    pytest.importorskip("torch")
+    import crab_hex_linkage as lk
+
+    defaults_rad = {
+        "{leg}_Body_Hip_RevoluteJoint": {leg: 0.0 for leg in ALL_LEGS},
+        "{leg}_Hip_Femur_RevoluteJoint": {leg: lk.hip_default_rad() for leg in ALL_LEGS},
+        "{leg}_Femur_Tibia_RevoluteJoint": {
+            **{leg: lk.knee_default_left_rad() for leg in LEFT_LEGS},
+            **{leg: lk.knee_default_right_rad() for leg in RIGHT_LEGS},
+        },
+    }
     for leg, (lo, hi) in EXPECTED_LIMITS[template].items():
         lo_r, hi_r = math.radians(lo), math.radians(hi)
         mid, half = (lo_r + hi_r) / 2, (hi_r - lo_r) / 2
         soft_lo = mid - SOFT_LIMIT_FACTOR * half
         soft_hi = mid + SOFT_LIMIT_FACTOR * half
-        default = DEFAULTS_RAD[template][leg]
+        default = defaults_rad[template][leg]
         assert soft_lo < default < soft_hi, (
             f"{template.format(leg=leg)} default {default} outside soft "
             f"[{soft_lo:.3f}, {soft_hi:.3f}]"
@@ -116,7 +151,18 @@ def test_defaults_inside_soft_limits(joint_blocks, template):
 
 def test_body_hip_soft_limit_clears_cam_sweep():
     """The passive Body_Hip soft limit must not clip the cam-slaved sweep."""
-    soft = SOFT_LIMIT_FACTOR * math.radians(32.0)
+    soft = SOFT_LIMIT_FACTOR * math.radians(dims.YAW_HARD_LIMIT_DEG)
     assert THETA_HIP_MAX < soft, (
         f"cam sweep {THETA_HIP_MAX:.4f} rad would be clipped by soft limit {soft:.4f}"
     )
+
+
+def test_cam_mapping_module_uses_measured_throw():
+    """crab_hex_cam_mapping must derive K from the measured throw, not the stale SVG value."""
+    mdp_dir = str(_DIMS_PATH.parent)
+    if mdp_dir not in sys.path:
+        sys.path.insert(0, mdp_dir)
+    torch = pytest.importorskip("torch")  # noqa: F841 -- cam mapping imports torch
+    import crab_hex_cam_mapping as cam
+
+    assert cam.THETA_HIP_MAX == pytest.approx(math.radians(dims.YAW_THROW_DEG))
