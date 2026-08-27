@@ -10,6 +10,7 @@ from isaaclab.utils import configclass
 from isaaclab_tasks.manager_based.locomotion.velocity.mdp.rewards import feet_slide
 
 from parkour_isaaclab.envs.mdp import rewards as mdp_rewards
+from parkour_tasks.crab_hexapod_task.mdp import crab_hex_clock_reward as clock_reward
 from parkour_isaaclab.envs.mdp import terminations as parkour_terminations
 from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_mdp_terminations import (
     terminate_crab_hex_failure,
@@ -65,11 +66,24 @@ _CRAB_POSITION_ACTUATED_JOINT_NAMES = [
 ]
 
 # NOTE(cam-velocity-actions): raw +-1 on a camshaft channel maps to +-CAM_VEL_SCALE rad/s of
-# commanded shaft speed (one gait cycle = 2*pi shaft rad, so 6.0 rad/s ~= 0.95 cycles/s).
-# Constant across all curriculum stages -- only the position channels' scale/clip ramp.
-# Placeholder pending measured cam-motor free speed; keep below the actuator's
-# velocity_limit=15.0 (see crab_hex_scene_cfg.py torque-speed note).
-CAM_VEL_SCALE = 6.0
+# commanded shaft speed (one gait cycle = 2*pi shaft rad).
+# NOTE(hardware-measurements, 2026-08-20): the real yaw gearmotor runs ~30 RPM = pi rad/s
+# (motor-sourcing doc, user-confirmed), so full-scale action = one gait cycle per 2 s.
+# Replaces the 6.0 placeholder. Keep below the cam actuator's velocity_limit=8.0
+# (see crab_hex_scene_cfg.py torque-speed note).
+CAM_VEL_SCALE = math.pi
+
+# NOTE(hardware-measurements, 2026-08-20): geometry-coupled reward constants, re-derived
+# for the measured robot (legs ~35-40% longer than the old model).
+# GROUND_OFFSET_FROM_ROOT_M: the nominal terrain height relative to the root, used by the
+# clearance rewards; = -(settled root height above the terrain SURFACE). Measured
+# (campaign 2026-08-20_1506_hardware_morphology, vertical-plate battery): settled root
+# 1.064 above z=0, surface ~0.017 -> root-to-surface ~1.047 -> -1.05.
+GROUND_OFFSET_FROM_ROOT_M = -1.05
+# Swing clearance bands, scaled from the old 0.05/0.20 (and 0.03 micro-swing) by leg growth.
+MIN_CLEARANCE_M = 0.07
+MAX_CLEARANCE_M = 0.26
+MIN_SWING_CLEARANCE_M = 0.04
 
 
 def _crab_action_scale(pos_scale: float) -> dict[str, float]:
@@ -359,7 +373,52 @@ class CrabHexTeacherWarmupRewardsCfg(CrabHexRewardsCfg):
 
 @configclass
 class CrabHexTeacherBridgeRewardsCfg(CrabHexTeacherWarmupRewardsCfg):
-    """``KRABBY_HEX_TEACHER_MODE=bridge``: easy mixed walk — velocity/posture primary, parkour goal/yaw off."""
+    """``KRABBY_HEX_TEACHER_MODE=bridge``: easy mixed walk — velocity/posture primary, parkour goal/yaw off.
+
+    NOTE(teacher-handoff, 2026-08-26): the measured-hardware plant broke this stack's
+    economics — its positive income is tuned for old-plant speeds (net ≈ −3.2/step with
+    the torque tax dominating; hand-off chain #1/#2 collapsed to 100% failure as dying
+    early became optimal). Two plant recalibrations, inherited by 2b1/2b2:
+    (a) the clock contact-schedule income (the plant's proven locomotion income, dims
+        15-16 clock obs are already in the shared observation head) is registered here,
+        armed by KRABBY_CLOCK_W exactly as in flat-walk;
+    (b) penalty_low_forward_speed's min_actual_speed 0.35 belongs to the old plant
+        (this one's steady walk is 0.10-0.20 m/s) — KRABBY_MIN_ACTUAL_SPEED overrides.
+    """
+
+    reward_clock_schedule = RewTerm(
+        func=mdp_rewards.RewardClockContactSchedule,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=_CRAB_FOOT_BODY_NAMES, preserve_order=True),
+            "command_name": "base_velocity",
+            "force_ref": clock_reward.FORCE_REF_N,
+            "vel_ref": clock_reward.VEL_REF_M_S,
+            "min_upright_gz": 0.9,
+            "combine": "sum",
+        },
+    )
+
+    def __post_init__(self):
+        import os as _os
+
+        _cw = _os.environ.get("KRABBY_CLOCK_W")
+        if _cw is not None:
+            self.reward_clock_schedule.weight = float(_cw)
+        _mas = _os.environ.get("KRABBY_MIN_ACTUAL_SPEED")
+        if _mas is not None:
+            self.penalty_low_forward_speed_when_commanded.params["min_actual_speed"] = float(_mas)
+        # NOTE(teacher-handoff chain #5 post-mortem): 2b1's full-dose goal/yaw income
+        # taught the never-turned-before flat policy to attempt maneuvers it cannot
+        # survive (failure tracked income upward, 0.0 -> 0.96 in one chunk; critic reset
+        # irrelevant). Dose control for a Freitag-style ramp:
+        _gv = _os.environ.get("KRABBY_GOAL_VEL_W")
+        if _gv is not None and hasattr(self, "reward_tracking_goal_vel"):
+            self.reward_tracking_goal_vel.weight = float(_gv)
+        _yw = _os.environ.get("KRABBY_YAW_W")
+        if _yw is not None and hasattr(self, "reward_tracking_yaw"):
+            self.reward_tracking_yaw.weight = float(_yw)
 
     reward_hip_pos = RewTerm(
         func=mdp_rewards.reward_hip_pos,
@@ -393,7 +452,11 @@ class CrabHexTeacherBridgeRewardsCfg(CrabHexTeacherWarmupRewardsCfg):
             "command_name": "base_velocity",
             "asset_cfg": SceneEntityCfg("robot"),
             "min_cmd_norm": 0.12,
-            "max_speed_scale": 1.75,
+            # NOTE(gait-formation Phase 0, 2026-08-20): 1.75 paid the wheelie exploit up
+            # to 1.14 m/s (2x the command envelope); both smoke tests rode it into the
+            # 0.5 rad tilt termination. 1.05 caps progress income at ~the command.
+            # Override: KRABBY_MAX_SPEED_SCALE.
+            "max_speed_scale": 1.05,
         },
     )
     reward_orientation = RewTerm(
@@ -628,7 +691,11 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
             "command_name": "base_velocity",
             "asset_cfg": SceneEntityCfg("robot"),
             "min_cmd_norm": 0.12,
-            "max_speed_scale": 1.75,
+            # NOTE(gait-formation Phase 0, 2026-08-20): 1.75 paid the wheelie exploit up
+            # to 1.14 m/s (2x the command envelope); both smoke tests rode it into the
+            # 0.5 rad tilt termination. 1.05 caps progress income at ~the command.
+            # Override: KRABBY_MAX_SPEED_SCALE.
+            "max_speed_scale": 1.05,
         },
     )
     reward_obstacle_clearance = RewTerm(
@@ -653,10 +720,10 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
             "command_name": "base_velocity",
             "contact_force_threshold": 0.1,
-            "min_clearance_m": 0.05,
-            "max_clearance_m": 0.20,
+            "min_clearance_m": MIN_CLEARANCE_M,
+            "max_clearance_m": MAX_CLEARANCE_M,
             "min_forward_speed_cmd": 0.12,
-            "ground_offset_from_root_m": -1.0,
+            "ground_offset_from_root_m": GROUND_OFFSET_FROM_ROOT_M,
             "parkour_name": "base_parkour",
         },
     )
@@ -683,9 +750,9 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
             "command_name": "base_velocity",
             "contact_force_threshold": 0.1,
-            "min_clearance_m": 0.03,
+            "min_clearance_m": MIN_SWING_CLEARANCE_M,
             "min_forward_speed_cmd": 0.12,
-            "ground_offset_from_root_m": -1.0,
+            "ground_offset_from_root_m": GROUND_OFFSET_FROM_ROOT_M,
             "parkour_name": "base_parkour",
         },
     )
@@ -700,7 +767,7 @@ class CrabHexStage2BPhase2RewardsCfg(CrabHexStage2BPhase1RewardsCfg):
             "contact_force_threshold": 0.1,
             "min_forward_speed_cmd": 0.12,
             "max_vertical_vel": 0.5,
-            "ground_offset_from_root_m": -1.0,
+            "ground_offset_from_root_m": GROUND_OFFSET_FROM_ROOT_M,
         },
     )
     reward_tracking_goal_vel = RewTerm(
@@ -773,7 +840,11 @@ class CrabHexFlatWalkRewardsCfg:
             "command_name": "base_velocity",
             "asset_cfg": SceneEntityCfg("robot"),
             "min_cmd_norm": 0.12,
-            "max_speed_scale": 1.75,
+            # NOTE(gait-formation Phase 0, 2026-08-20): 1.75 paid the wheelie exploit up
+            # to 1.14 m/s (2x the command envelope); both smoke tests rode it into the
+            # 0.5 rad tilt termination. 1.05 caps progress income at ~the command.
+            # Override: KRABBY_MAX_SPEED_SCALE.
+            "max_speed_scale": 1.05,
         },
     )
     reward_orientation = RewTerm(
@@ -807,6 +878,44 @@ class CrabHexFlatWalkRewardsCfg:
     # never fires on the healthy gait (stance bouts ~0.10s < any useful debounce) while paying
     # the slow degenerates -- see the v1-v5 addenda in crab_hex_tripod_reward.py and the campaign
     # RESULTS.md / offline_replay/ for the gate numbers.
+    # NOTE(gait-formation-v2 Phase 1, 2026-08-22): the clock-referenced contact-schedule
+    # reward — the stability review's ranked recommendation #1 (Siekmann/Walk These Ways
+    # family), adopted after the crossing-credit term proved gradient-dead at zero behavior
+    # across two campaigns on two plants. The alternating-tripod schedule exists in the
+    # reward from step 0 (dense positive income; no holdable state earns while the clock
+    # advances). The clock itself lives in CrabHexDelayedJointPositionAction.clock_phase;
+    # the policy sees it as sin/cos obs dims. Arm via KRABBY_CLOCK_W (screens use ~1.0).
+    reward_clock_schedule = RewTerm(
+        func=mdp_rewards.RewardClockContactSchedule,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=_CRAB_FOOT_BODY_NAMES, preserve_order=True),
+            "command_name": "base_velocity",
+            "force_ref": clock_reward.FORCE_REF_N,
+            "vel_ref": clock_reward.VEL_REF_M_S,
+            "min_upright_gz": 0.9,
+            # KRABBY_CLOCK_COMBINE overrides ("sum" | "product") — see the pure function's
+            # docstring for the creep-differential rationale (2026-08-22).
+            "combine": "sum",
+        },
+    )
+    # NOTE(gait-formation-v2 Phase 4, 2026-08-24): scheduled swing apex (WTW-style
+    # commanded footswing height). Income-priced clearance lost to survival economics at
+    # every dose (G1-G3/I1); the apex is specified in the clock schedule instead.
+    # KRABBY_APEX_W arms it; KRABBY_APEX_M overrides the commanded height.
+    reward_clock_swing_apex = RewTerm(
+        func=mdp_rewards.RewardClockSwingApex,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "command_name": "base_velocity",
+            "apex_m": clock_reward.APEX_TARGET_M,
+            "sigma_m": clock_reward.APEX_SIGMA_M,
+            "ground_offset_from_root_m": GROUND_OFFSET_FROM_ROOT_M,
+            "min_upright_gz": 0.9,
+        },
+    )
     reward_tripod_schedule = RewTerm(
         func=mdp_rewards.RewardTripodSchedule,
         weight=0.0,
@@ -814,10 +923,16 @@ class CrabHexFlatWalkRewardsCfg:
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=_CRAB_FOOT_BODY_NAMES, preserve_order=True),
             "command_name": "base_velocity",
             "min_cmd_norm": 0.12,
+            # NOTE(gait-formation Phase 0, 2026-08-20): band recalibrated to the pi-rad/s
+            # cam (CAM_VEL_SCALE=pi -> 2.0 s gait cycle, A/B crossings ~1.0 s apart). The
+            # old 0.10/0.60 band + corr_tau 0.20 were tuned for the 6 rad/s era's ~0.30 s
+            # stride and were two independent kills at pi (out-of-band crossings AND
+            # var < var_min from the too-fast correlation window). Overrides:
+            # KRABBY_TRIPOD_MIN_PERIOD / MAX_PERIOD / CORR_TAU / MIN_AMP.
             "ema_tau": 0.06,
-            "corr_tau": 0.20,
-            "min_period": 0.10,
-            "max_period": 0.60,
+            "corr_tau": 0.70,
+            "min_period": 0.30,
+            "max_period": 1.40,
             "min_amp": 0.15,
             "var_min": 0.01,
             "credit_scale": 1.0,
@@ -853,10 +968,11 @@ class CrabHexFlatWalkRewardsCfg:
         params={
             "command_name": "base_velocity",
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
-            # NOTE(task1-velocity C2, BAKED 2026-08-16): cam-derived swing target
-            # (return stroke 2.14 rad / 6 rad/s ~= 0.36 s; 0.05 could not tell a
-            # cam-timed swing from a micro-tap). Override: KRABBY_AIRTIME_THRESH.
-            "threshold": 0.20,
+            # NOTE(task1-velocity C2, BAKED 2026-08-16; recalibrated gait-formation
+            # Phase 0 2026-08-20): cam-derived swing target — return stroke 2.14 rad at
+            # CAM_VEL_SCALE=pi is ~0.68 s, so 0.38 keeps the same ~0.55x selectivity the
+            # 0.20 had at 6 rad/s. Override: KRABBY_AIRTIME_THRESH.
+            "threshold": 0.38,
         },
     )
     # NOTE(stride-length): rewards |hip-yaw diff|**power across every touchdown<->liftoff
@@ -914,7 +1030,9 @@ class CrabHexFlatWalkRewardsCfg:
                 body_names=_CRAB_FOOT_BODY_NAMES,
                 preserve_order=True,
             ),
-            "max_idle_steps": 60,
+            # NOTE(gait-formation Phase 0): 60 steps = 1.2 s taxed legitimate cam-timed
+            # swings below full throttle (return stroke ~1.36 s at half speed). 90 = 1.8 s.
+            "max_idle_steps": 90,
             "contact_force_threshold": 0.1,
             "min_forward_speed_cmd": 0.12,
         },
@@ -1009,6 +1127,9 @@ class CrabHexFlatWalkRewardsCfg:
         params={
             "asset_cfg": SceneEntityCfg("robot", joint_names=[".*_Body_CamShaft_RevoluteJoint"]),
             "command_name": "base_velocity",
+            # NOTE(gait-formation Phase 0): default speed_ref=4.0 > CAM_VEL_SCALE=pi
+            # capped this term at 0.785 of nominal forever; 2.8 = 0.9*pi.
+            "speed_ref": 2.8,
         },
     )
     # NOTE(onedir-spin round 4, lit-review synthesis): contact schedule referenced to each
@@ -1026,7 +1147,7 @@ class CrabHexFlatWalkRewardsCfg:
     reward_cam_phase_lock = RewTerm(
         func=mdp_rewards.RewardCamPhaseLock,
         weight=0.0,
-        params={"asset_cfg": SceneEntityCfg("robot")},
+        params={"asset_cfg": SceneEntityCfg("robot"), "speed_ref": 2.8},
     )
     # NOTE(staged-ramp): physics-grounded basin selector — spin gaits are ~42% cheaper in
     # total |tau*qdot| than oscillation (see penalty_mechanical_power docstring).
@@ -1082,10 +1203,28 @@ class CrabHexFlatWalkRewardsCfg:
             "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
             "command_name": "base_velocity",
             "contact_force_threshold": 0.1,
-            "min_clearance_m": 0.05,
-            "max_clearance_m": 0.20,
+            "min_clearance_m": MIN_CLEARANCE_M,
+            "max_clearance_m": MAX_CLEARANCE_M,
             "min_forward_speed_cmd": 0.12,
-            "ground_offset_from_root_m": -1.0,
+            "ground_offset_from_root_m": GROUND_OFFSET_FROM_ROOT_M,
+            "parkour_name": "base_parkour",
+        },
+    )
+    # NOTE(gait-formation Phase 0, 2026-08-20): micro-swing penalty from the 2b2 teacher
+    # stack, registered here inert for the lift phase. KRABBY_SWING_MIN_CLEAR_W. Like
+    # foot_clearance it is masked to zero on parkour_flat tiles; KRABBY_FOOT_CLEAR_FLAT=1
+    # lifts that mask on both terms (parkour_name -> None) for pure-flat lift shaping.
+    penalty_swing_min_clearance = RewTerm(
+        func=mdp_rewards.penalty_swing_min_clearance,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_Footpad"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "command_name": "base_velocity",
+            "contact_force_threshold": 0.1,
+            "min_clearance_m": MIN_SWING_CLEARANCE_M,
+            "min_forward_speed_cmd": 0.12,
+            "ground_offset_from_root_m": GROUND_OFFSET_FROM_ROOT_M,
             "parkour_name": "base_parkour",
         },
     )
@@ -1110,13 +1249,60 @@ class CrabHexFlatWalkRewardsCfg:
             "KRABBY_POWER_W": "penalty_mechanical_power",
             "KRABBY_TRACK_L1_W": "penalty_tracking_error_l1",
             "KRABBY_TRIPOD_W": "reward_tripod_schedule",
+            "KRABBY_CLOCK_W": "reward_clock_schedule",
+            "KRABBY_APEX_W": "reward_clock_swing_apex",
             "KRABBY_CLEARANCE_W": "reward_obstacle_clearance",
             "KRABBY_FOOT_CLEAR_W": "reward_foot_clearance",
+            # NOTE(gait-formation Phase 0, 2026-08-20): campaign levers, all arms are
+            # pure env-var deltas.
+            "KRABBY_ANGVEL_W": "reward_ang_vel_xy",
+            "KRABBY_ORIENT_W": "reward_orientation",
+            "KRABBY_ACTION_RATE_W": "reward_action_rate",
+            "KRABBY_DELTA_TORQUE_W": "reward_delta_torques",
+            "KRABBY_EXCESS_CONTACT_W": "penalty_excess_feet_contact_forward",
+            "KRABBY_STANCE_SUPPORT_W": "reward_stance_support_feet_when_forward",
+            "KRABBY_STRIDE_W": "reward_stride_length",
+            "KRABBY_AIRTIME_W": "reward_feet_air_time_positive",
+            "KRABBY_SWING_MIN_CLEAR_W": "penalty_swing_min_clearance",
         }
         for env_name, term_name in _overrides.items():
             raw = os.environ.get(env_name)
             if raw is not None:
                 getattr(self, term_name).weight = float(raw)
+        # Tripod band params (gait-formation Phase 0): the crossing-credit band must be
+        # retunable per-arm without code edits.
+        _tripod_params = {
+            "KRABBY_TRIPOD_MIN_PERIOD": "min_period",
+            "KRABBY_TRIPOD_MAX_PERIOD": "max_period",
+            "KRABBY_TRIPOD_CORR_TAU": "corr_tau",
+            "KRABBY_TRIPOD_MIN_AMP": "min_amp",
+        }
+        for env_name, param_name in _tripod_params.items():
+            raw = os.environ.get(env_name)
+            if raw is not None:
+                self.reward_tripod_schedule.params[param_name] = float(raw)
+        _mss = os.environ.get("KRABBY_MAX_SPEED_SCALE")
+        if _mss is not None:
+            self.reward_forward_progress_along_command.params["max_speed_scale"] = float(_mss)
+        _ccm = os.environ.get("KRABBY_CLOCK_COMBINE")
+        if _ccm is not None:
+            self.reward_clock_schedule.params["combine"] = _ccm
+        # NOTE(gait-formation-v2 Phase 4, 2026-08-23): the clearance term's relu floor
+        # (min_clearance_m 0.07) pays ZERO below 7 cm while the baked gait lifts 4.4 cm —
+        # a dead zone with no gradient between current behavior and the income floor (the
+        # same pathology as the crossing term, one level down; G1/G2 measured the plateau).
+        # KRABBY_FOOT_CLEAR_MIN lowers the floor so the gradient is dense from the ground up.
+        _fcm = os.environ.get("KRABBY_FOOT_CLEAR_MIN")
+        if _fcm is not None:
+            self.reward_foot_clearance.params["min_clearance_m"] = float(_fcm)
+        _apx = os.environ.get("KRABBY_APEX_M")
+        if _apx is not None:
+            self.reward_clock_swing_apex.params["apex_m"] = float(_apx)
+        # KRABBY_FOOT_CLEAR_FLAT=1: lift the parkour_flat mask on the clearance terms so
+        # they pay on 100%-flat terrain (they are hard-zeroed there otherwise).
+        if os.environ.get("KRABBY_FOOT_CLEAR_FLAT") == "1":
+            self.reward_foot_clearance.params["parkour_name"] = None
+            self.penalty_swing_min_clearance.params["parkour_name"] = None
         # NOTE(tracking-regression 2026-08-15): sigma^2=0.02 gives the tracking well a
         # ~+-0.25 m/s capture radius; velocity-action exploration lands outside it and the
         # era's dominant reward term contributes zero gradient forever (see onedir-spin

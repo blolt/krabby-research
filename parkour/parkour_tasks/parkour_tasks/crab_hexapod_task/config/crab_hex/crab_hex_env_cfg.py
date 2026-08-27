@@ -122,12 +122,25 @@ def _crab_hex_bridge_like_mdp_active() -> bool:
     return _crab_hex_teacher_mode() in ("bridge", "2b1", "2b2")
 
 
+def _teacher_lin_vel_x_band() -> tuple[float, float]:
+    """Teacher-stage command band, KRABBY_LIN_VEL_X-overridable (gait-formation-v2 hand-off,
+    2026-08-26). The historical (0.45, 0.85) band belongs to the 6 rad/s-cam plant (kinematic
+    ceiling ~1.1 m/s); the measured-hardware plant tops out near 0.5 m/s at full cam speed, so
+    the old band demands untrackable speeds. Presence-based override, same syntax as flat-walk.
+    """
+    raw = os.environ.get("KRABBY_LIN_VEL_X")
+    if raw is not None:
+        lo, hi = (float(x) for x in raw.split(":"))
+        return (lo, hi)
+    return (0.45, 0.85)
+
+
 def _apply_crab_hex_stage_2b_bridge_lite_env(cfg, *, action_scale: float = 0.24) -> None:
     """Shared bridge-lite physics/events/terminations for stage-2b (phase 1 and 2)."""
     _apply_crab_hex_bridge_actions_and_events(cfg, action_scale=action_scale)
     cfg.commands.base_velocity.ranges.heading = (0.0, 0.0)
     cfg.commands.base_velocity.heading_control_stiffness = 1.5
-    cfg.commands.base_velocity.ranges.lin_vel_x = (0.45, 0.85)
+    cfg.commands.base_velocity.ranges.lin_vel_x = _teacher_lin_vel_x_band()
 
 
 def _apply_crab_hex_stage_2b_phase1_terrain(cfg) -> None:
@@ -140,7 +153,14 @@ def _apply_crab_hex_stage_2b_phase1_terrain(cfg) -> None:
 
 
 def _apply_crab_hex_stage_2b_phase2_parkour_geometry(tg) -> None:
-    """Moderate parkour geometry for 2b2 (between bridge-shallow and full teacher)."""
+    """Moderate parkour geometry for 2b2 (between bridge-shallow and full teacher).
+
+    TODO(hardware-measurements, 2026-08-20): these obstacle scales (and the Go2-derived
+    EXTREME_PARKOUR_TERRAINS_CFG defaults) were sized for the OLD half-size robot. The
+    measured robot is ~2x taller with ~40% longer legs and 10-25x slower joints -- hurdles
+    and steps at these heights are likely trivial while gaps may bind differently.
+    Re-scale deliberately when the retrain campaign reaches parkour stages; the flat-walk
+    stages are unaffected."""
     if "parkour_gap" in tg.sub_terrains:
         gap = tg.sub_terrains["parkour_gap"]
         gap.gap_depth = (0.08, 0.18)
@@ -189,7 +209,7 @@ def _apply_crab_hex_student_2b2_teacher_mdp(cfg) -> None:
     _apply_crab_hex_stage_2b_phase2_terrain(cfg)
     cfg.commands.base_velocity.ranges.heading = (0.0, 0.0)
     cfg.commands.base_velocity.heading_control_stiffness = 1.5
-    cfg.commands.base_velocity.ranges.lin_vel_x = (0.45, 0.85)
+    cfg.commands.base_velocity.ranges.lin_vel_x = _teacher_lin_vel_x_band()
     cfg.events.push_by_setting_velocity = None
     cfg.events.randomize_rigid_body_mass = None
     cfg.events.randomize_rigid_body_com = None
@@ -223,7 +243,14 @@ def _apply_crab_hex_full_actions(cfg) -> None:
     ``cfg.actions.joint_pos.joint_names`` itself is unaffected -- already fixed at the class-level
     default (``CrabHexFlatWalkActionsCfg``) to exclude the passive ``*_Body_Hip_RevoluteJoint``.
     """
-    cfg.actions.joint_pos.scale = _crab_action_scale(0.25)
+    # NOTE(gait-formation-v2 Phase 4, 2026-08-23): KRABBY_ACTION_SCALE overrides the pitch
+    # joints' target authority (rad). The default 0.25 caps toe lift at ~4.6 cm (analytic,
+    # matches G1-G3's measured 4.2-4.7 plateau across a 4x clearance-income range); the
+    # user-approved lift route raises it. Cam channels keep CAM_VEL_SCALE regardless.
+    import os as _os
+
+    _asc = _os.environ.get("KRABBY_ACTION_SCALE")
+    cfg.actions.joint_pos.scale = _crab_action_scale(float(_asc) if _asc else 0.25)
     cfg.actions.joint_pos.clip = _crab_action_clip((-4.8, 4.8))
     cfg.actions.joint_pos.use_delay = True
     cfg.actions.joint_pos.history_length = 8
@@ -415,9 +442,54 @@ class CrabHexFlatWalkEnvCfg(CrabHexTeacherEnvCfg):
     def __post_init__(self):
         super().__post_init__()
         # Straight flat-walk: fixed world heading 0; P-control corrects slow yaw drift in play/train.
-        self.commands.base_velocity.ranges.lin_vel_x = (0.30, 0.65)
+        # NOTE(gait-formation Phase 0, 2026-08-20): command range overridable per-arm as
+        # "lo:hi" (e.g. KRABBY_LIN_VEL_X="0.0:0.35" for a stand-first survival arm).
+        # NOTE(gait-formation Phase A, 2026-08-21): command resampling override "lo:hi"
+        # seconds. The eval holds commands 10 s but training resampled every 6 s -- C5/C9
+        # both plateaued at ~0.3 eval completion while passing training gates; policies
+        # never trained against a sustained hold.
+        _rs = os.environ.get("KRABBY_RESAMPLE_S")
+        if _rs is not None:
+            _rlo, _rhi = (float(x) for x in _rs.split(":"))
+            self.commands.base_velocity.resampling_time_range = (_rlo, _rhi)
+        _lvx = os.environ.get("KRABBY_LIN_VEL_X")
+        if _lvx is not None:
+            _lo, _hi = (float(x) for x in _lvx.split(":"))
+            self.commands.base_velocity.ranges.lin_vel_x = (_lo, _hi)
+        else:
+            self.commands.base_velocity.ranges.lin_vel_x = (0.30, 0.65)
         self.commands.base_velocity.ranges.heading = (0.0, 0.0)
+        # NOTE(gait-formation-v2 Phase 1): RSI arm — seed a fraction of resets from the
+        # Phase-0 scripted-gait reference bank (see crab_hex_rsi.py). Presence-based.
+        _rsi = os.environ.get("KRABBY_RSI_FRAC")
+        if _rsi is not None and float(_rsi) > 0.0:
+            from isaaclab.managers import EventTermCfg as _EventTerm
+
+            from parkour_tasks.crab_hexapod_task.mdp import crab_hex_rsi as _rsi_mod
+
+            _bank_default = (
+                "/home/nickmagus/krabby/krabby-research/sim_fine_tuning/"
+                "2026-08-22_1200_gait_formation_v2/rsi_bank_setAB.npz"
+            )
+            self.events.rsi_reference_reset = _EventTerm(
+                func=_rsi_mod.reset_from_reference_states,
+                mode="reset",
+                params={
+                    "bank_path": os.environ.get("KRABBY_RSI_BANK", _bank_default),
+                    "fraction": float(_rsi),
+                },
+            )
         self.commands.base_velocity.heading_control_stiffness = 1.5
+        # NOTE(gait-formation Phase 0): unidirectional cam clamp (structural
+        # continuous-spin lever, lit-review "clamp + cadence-linked income" recipe).
+        # KRABBY_CAM_CLIP_LO sets the LOWER raw-action bound on the six cam velocity
+        # channels only (upper stays +1.0): e.g. 0.1 -> commanded shaft speed in
+        # [0.1*pi, pi], oscillation not expressible. Unset = symmetric (-1, 1).
+        _cam_lo = os.environ.get("KRABBY_CAM_CLIP_LO")
+        if _cam_lo is not None:
+            clip = dict(self.actions.joint_pos.clip)
+            clip[".*_Body_CamShaft_RevoluteJoint"] = (float(_cam_lo), 1.0)
+            self.actions.joint_pos.clip = clip
         self.events.push_by_setting_velocity = None
         self.events.randomize_rigid_body_mass = None
         self.events.randomize_rigid_body_com = None

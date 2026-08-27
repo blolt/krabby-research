@@ -2,11 +2,22 @@ import os
 from pathlib import Path
 
 import isaaclab.sim as sim_utils
+from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets import ArticulationCfg
 from isaaclab.utils import configclass
 
 from parkour_isaaclab.actuators.parkour_actuator_cfg import ParkourDCMotorCfg
 from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import hip_to_cam_shaft_default
+from parkour_tasks.crab_hexapod_task.mdp.crab_hex_linkage import (
+    hip_default_rad,
+    knee_default_left_rad,
+    knee_default_right_rad,
+)
+
+# Hardware-natural neutral: both linear actuators at exact mid-stroke (see crab_hex_linkage).
+_HIP_DEFAULT_RAD = hip_default_rad()
+_KNEE_DEFAULT_LEFT_RAD = knee_default_left_rad()
+_KNEE_DEFAULT_RIGHT_RAD = knee_default_right_rad()
 from parkour_tasks.crab_hexapod_task.sensors import ParkourHexContactSensorCfg
 from parkour_tasks.default_cfg import CAMERA_CFG
 from parkour_tasks.extreme_parkour_task.config.go2.parkour_student_cfg import ParkourStudentSceneCfg
@@ -47,11 +58,10 @@ def _crab_simple_usd_path() -> str:
 # now pins physics:diagonalInertia = 0.015 kg*m^2 on each camshaft (motor rotor reflected
 # through the gear reduction is NOT negligible; value is a placeholder pending hardware
 # measurement) -> d_max = 2*0.015/0.005 = 6, so d = 1.0 is comfortably stable and reaches
-# 6 rad/s from rest in ~20 ms at the 5 N*m cap. velocity_limit MUST comfortably exceed the
-# max commanded speed (CAM_VEL_SCALE = 6.0 rad/s in parkour_mdp_cfg.py): the DC-motor
-# torque-speed curve zeroes available forward torque as joint_vel -> velocity_limit, so the
-# old 6.0 would leave zero torque at the shaft's own operating point. 15.0 keeps ~60% of
-# saturation torque available at 6 rad/s. Placeholder pending measured motor free speed.
+# commanded speed from rest in tens of ms at the effort cap. velocity_limit MUST comfortably
+# exceed the max commanded speed (CAM_VEL_SCALE = pi rad/s in parkour_mdp_cfg.py): the
+# DC-motor torque-speed curve zeroes available forward torque as joint_vel -> velocity_limit.
+# See the hardware-measurements note below for the current cam effort/velocity values.
 _CAM_SHAFT_STIFFNESS = {
     "FL_Body_CamShaft_RevoluteJoint": 0.0,
     "FR_Body_CamShaft_RevoluteJoint": 0.0,
@@ -61,9 +71,14 @@ _CAM_SHAFT_STIFFNESS = {
     "RR_Body_CamShaft_RevoluteJoint": 0.0,
 }
 _CAM_SHAFT_DAMPING = {name: 1.0 for name in _CAM_SHAFT_STIFFNESS}
-_CAM_SHAFT_EFFORT = {name: 5.0 for name in _CAM_SHAFT_STIFFNESS}
-_CAM_SHAFT_SATURATION = {name: 6.0 for name in _CAM_SHAFT_STIFFNESS}
-_CAM_SHAFT_VELOCITY_LIMIT = 15.0
+# NOTE(hardware-measurements, 2026-08-20): the yaw drive is a 24 V gearmotor, ~20 N*m and
+# ~30 RPM (pi rad/s) through the quick-return crank (motor-sourcing doc, user-confirmed).
+# effort/saturation now use the hardware torque; velocity_limit 8 keeps ~61% of saturation
+# torque available at the pi rad/s operating speed (torque-speed curve zeroes at the limit).
+# CAM_VEL_SCALE in parkour_mdp_cfg.py is pi to match.
+_CAM_SHAFT_EFFORT = {name: 20.0 for name in _CAM_SHAFT_STIFFNESS}
+_CAM_SHAFT_SATURATION = {name: 24.0 for name in _CAM_SHAFT_STIFFNESS}
+_CAM_SHAFT_VELOCITY_LIMIT = 8.0
 
 # NOTE(cam-mechanism-migration): Body_Hip's own actuator -- it tracks position+velocity
 # targets computed from the cam-shaft's state each substep
@@ -86,37 +101,67 @@ _HIP_TRACKING_DAMPING = {name: 40.0 for name in _HIP_TRACKING_STIFFNESS}
 _HIP_TRACKING_EFFORT = {name: 600.0 for name in _HIP_TRACKING_STIFFNESS}
 _HIP_TRACKING_SATURATION = {name: 738.5 for name in _HIP_TRACKING_STIFFNESS}
 
-_HIP_FEMUR_STIFFNESS = {name: 675.0 for name in [
+# NOTE(hardware-measurements, 2026-08-20): the hip-pitch and knee joints are driven by
+# LEAD-SCREW linear actuators (hip: SLA08 2000 N / 28 mm/s; knee: YH8-523D 500 N / 33 mm/s;
+# both 200 mm stroke). Lead screws are NON-BACKDRIVABLE: static holding is free and the
+# joint is structurally near-rigid against external loads. Model:
+# - joint drive = IMPLICIT PhysX PD at screw-like stiffness (an explicit actuator cannot
+#   reach the required stiffness at dt=0.005: with the explicit-stable k=2000 the stance's
+#   net pitch stiffness was NEGATIVE -- gravity's m*g*h ~ 2100 N*m/rad destabilizer vs
+#   ~400 N*m/rad of leg-PD restoring through the narrow +-0.216 m front/rear leg rows --
+#   and the robot tipped over quasi-statically in ~1 s, measured in the settle diagnostics.
+#   Implicit drives are unconditionally stable at high k. But FULLY rigid drives
+#   (40000/15000, first attempt) degenerate the hyperstatic 6-leg load sharing on rigid
+#   flat ground: the robot stood on the FL-RR diagonal with two feet airborne (measured
+#   1061/979/0/0 N). k=16000/6000 sits in the window that has BOTH properties: static
+#   pitch stiffness ~1.5x gravity's destabilizer AND enough compliance (~17 kN/m vertical
+#   per foot) that mm-scale mismatches redistribute only tens of newtons);
+# - the real speed/force constraint lives upstream in CrabHexDelayedJointPositionAction:
+#   position targets are converted to rod lengths, clamped to the physical 450-650 mm
+#   window, and slew-rate-limited at the LOADED rod speed through crab_hex_linkage --
+#   joints move at 0.23-0.47 rad/s (hip) / 0.43-2.3 rad/s (knee) no matter what the
+#   policy commands, which is the headline sim-to-real correction (old model: 6 rad/s);
+# - effort_limit_sim at holding level (~3x the measured stance transients of 354/152 N*m),
+#   finite for solver health, far above the drive-phase F*moment-arm (the screw transmits
+#   reaction rigidly; drive force limits are expressed by the rod-speed slew, not torque).
+_PITCH_JOINT_NAMES = [
     "FL_Hip_Femur_RevoluteJoint",
     "FR_Hip_Femur_RevoluteJoint",
     "ML_Hip_Femur_RevoluteJoint",
     "MR_Hip_Femur_RevoluteJoint",
     "RL_Hip_Femur_RevoluteJoint",
     "RR_Hip_Femur_RevoluteJoint",
-]}
-_HIP_FEMUR_DAMPING = {name: 14.5 for name in _HIP_FEMUR_STIFFNESS}
-_HIP_FEMUR_EFFORT = {name: 1500.0 for name in _HIP_FEMUR_STIFFNESS}
-_HIP_FEMUR_SATURATION = {name: 1850.0 for name in _HIP_FEMUR_STIFFNESS}
-
-_FEMUR_TIBIA_STIFFNESS = {name: 912.0 for name in [
+]
+_KNEE_JOINT_NAMES = [
     "FL_Femur_Tibia_RevoluteJoint",
     "FR_Femur_Tibia_RevoluteJoint",
     "ML_Femur_Tibia_RevoluteJoint",
     "MR_Femur_Tibia_RevoluteJoint",
     "RL_Femur_Tibia_RevoluteJoint",
     "RR_Femur_Tibia_RevoluteJoint",
-]}
-_FEMUR_TIBIA_DAMPING = {name: 18.2 for name in _FEMUR_TIBIA_STIFFNESS}
-_FEMUR_TIBIA_EFFORT = {name: 600.0 for name in _FEMUR_TIBIA_STIFFNESS}
-_FEMUR_TIBIA_SATURATION = {name: 740.0 for name in _FEMUR_TIBIA_STIFFNESS}
+]
+_HIP_FEMUR_STIFFNESS = {name: 16000.0 for name in _PITCH_JOINT_NAMES}
+_HIP_FEMUR_DAMPING = {name: 600.0 for name in _PITCH_JOINT_NAMES}
+_HIP_FEMUR_EFFORT = {name: 1000.0 for name in _PITCH_JOINT_NAMES}
+_HIP_FEMUR_VELOCITY_LIMIT = 2.0  # joint speed never exceeds ~0.5 rad/s (rod-slew-limited)
+
+_FEMUR_TIBIA_STIFFNESS = {name: 6000.0 for name in _KNEE_JOINT_NAMES}
+_FEMUR_TIBIA_DAMPING = {name: 200.0 for name in _KNEE_JOINT_NAMES}
+_FEMUR_TIBIA_EFFORT = {name: 400.0 for name in _KNEE_JOINT_NAMES}
+_FEMUR_TIBIA_VELOCITY_LIMIT = 3.0  # folded-knee rod speed can reach ~2.3 rad/s
 
 
 def _crab_simple_robot_cfg() -> ArticulationCfg:
     """``crab_simple.usda`` (``defaultPrim = "krabby"``): reference composes into ``{ENV_REGEX_NS}/Robot`` — leave
     ``articulation_root_prim_path`` unset so Isaac Lab discovers the root on ``Robot``. Base link ``chassis/body``."""
-    # USD lifts ``krabby`` by +1 m; tune root spawn so feet sit on terrain without huge drop or penetration.
-    # Default 1.05 m (override ``KRABBY_HEX_SPAWN_Z``); lower if hover-then-slam, raise if hips scrape or interpenetration.
-    spawn_z = float(os.environ.get("KRABBY_HEX_SPAWN_Z", "1.05"))
+    # Root spawn height so feet sit on terrain without huge drop or penetration.
+    # NOTE(vertical-plate correction, 2026-08-20 evening): the mid-stroke default pose
+    # sits lower now (hip 1.6 deg vs 6.3): kinematic toe-bottom ~1.056 m below the root,
+    # flat-walk terrain surface ~17 mm ABOVE z=0 -> toe clears when spawn > ~1.074.
+    # 1.085 gives ~11 mm true clearance (covers the +-5% reset joint randomization).
+    # Penetrating spawns cause a violent depenetration transient (measured earlier);
+    # re-derive whenever the default pose changes. Measured settled root: 1.064 over z=0.
+    spawn_z = float(os.environ.get("KRABBY_HEX_SPAWN_Z", "1.085"))
     return ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/Robot",
         spawn=sim_utils.UsdFileCfg(
@@ -175,15 +220,19 @@ def _crab_simple_robot_cfg() -> ArticulationCfg:
                 "MR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.0),
                 "RR_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.0),
                 "RL_Body_CamShaft_RevoluteJoint": hip_to_cam_shaft_default(0.0),
-                # Hip–femur: same on all legs. Knee: sign flip on FR/MR/RR (180° Z in USD); left −0.07
-                # vs right +0.10 balances zero-action roll (~−0.14°) with splay unchanged.
-                ".*_Hip_Femur_RevoluteJoint": 0.30,
-                "FL_Femur_Tibia_RevoluteJoint": -0.07,
-                "ML_Femur_Tibia_RevoluteJoint": -0.07,
-                "RL_Femur_Tibia_RevoluteJoint": -0.07,
-                "FR_Femur_Tibia_RevoluteJoint": 0.10,
-                "MR_Femur_Tibia_RevoluteJoint": 0.10,
-                "RR_Femur_Tibia_RevoluteJoint": 0.10,
+                # NOTE(hardware-measurements, 2026-08-20): defaults = both linear actuators
+                # at exact mid-stroke, computed from the linkage geometry (crab_hex_linkage:
+                # hip 0.1105 rad / knee L 0.2341 rad). This retires the hand-tuned
+                # 0.30 / -0.07 / +0.10 set -- the -0.07/+0.10 knee asymmetry was a
+                # compensation for a ~-0.14 deg zero-action roll on the OLD geometry and has
+                # no meaning on the new one. Knee sign flip on FR/MR/RR (180-deg Z in USD).
+                ".*_Hip_Femur_RevoluteJoint": _HIP_DEFAULT_RAD,
+                "FL_Femur_Tibia_RevoluteJoint": _KNEE_DEFAULT_LEFT_RAD,
+                "ML_Femur_Tibia_RevoluteJoint": _KNEE_DEFAULT_LEFT_RAD,
+                "RL_Femur_Tibia_RevoluteJoint": _KNEE_DEFAULT_LEFT_RAD,
+                "FR_Femur_Tibia_RevoluteJoint": _KNEE_DEFAULT_RIGHT_RAD,
+                "MR_Femur_Tibia_RevoluteJoint": _KNEE_DEFAULT_RIGHT_RAD,
+                "RR_Femur_Tibia_RevoluteJoint": _KNEE_DEFAULT_RIGHT_RAD,
             },
             joint_vel={".*": 0.0},
         ),
@@ -216,20 +265,18 @@ def _crab_simple_robot_cfg() -> ArticulationCfg:
                 friction=0.0,
             ),
             # Femur–tibia stiffer than hip–femur: knee chain dominates collapse under zero-action / gravity.
-            "hip_femur": ParkourDCMotorCfg(
+            "hip_femur": ImplicitActuatorCfg(
                 joint_names_expr=[".*_Hip_Femur_RevoluteJoint"],
-                effort_limit=_HIP_FEMUR_EFFORT,
-                saturation_effort=_HIP_FEMUR_SATURATION,
-                velocity_limit=6.0,
+                effort_limit_sim=_HIP_FEMUR_EFFORT,
+                velocity_limit_sim=_HIP_FEMUR_VELOCITY_LIMIT,
                 stiffness=_HIP_FEMUR_STIFFNESS,
                 damping=_HIP_FEMUR_DAMPING,
                 friction=0.0,
             ),
-            "femur_tibia": ParkourDCMotorCfg(
+            "femur_tibia": ImplicitActuatorCfg(
                 joint_names_expr=[".*_Femur_Tibia_RevoluteJoint"],
-                effort_limit=_FEMUR_TIBIA_EFFORT,
-                saturation_effort=_FEMUR_TIBIA_SATURATION,
-                velocity_limit=6.0,
+                effort_limit_sim=_FEMUR_TIBIA_EFFORT,
+                velocity_limit_sim=_FEMUR_TIBIA_VELOCITY_LIMIT,
                 stiffness=_FEMUR_TIBIA_STIFFNESS,
                 damping=_FEMUR_TIBIA_DAMPING,
                 friction=0.0,
@@ -238,12 +285,25 @@ def _crab_simple_robot_cfg() -> ArticulationCfg:
     )
 
 
+def _apply_crab_height_scanner(scene) -> None:
+    """Re-fit the Go2-sized height scanner to the crab's footprint (override here, never
+    edit the shared Go2 file). NOTE(hardware-measurements, 2026-08-20): the measured robot
+    stands ~3.1 m toe-to-toe laterally (yaw axis 0.61 + femur pivot 0.064 outboard +
+    femur 0.58 + tibia splay ~0.28, per side; vertical-plate hip correction 2026-08-20
+    evening) with toes sweeping fore-aft under ±25° yaw. Grid 2.4 × 3.4 m at 0.3 m
+    resolution (9×12 rays ≈ the Go2 count), biased 0.6 m ahead along the travel axis."""
+    scene.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/chassis/body"
+    scene.height_scanner.offset = type(scene.height_scanner.offset)(pos=(0.6, 0.0, 20.0))
+    scene.height_scanner.pattern_cfg.resolution = 0.3
+    scene.height_scanner.pattern_cfg.size = [2.4, 3.4]
+
+
 @configclass
 class CrabHexTeacherSceneCfg(ParkourTeacherSceneCfg):
     def __post_init__(self):
         super().__post_init__()
         self.robot = _crab_simple_robot_cfg()
-        self.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/chassis/body"
+        _apply_crab_height_scanner(self)
         # Aggregate chassis + all leg links (``ParkourHexContactSensor``): default nested ``Robot/krabby/.*/.*``
         # only reports ``chassis/body``; Isaac composes ``krabby`` children flat under ``Robot`` at runtime.
         self.contact_forces = ParkourHexContactSensorCfg(
@@ -257,12 +317,18 @@ class CrabHexTeacherSceneCfg(ParkourTeacherSceneCfg):
 
 @configclass
 class CrabHexStudentSceneCfg(ParkourStudentSceneCfg):
-    depth_camera = CAMERA_CFG.replace(prim_path="{ENV_REGEX_NS}/Robot/chassis/body")
+    # NOTE(hardware-measurements, 2026-08-20): camera moved from the Go2 offset (0.33, 0,
+    # 0.08) to the crab body's front face (half-length 0.356 m, upper edge of the 0.318 m
+    # tall chassis). Placeholder pending the real camera mount position on the robot.
+    depth_camera = CAMERA_CFG.replace(
+        prim_path="{ENV_REGEX_NS}/Robot/chassis/body",
+        offset=CAMERA_CFG.offset.replace(pos=(0.37, 0.0, 0.10)),
+    )
 
     def __post_init__(self):
         super().__post_init__()
         self.robot = _crab_simple_robot_cfg()
-        self.height_scanner.prim_path = "{ENV_REGEX_NS}/Robot/chassis/body"
+        _apply_crab_height_scanner(self)
         self.contact_forces = ParkourHexContactSensorCfg(
             prim_path="{ENV_REGEX_NS}/Robot/.*",
             history_length=2,

@@ -66,8 +66,9 @@ def mirror() -> CrabHexMirror:
 
 
 def test_dims(mirror):
-    assert mirror.n_prop == 15 + 24 + 24 + 18 + 6 == 87
-    assert mirror.obs_dim == 87 + NX * NY + 9 + (5 + 48) + HISTORY * 87 == 1151
+    # head grew 15 -> 17 with the gait-clock sin/cos (gait-formation-v2 Phase 1)
+    assert mirror.n_prop == 17 + 24 + 24 + 18 + 6 == 89
+    assert mirror.obs_dim == 89 + NX * NY + 9 + (5 + 48) + HISTORY * 89 == 1173
 
 
 def test_obs_involution(mirror):
@@ -139,9 +140,9 @@ def test_scan_permutation_is_lateral_flip(ordering):
 
 
 def test_contact_pattern_maps_A_set_to_B_set(mirror):
-    # contact fill block sits at [15+48+18 : 87] = last 6 of the step; order FL,FR,ML,MR,RL,RR
+    # contact fill block sits at [17+48+18 : 89] = last 6 of the step; order FL,FR,ML,MR,RL,RR
     x = torch.zeros(1, mirror.obs_dim)
-    base = 15 + 48 + 18
+    base = 17 + 48 + 18
     for i, planted in enumerate([1, 0, 0, 1, 1, 0]):  # A set planted (FL,MR,RL)
         x[0, base + i] = float(planted)
     m = mirror.mirror_obs(x)
@@ -150,18 +151,18 @@ def test_contact_pattern_maps_A_set_to_B_set(mirror):
 
 def test_history_slots_use_step_map(mirror):
     # a value in history slot k, head dim 14 (lin_vy) must land in the same slot, flipped
-    hist_base = 87 + NX * NY + 9 + 53
-    assert hist_base + HISTORY * 87 == mirror.obs_dim  # layout sanity
+    hist_base = 89 + NX * NY + 9 + 53
+    assert hist_base + HISTORY * 89 == mirror.obs_dim  # layout sanity
     x = torch.zeros(1, mirror.obs_dim)
     slot = 4
-    x[0, hist_base + slot * 87 + 14] = 2.0
+    x[0, hist_base + slot * 89 + 14] = 2.0
     m = mirror.mirror_obs(x)
-    assert m[0, hist_base + slot * 87 + 14] == -2.0
+    assert m[0, hist_base + slot * 89 + 14] == -2.0
 
 
 def test_priv_latent_ratios_permute_without_flip(mirror):
     # stiffness-ratio block: after scan(132)+priv_e(9)+mass/com/friction(5)
-    base = 87 + NX * NY + 9 + 5
+    base = 89 + NX * NY + 9 + 5
     x = torch.zeros(1, mirror.obs_dim)
     fl_cam = JOINT_NAMES.index("FL_Body_CamShaft_RevoluteJoint")
     x[0, base + fl_cam] = 0.7

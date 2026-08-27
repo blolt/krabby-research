@@ -112,10 +112,13 @@ def test_inverse_rejects_unreachable_default():
 
 
 def test_theta_hip_max_is_derived_from_k_not_the_reverse():
-    """K comes from CAD measurement (crank radius / pivot-motor distance); THETA_HIP_MAX is the
-    consequence, not an input -- the opposite causality from the pre-Phase-E calibrated version."""
+    """THETA_HIP_MAX = asin(K) exactly. Since 2026-08-20, K itself comes from the
+    hardware-measured yaw throw (+-25 deg, crab_hex_dimensions.YAW_K = sin(throw)) rather
+    than the KrabV3-Legs.svg slot geometry (r/L = 0.4778 -> 28.54 deg) -- the physical
+    crank/slot as built differs from that SVG. The mapping's causality is unchanged: K is
+    the measured geometry, the swing limit is its consequence."""
     assert THETA_HIP_MAX == pytest.approx(math.asin(_K))
-    assert _K == pytest.approx(3.6807 / 7.7037, abs=1e-3)  # r / L, sanity range check
+    assert _K == pytest.approx(math.sin(math.radians(25.0)))  # measured throw, exactly
 
 
 def test_batched_and_broadcastable():

@@ -59,9 +59,9 @@ export KRABBY_HEX_USD_PATH="$KRABBY_ROOT/krabby-research/assets/crab_simple.usda
 
 You can point `KRABBY_HEX_USD_PATH` at a flattened `.usd` export for deployment; the default authoring file is `crab_simple.usda`.
 
-**Spawn height:** The USD root `krabby` is offset **+1 m** in the file; `[_crab_simple_robot_cfg()](config/crab_hex/crab_hex_scene_cfg.py)` sets articulation spawn `z` from `KRABBY_HEX_SPAWN_Z` (default `**1.05`** m). Use the same value for train, play, and stance checks. If the robot **floats then slams**, **lower** slightly; if **hips scrape** or the root **interpenetrates**, **raise** in ~**0.02** m steps on flat ground.
+**Spawn height:** The USD root `krabby` is offset **+1 m** in the file; `[_crab_simple_robot_cfg()](config/crab_hex/crab_hex_scene_cfg.py)` sets articulation spawn `z` from `KRABBY_HEX_SPAWN_Z` (default `**1.085`** m; ~11 mm toe clearance over the flat terrain surface — vertical-plate geometry 2026-08-20). Use the same value for train, play, and stance checks. If the robot **floats then slams**, **lower** slightly; if **hips scrape** or the root **interpenetrates**, **raise** in ~**0.02** m steps on flat ground.
 
-**Default joint pose (rad):** body–hip yaw splay **±0.6** on front/rear legs, **±0.25** on middle legs (ML **+0.25**, MR **−0.25**); `Hip_Femur` **0.30**; `Femur_Tibia` left legs **−0.07**, right legs **+0.10**. Tune in `crab_hex_scene_cfg.py` if the passive stance is wrong.
+**Default joint pose (rad):** body–hip yaw **0.0** on all legs (perpendicular mounts, 2026-08-13); `Hip_Femur` **0.1105** and `Femur_Tibia` left **+0.2341** / right **−0.2341** — both linear actuators at exact mid-stroke, computed from the measured linkage (`crab_hex_linkage.py`, 2026-08-20). Defaults are derived, not hand-tuned; change the dimensions module, not these numbers.
 
 ---
 
@@ -268,7 +268,7 @@ All commands in this section assume:
 
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 conda activate env_isaaclab
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH}"
 # Optional if the default path resolver finds crab_simple.usda:
@@ -364,7 +364,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 conda activate env_isaaclab
 
 cd "$KRABBY_ROOT/krabby-research/parkour"
@@ -557,7 +557,7 @@ Bridge velocity-primary aux (`track_lin_vel_xy_exp`, flat speed, `reward_trackin
 
 ### 4.3 Play a bundled checkpoint
 
-Use the one-liners below. Set `KRABBY_HEX_USD_PATH`, `KRABBY_HEX_SPAWN_Z=1.05`, and `PYTHONPATH`; teacher stages also set `KRABBY_HEX_TEACHER_MODE`.
+Use the one-liners below. Set `KRABBY_HEX_USD_PATH`, `KRABBY_HEX_SPAWN_Z=1.085`, and `PYTHONPATH`; teacher stages also set `KRABBY_HEX_TEACHER_MODE`.
 
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
@@ -565,7 +565,7 @@ conda activate env_isaaclab
 RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
 cd "$KRABBY_ROOT/krabby-research/parkour"
 ```
@@ -612,7 +612,7 @@ distill:
 
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 TEACHER_CKPT="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs/2026-05-26_21-46-37/model_6300.pt"
 
 cd "$KRABBY_ROOT/krabby-research/parkour"
@@ -636,7 +636,7 @@ conda activate env_isaaclab
 RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p scripts/rsl_rl/play.py \
@@ -669,7 +669,7 @@ conda activate env_isaaclab
 RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p \
@@ -757,7 +757,7 @@ Baseline **provenance and metrics** only — stage differences: [§2](#2-how-sta
 - **Focus on USD, not reward tuning to start:** Removed overlapping reward experiments until `crab_simple.usda` and spawn were credible. Reward tuning can come incrementally after the asset and default stance are trustworthy.
 - **Explicit masses in USD:** Per-link weights (~**104 kg** total for the current `crab_simple.usda`; earlier ~**25 kg** baseline also in logs) instead of relying on PhysX auto-mass. Retrain when additional payload is modeled.
 - **Foot rubber at the feet:** Separate `*_Footpad` colliders with `FootRubber` for ground contact (not full-shank tibia collision).
-- **Stable stance:** Body–hip yaw splay **±0.6** on front and rear legs; spawn `z` **1.05** m (`KRABBY_HEX_SPAWN_Z`).
+- **Stable stance:** Body–hip yaw **0.0** (perpendicular mounts); spawn `z` **1.085** m (`KRABBY_HEX_SPAWN_Z`); pitch defaults = actuator mid-stroke (2026-08-20 hardware geometry).
 - **Simpler flat-walk reward weights:** Small `CrabHexFlatWalkRewardsCfg` set for easier experimentation.
 - **Velocity in observations:** Base linear velocity (`root_lin_vel_xy`) included in proprioceptive observations.
 
@@ -789,7 +789,7 @@ Key changes and why they were made:
 - **Lateral drift penalty:** `penalty_lin_vel_y = -3.0` keeps body-frame sideways velocity small without over-constraining gait exploration.
 - **Air-time reward:** `reward_feet_air_time_positive = 0.25` nudges the policy toward clearer swing/step behavior rather than an all-feet shuffling gait.
 - **Collision and feet-slide terms disabled for flat walk:** `reward_collision = 0.0` and `feet_slide = 0.0` remain available but are not part of this baseline because the drift/speed tradeoff was better controlled by velocity, progress, and air-time terms.
-- **Stance defaults:** The current stance keeps body-hip yaw splay at **±0.6**, hip-femur at **0.30**, and mirrored knee defaults (left **−0.07**, right **+0.10**) to balance the passive zero-action stance without removing body-hip splay.
+- **Stance defaults:** Superseded 2026-08-20 — defaults now come from the measured linkage (actuator mid-stroke; see `crab_hex_linkage.py`); the old hand-tuned splay/roll-balance set is retired.
 
 Run: [§4.3](#43-play-a-bundled-checkpoint) with `2026-05-19_12-06-10` USD + `model_4000.pt`.
 
@@ -810,7 +810,7 @@ export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
 RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
 export KRABBY_HEX_USD_PATH="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p scripts/rsl_rl/play.py \
@@ -835,7 +835,7 @@ conda activate env_isaaclab
 RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 export KRABBY_HEX_TEACHER_MODE=bridge
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
 cd "$KRABBY_ROOT/krabby-research/parkour"
@@ -861,7 +861,7 @@ conda activate env_isaaclab
 RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 export KRABBY_HEX_TEACHER_MODE=2b1
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
 cd "$KRABBY_ROOT/krabby-research/parkour"
@@ -889,7 +889,7 @@ conda activate env_isaaclab
 RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 export KRABBY_HEX_TEACHER_MODE=2b2
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
 cd "$KRABBY_ROOT/krabby-research/parkour"
@@ -919,7 +919,7 @@ conda activate env_isaaclab
 RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
-export KRABBY_HEX_SPAWN_Z=1.05
+export KRABBY_HEX_SPAWN_Z=1.085
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p scripts/rsl_rl/play.py \

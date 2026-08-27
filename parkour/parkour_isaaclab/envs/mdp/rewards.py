@@ -8,6 +8,15 @@ from isaaclab.assets import Articulation
 from isaaclab.utils.math  import euler_xyz_from_quat, wrap_to_pi, quat_apply
 from parkour_isaaclab.envs.mdp.parkours import ParkourEvent
 from parkour_tasks.crab_hexapod_task.mdp.crab_hex_stride_reward import stride_length_reward_step
+from parkour_tasks.crab_hexapod_task.mdp.crab_hex_clock_reward import (
+    APEX_SIGMA_M as CLOCK_APEX_SIGMA_M,
+    APEX_TARGET_M as CLOCK_APEX_TARGET_M,
+    FOOT_ORDER as CLOCK_FOOT_ORDER,
+    FORCE_REF_N as CLOCK_FORCE_REF_N,
+    VEL_REF_M_S as CLOCK_VEL_REF_M_S,
+    clock_schedule_income,
+    clock_swing_apex_income,
+)
 from parkour_tasks.crab_hexapod_task.mdp.crab_hex_tripod_reward import (
     RESET_T_SINCE,
     S_T_SINCE,
@@ -1053,6 +1062,90 @@ class PenaltyCamContactSchedule(ManagerTermBase):
         force_pen = (contact & in_return).float().sum(dim=1)
         slide_pen = (foot_speed * (contact & ~in_return).float()).sum(dim=1)
         return force_pen + slide_pen
+
+
+class RewardClockContactSchedule(ManagerTermBase):
+    """Clock-referenced contact-schedule income (gait-formation-v2 Phase 1) -- see
+    ``crab_hex_clock_reward`` for the pure math and design rationale. Reads the gait clock
+    from ``CrabHexDelayedJointPositionAction.clock_phase``, contact forces from the
+    privileged sensor, and foot world velocities from the articulation. Pays only upright:
+    a fallen robot has every foot unloaded, which would otherwise be free swing income
+    (same gate rationale as RewardCamPhaseLock's round-4 post-mortem)."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        asset: Articulation = env.scene[cfg.params["asset_cfg"].name]
+        foot_names = [f"{leg}_Footpad" for leg in CLOCK_FOOT_ORDER]
+        self._foot_body_ids, _ = asset.find_bodies(foot_names, preserve_order=True)
+        sensor = env.scene.sensors[cfg.params["sensor_cfg"].name]
+        self._foot_sensor_ids, _ = sensor.find_bodies(foot_names, preserve_order=True)
+        from parkour_tasks.crab_hexapod_task.mdp import crab_hex_dimensions as _dims
+
+        self._cmd_stop = _dims.CLOCK_CMD_STOP_M_S
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        sensor_cfg: SceneEntityCfg,
+        command_name: str = "base_velocity",
+        force_ref: float = CLOCK_FORCE_REF_N,
+        vel_ref: float = CLOCK_VEL_REF_M_S,
+        min_upright_gz: float = 0.9,
+        combine: str = "sum",
+    ) -> torch.Tensor:
+        asset: Articulation = env.scene[asset_cfg.name]
+        sensor = env.scene.sensors[sensor_cfg.name]
+        phase = env.action_manager.get_term("joint_pos").clock_phase
+        force = sensor.data.net_forces_w[:, self._foot_sensor_ids].norm(dim=-1)
+        speed_xy = asset.data.body_lin_vel_w[:, self._foot_body_ids, :2].norm(dim=-1)
+        cmd = env.command_manager.get_command(command_name)
+        clock_running = cmd[:, 0].abs() > self._cmd_stop
+        income = clock_schedule_income(
+            phase, force, speed_xy, clock_running, force_ref=force_ref, vel_ref=vel_ref,
+            combine=combine,
+        )
+        upright = (-asset.data.projected_gravity_b[:, 2] > min_upright_gz).float()
+        return income * upright
+
+
+class RewardClockSwingApex(ManagerTermBase):
+    """Scheduled swing-apex income (gait-formation-v2 Phase 4) -- see
+    ``crab_hex_clock_reward.clock_swing_apex_income``. Foot height measured above the
+    nominal ground plane (root z + ground offset, as reward_foot_clearance does).
+    Upright-gated for the same fallen-farming reason as the schedule term."""
+
+    def __init__(self, cfg: RewardTermCfg, env: ParkourManagerBasedRLEnv):
+        super().__init__(cfg, env)
+        asset: Articulation = env.scene[cfg.params["asset_cfg"].name]
+        foot_names = [f"{leg}_Footpad" for leg in CLOCK_FOOT_ORDER]
+        self._foot_body_ids, _ = asset.find_bodies(foot_names, preserve_order=True)
+        from parkour_tasks.crab_hexapod_task.mdp import crab_hex_dimensions as _dims
+
+        self._cmd_stop = _dims.CLOCK_CMD_STOP_M_S
+
+    def __call__(
+        self,
+        env: ParkourManagerBasedRLEnv,
+        asset_cfg: SceneEntityCfg,
+        command_name: str = "base_velocity",
+        apex_m: float = CLOCK_APEX_TARGET_M,
+        sigma_m: float = CLOCK_APEX_SIGMA_M,
+        ground_offset_from_root_m: float = -1.05,
+        min_upright_gz: float = 0.9,
+    ) -> torch.Tensor:
+        asset: Articulation = env.scene[asset_cfg.name]
+        phase = env.action_manager.get_term("joint_pos").clock_phase
+        foot_z = asset.data.body_pos_w[:, self._foot_body_ids, 2]
+        ground_z = asset.data.root_pos_w[:, 2].unsqueeze(1) + ground_offset_from_root_m
+        height = foot_z - ground_z
+        cmd = env.command_manager.get_command(command_name)
+        clock_running = cmd[:, 0].abs() > self._cmd_stop
+        income = clock_swing_apex_income(
+            phase, height, clock_running, apex_m=apex_m, sigma_m=sigma_m
+        )
+        upright = (-asset.data.projected_gravity_b[:, 2] > min_upright_gz).float()
+        return income * upright
 
 
 class RewardCamPhaseLock(ManagerTermBase):

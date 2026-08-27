@@ -22,11 +22,10 @@ full derivation):
   -1 sign applies unchanged.
 - ``*_Body_Hip_*`` (passive): swap, sign flip (yaw-type; defaults negate L/R).
 - ``*_Hip_Femur_*``: swap, no flip (leg-plane pitch joint; defaults equal L/R).
-- ``*_Femur_Tibia_*``: swap, sign flip (180-deg Z USD flip on right legs). KNOWN
-  APPROXIMATION: knee defaults are -0.07 (L) / +0.10 (R) — the deliberate 0.03 rad
-  roll-balance asymmetry means the delta/action mirror is exact only up to that residual.
-  Acceptable for a soft regularizer; do not tighten the loss coef past ~1.0 without
-  revisiting this.
+- ``*_Femur_Tibia_*``: swap, sign flip (180-deg Z USD flip on right legs). Since
+  2026-08-20 the knee defaults are exactly mirrored (+/-0.2341, actuator mid-stroke from
+  the measured linkage), so the mirror is exact — the old -0.07/+0.10 roll-balance
+  asymmetry (and its "approximation" caveat) is retired with the hardware geometry.
 
 Proprio head (15 dims of the crab obs step): sign flips on roll-axis and yaw-axis channels and
 on every lateral (y) channel; see ``_HEAD_SIGNS``.
@@ -38,8 +37,12 @@ import torch
 
 # Per-step proprio head layout of CrabHexParkourObservations (before the joint blocks):
 # [wx, wy, wz, roll, pitch, 0*dy, delta_yaw, delta_next_yaw, 0*cmd_vx, 0*cmd_vy, cmd_vx,
-#  env_idx, invert_env_idx, lin_vx, lin_vy]
-_HEAD_SIGNS = [-1.0, 1.0, -1.0, -1.0, 1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0]
+#  env_idx, invert_env_idx, lin_vx, lin_vy, clock_sin, clock_cos]
+# Clock dims (gait-formation-v2 Phase 1): the mirrored gait is the same alternating-tripod
+# schedule advanced by pi (tripod sets swap under L/R), and sin/cos(phi+pi) = -sin/-cos, so
+# both dims carry sign -1.
+_HEAD_SIGNS = [-1.0, 1.0, -1.0, -1.0, 1.0, -1.0, -1.0, -1.0, 1.0, -1.0, 1.0, 1.0, 1.0, 1.0, -1.0,
+               -1.0, -1.0]
 _N_HEAD = len(_HEAD_SIGNS)
 
 # joint-name substring -> mirror sign

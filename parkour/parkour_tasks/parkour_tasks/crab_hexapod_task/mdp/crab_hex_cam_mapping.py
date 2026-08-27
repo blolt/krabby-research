@@ -83,13 +83,23 @@ _L = math.hypot(
 """Pivot-to-motor-axis distance: the pivot sits at HipSlot's center, so this is just the
 distance between the two slots' centers."""
 
-_K = _R / _L
-"""Crank-radius / pivot-separation ratio -- the only geometry that matters for the angle
-mapping (see module docstring: atan2 is invariant to scaling r and L together)."""
+_K_SVG = _R / _L
+"""Crank-radius / pivot-separation ratio as predicted by the SVG (~0.4778 -> 28.54 deg).
+Superseded (2026-08-20) by the hardware-measured throw below; kept for provenance."""
+
+# NOTE(hardware-measurements, 2026-08-20): the physical robot's yaw throw measures +-25 deg,
+# not the SVG-predicted 28.54 deg -- the built crank/slot geometry differs from the
+# KrabV3-Legs.svg layout (as-built holes elsewhere on the leg differ from that SVG too, e.g.
+# the 3-in knee lever). Since the mapping depends on the geometry only through K, and
+# theta_hip_max = asin(K) exactly, the measured throw IS a direct measurement of K.
+try:
+    from .crab_hex_dimensions import YAW_K as _K  # package import (training)
+except ImportError:  # flat import (unit tests sys.path-insert this directory)
+    from crab_hex_dimensions import YAW_K as _K
 
 THETA_HIP_MAX = math.asin(_K)
-"""Derived, not assumed: the mechanism's own natural swing limit. ~28.54 deg -- tighter than
-the hip joint's previous (unverified) +/-50 deg hard limit."""
+"""The mechanism's own natural swing limit: asin(K) = 25.0 deg exactly, because K is now
+derived from the measured throw (crab_hex_dimensions.YAW_THROW_DEG)."""
 
 
 def cam_shaft_to_hip(theta_shaft: torch.Tensor, omega_shaft: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
