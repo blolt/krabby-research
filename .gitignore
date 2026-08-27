@@ -256,3 +256,14 @@ fleet/infra/cdk.out/
 fleet/infra/.cdk.staging/
 fleet/infra/cdk.context.json
 node_modules/
+
+# Campaign-dir heavy artifacts (2026-08-26): same philosophy as parkour/logs/ above.
+# Checkpoints, per-episode raw arrays, console logs, tensorboard events, and videos in
+# sim_fine_tuning/ are regenerable or superseded; the campaign record (CHANGELOG/RESULTS,
+# scripts, metrics json, diagrams, and small reference npz like RSI banks / probe fixtures
+# at campaign-dir top level) stays committed.
+sim_fine_tuning/**/*.pt
+sim_fine_tuning/**/raw/
+sim_fine_tuning/**/*.log
+sim_fine_tuning/**/events.out.tfevents.*
+sim_fine_tuning/**/*.mp4
