@@ -43,8 +43,8 @@ static void test_roles_select_the_wired_addresses()
     Ina228Adapter pack(PowerMonitorRole::Pack);
     Ina228Adapter midpoint(PowerMonitorRole::Midpoint);
 
-    TEST_ASSERT_EQUAL_HEX8(0x41, pack.address());
-    TEST_ASSERT_EQUAL_HEX8(0x40, midpoint.address());
+    TEST_ASSERT_EQUAL_HEX8(0x40, pack.address());
+    TEST_ASSERT_EQUAL_HEX8(0x41, midpoint.address());
 }
 
 static void test_pack_initialization_configures_the_external_shunt()
@@ -53,7 +53,7 @@ static void test_pack_initialization_configures_the_external_shunt()
     Ina228Adapter pack(PowerMonitorRole::Pack);
 
     TEST_ASSERT_TRUE(pack.begin(&wire));
-    TEST_ASSERT_EQUAL_HEX8(0x41, fakeInaBeginAddress);
+    TEST_ASSERT_EQUAL_HEX8(0x40, fakeInaBeginAddress);
     TEST_ASSERT_FALSE(didInaBeginSkipReset);
     TEST_ASSERT_EQUAL_UINT8(1, fakeInaSetShuntCount);
     TEST_ASSERT_FLOAT_WITHIN(
@@ -124,7 +124,7 @@ static void test_absent_monitor_stays_down_without_reinitialization()
     pack.noteRead(false, &wire, 1002);
 
     TEST_ASSERT_FALSE(pack.isUp());
-    TEST_ASSERT_EQUAL_HEX8(0x41, fakeWireLastAddress);
+    TEST_ASSERT_EQUAL_HEX8(0x40, fakeWireLastAddress);
     TEST_ASSERT_EQUAL_UINT8(1, fakeWireBeginTransmissionCount);
     TEST_ASSERT_EQUAL_UINT8(1, fakeInaBeginCount);
     TEST_ASSERT_EQUAL_UINT8(1, fakeInaSetShuntCount);
@@ -183,7 +183,7 @@ static void test_midpoint_uses_default_device_configuration()
     Ina228Adapter midpoint(PowerMonitorRole::Midpoint);
 
     TEST_ASSERT_TRUE(midpoint.begin(&wire));
-    TEST_ASSERT_EQUAL_HEX8(0x40, fakeInaBeginAddress);
+    TEST_ASSERT_EQUAL_HEX8(0x41, fakeInaBeginAddress);
     TEST_ASSERT_EQUAL_UINT8(0, fakeInaSetShuntCount);
     TEST_ASSERT_EQUAL_UINT8(0, fakeInaResetAccumulatorsCount);
 }
