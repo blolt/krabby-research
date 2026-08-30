@@ -4,12 +4,11 @@ Per-board calibration of the two INA228 power monitors on the leader I2C bus:
 
 | Role | I2C addr | What it measures | What we trim |
 |------|----------|------------------|--------------|
-| Pack     | `0x41` | Total pack V/I/P/charge across the external 200 A / 75 mV shunt | VBUS offset and shunt current trim |
-| Midpoint | `0x40` | Lower-battery VBUS only (current channel grounded) | VBUS offset |
+| Pack     | `0x40` | Total pack V/I/P/charge across the external 200 A / 75 mV shunt | VBUS offset and shunt current trim |
+| Midpoint | `0x41` | Lower-battery VBUS only (current channel grounded) | VBUS offset |
 
-Addresses are swapped relative to spec §3, which assigns Pack `0x40`. The roles
-follow the wiring — Pack is the board carrying the external shunt's Kelvin taps —
-and that desolder was done on the already-A0-bridged board.
+This follows spec §3: Pack uses the default `0x40` address and Midpoint is
+strapped to `0x41`.
 
 The upper battery is derived on-board as `battB = packV - battA`, so it inherits
 both boards' VBUS trims — calibrate both monitors before trusting divergence.
@@ -72,8 +71,8 @@ voltage. `knownAmps` is signed to match the Pack INA228 convention.
 You need:
 
 - The leader board flashed and on USB. The boot log—not `C PWR_SENSE SHOW`—must show
-  `POWER MONITOR: Pack (INA228 0x41) online` and
-  `POWER MONITOR: Midpoint (INA228 0x40) online`).
+  `POWER MONITOR: Pack (INA228 0x40) online` and
+  `POWER MONITOR: Midpoint (INA228 0x41) online`).
 - A calibrated bench DMM.
 - A known voltage source near the normal operating point, either the real 24 V
   Pack or a suitably rated bench supply connected to the Pack/Midpoint sense

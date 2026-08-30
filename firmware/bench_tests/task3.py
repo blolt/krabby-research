@@ -18,11 +18,10 @@ from __future__ import annotations
 from firmware.bench_tests import checks, mcu
 from firmware.bench_tests.harness import BenchTest, Result
 
-# Swapped from spec §3: the desolder landed on the already-A0-bridged board,
-# and Pack is whichever board carries the external shunt, not whichever
-# address it answers on.
-PACK_ADDRESS = "0x41"
-MIDPOINT_ADDRESS = "0x40"
+# Spec §3 keeps Pack at the default address and straps Midpoint to its second
+# address.
+PACK_ADDRESS = "0x40"
+MIDPOINT_ADDRESS = "0x41"
 SHUNT_RATING = "200 A / 75 mV"
 PACK_FUSE = "150 A"
 ONBOARD_SHUNT = "15 mOhm"
@@ -131,20 +130,14 @@ TESTS = [
     ),
     BenchTest(
         ac="3d.2", title="A0 jumper selects the second address",
-        criterion=f"One INA228's A0 solder jumper is bridged so the two answer at "
-                  f"distinct addresses. Spec §3 straps the Midpoint to {PACK_ADDRESS}; "
-                  f"this build straps the Pack instead, because the onboard-shunt "
-                  f"desolder was done on the already-bridged board.",
-        setup="Inspect the Pack board's A0 pads.",
-        expect=f"A0 is bridged with solder on the Pack board, moving it off the default "
-               f"to {PACK_ADDRESS}. The Midpoint is unmodified at the default "
-               f"{MIDPOINT_ADDRESS}.",
-        run=_inspect([f"look at the A0 solder jumper on the PACK board ({PACK_ADDRESS})",
-                      f"the Midpoint ({MIDPOINT_ADDRESS}) should be unbridged — it is the default",
-                      "",
-                      "Spec §3 has these the other way round. Record the swap as a",
-                      "deviation against 3c/3d/3h.1/3h.2, not as a failure."],
-                     "is A0 bridged on the Pack board and unbridged on the Midpoint?"),
+        criterion=f"The Midpoint INA228's A0 solder jumper is bridged so the two "
+                  f"monitors answer at distinct addresses.",
+        setup="Inspect both boards' A0 pads.",
+        expect=f"Pack is unmodified at the default {PACK_ADDRESS}. A0 is bridged "
+               f"on Midpoint, selecting {MIDPOINT_ADDRESS}.",
+        run=_inspect([f"the Pack board ({PACK_ADDRESS}) should be unbridged — it is the default",
+                      f"look at the A0 solder jumper on the Midpoint board ({MIDPOINT_ADDRESS})"],
+                     "is A0 unbridged on Pack and bridged on Midpoint?"),
         manual=True,
     ),
     BenchTest(

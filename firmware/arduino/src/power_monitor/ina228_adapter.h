@@ -72,8 +72,8 @@ public:
     uint8_t badTicks() const { return recovery_.badTicks(); }
 
 private:
-    static constexpr uint8_t PACK_ADDRESS = 0x41;
-    static constexpr uint8_t MIDPOINT_ADDRESS = 0x40;
+    static constexpr uint8_t PACK_ADDRESS = 0x40;
+    static constexpr uint8_t MIDPOINT_ADDRESS = 0x41;
     static constexpr float PACK_SHUNT_RESISTANCE_OHMS = 0.000375f;
     static constexpr float PACK_SHUNT_MAX_CURRENT_AMPS = 200.0f;
 

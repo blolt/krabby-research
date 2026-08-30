@@ -20,10 +20,10 @@ the same.
                           │                    │
                          IN+                  IN−
                           └──── Pack INA228 ───┘         VBUS ──┘ (load-side stud)
-                                   0x41
+                                   0x40
                                 onboard shunt REMOVED
 
-  midpoint ●──────────────────────────────────────────► Midpoint INA228 (0x40) VBUS
+  midpoint ●──────────────────────────────────────────► Midpoint INA228 (0x41) VBUS
   (junction)                                              IN+ / IN− ──► batt−
 
   batt−  ●────────────────── single point ─────────────► Mega GND
@@ -87,7 +87,7 @@ first Qwiic connector, then daisy-chained:
 
 ```
   Mega ──4× dupont──► Qwiic ──► LSM6DSO ──► OLED ──► Pack INA228 ──► Midpoint INA228
-                               0x6B/0x6A    0x3D        0x41              0x40
+                               0x6B/0x6A    0x3D        0x40              0x41
 ```
 
 Bus runs at **100 kHz** (`I2C_DEFAULT_BUS_CLOCK_HZ`); the OLED raises it to 400 kHz
@@ -98,20 +98,16 @@ The INA228s are powered from Qwiic (the Mega's 3.3 V), **not** from the pack the
 measure. That is what lets a monitor stay alive and answering while its sense
 wire is disconnected, and why the ground wire above is necessary.
 
-## Addresses — swapped from spec §3
+## Addresses
 
 | Role | Address | A0 jumper |
 |---|---|---|
-| **Pack** | `0x41` | **bridged** |
-| **Midpoint** | `0x40` | default, unmodified |
+| **Pack** | `0x40` | default, unmodified |
+| **Midpoint** | `0x41` | **bridged** |
 
-Spec §3 assigns Pack `0x40` on the reasoning that Pack should be the unmodified
-board. This build is the other way round: **Pack is defined by carrying the
-external shunt's Kelvin taps**, and the onboard-shunt desolder was done on the
-board that already had A0 bridged. Electrically identical — only the labels move.
-
-Recorded as a deviation against 3c, 3d, 3h.1 and 3h.2. The constants live in
-`firmware/arduino/src/power_monitor/power_monitor_constants.h`.
+This follows spec §3: Pack remains at the default address and the Midpoint
+board's A0 jumper selects `0x41`. The constants live in
+`firmware/arduino/src/power_monitor/ina228_adapter.h`.
 
 ## What the firmware reports
 

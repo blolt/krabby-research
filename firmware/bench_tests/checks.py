@@ -114,7 +114,7 @@ def ina_reconnect(port: str) -> Measurement:
         print("     waiting for both INA228 monitors...")
         baseline = mcu.collect(ser, 40)
 
-        input("     UNPLUG only Pack INA228 Qwiic (0x41), then press Enter > ")
+        input("     UNPLUG only Pack INA228 Qwiic (0x40), then press Enter > ")
         pack_absent = mcu.collect(ser, 80)
         input("     RECONNECT Pack INA228 Qwiic, then press Enter > ")
         pack_recovered = mcu.collect(ser, 120)
@@ -122,7 +122,7 @@ def ina_reconnect(port: str) -> Measurement:
             "     did the OLED lose and restore power data without a Mega reset? [y/N] > "
         ).strip().lower().startswith("y")
 
-        input("     UNPLUG only Midpoint INA228 Qwiic (0x40), then press Enter > ")
+        input("     UNPLUG only Midpoint INA228 Qwiic (0x41), then press Enter > ")
         midpoint_absent = mcu.collect(ser, 80)
         input("     RECONNECT Midpoint INA228 Qwiic, then press Enter > ")
         midpoint_recovered = mcu.collect(ser, 120)
