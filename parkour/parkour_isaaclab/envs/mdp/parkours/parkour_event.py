@@ -140,8 +140,10 @@ class ParkourEvent(ParkourTerm):
 
         self.dis_to_start_pos = torch.norm(start_pos - self.robot.data.root_pos_w[env_ids, :2], dim=1)
         threshold = self.env.command_manager.get_command("base_velocity")[env_ids, 0] * self.episode_length_s
-        move_up = self.dis_to_start_pos > 0.8*threshold
-        move_down = self.dis_to_start_pos < 0.4*threshold
+        # Promotion fractions are cfg-driven (defaults 0.8/0.4 preserve historical behavior;
+        # slow-tracking plants recalibrate via cfg — see ParkourEventCfg.move_up_frac).
+        move_up = self.dis_to_start_pos > self.cfg.move_up_frac * threshold
+        move_down = self.dis_to_start_pos < self.cfg.move_down_frac * threshold
 
         if not self.cfg.freeze_terrain_levels:
             self.terrain.terrain_levels[env_ids] += 1 * move_up - 1 * move_down

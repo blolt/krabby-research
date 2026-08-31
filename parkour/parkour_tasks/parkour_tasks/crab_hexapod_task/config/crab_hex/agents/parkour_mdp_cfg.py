@@ -1077,6 +1077,35 @@ class CrabHexFlatWalkRewardsCfg:
             ),
         },
     )
+    # NOTE(PLAN F gated lineage, 2026-08-26): the teacher elements, registered inert in the
+    # flat stack so the entire curriculum runs as one flat-task lineage. Goal terms use the
+    # MASKED _on_parkour variants (zero on flat tiles) — the 2b1 collapse came from the
+    # unmasked versions at full dose. Armed via KRABBY_GOAL_VEL_W / KRABBY_YAW_W /
+    # KRABBY_EDGE_W / KRABBY_STUMBLE_W (collision arms the existing term above).
+    reward_tracking_goal_vel = RewTerm(
+        func=mdp_rewards.reward_tracking_goal_vel_on_parkour,
+        weight=0.0,
+        params={"asset_cfg": SceneEntityCfg("robot"), "parkour_name": "base_parkour"},
+    )
+    reward_tracking_yaw = RewTerm(
+        func=mdp_rewards.reward_tracking_yaw_on_parkour,
+        weight=0.0,
+        params={"asset_cfg": SceneEntityCfg("robot"), "parkour_name": "base_parkour"},
+    )
+    reward_feet_edge = RewTerm(
+        func=mdp_rewards.reward_feet_edge,
+        weight=0.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=".*_Footpad"),
+            "sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad"),
+            "parkour_name": "base_parkour",
+        },
+    )
+    reward_feet_stumble = RewTerm(
+        func=mdp_rewards.reward_feet_stumble,
+        weight=0.0,
+        params={"sensor_cfg": SceneEntityCfg("contact_forces", body_names=".*_Footpad")},
+    )
     # NOTE(cam-mechanism-migration, superseded by short-run-campaign): originally penalized the
     # cam-shaft motor reversing rotational direction at weight=-0.3. The Milestone 18 Task 1
     # short-run campaign (sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md) ran a 3-arm study testing this
@@ -1251,6 +1280,12 @@ class CrabHexFlatWalkRewardsCfg:
             "KRABBY_TRIPOD_W": "reward_tripod_schedule",
             "KRABBY_CLOCK_W": "reward_clock_schedule",
             "KRABBY_APEX_W": "reward_clock_swing_apex",
+            # PLAN F gated lineage: teacher elements in the flat stack.
+            "KRABBY_GOAL_VEL_W": "reward_tracking_goal_vel",
+            "KRABBY_YAW_W": "reward_tracking_yaw",
+            "KRABBY_EDGE_W": "reward_feet_edge",
+            "KRABBY_STUMBLE_W": "reward_feet_stumble",
+            "KRABBY_COLLISION_W": "reward_collision",
             "KRABBY_CLEARANCE_W": "reward_obstacle_clearance",
             "KRABBY_FOOT_CLEAR_W": "reward_foot_clearance",
             # NOTE(gait-formation Phase 0, 2026-08-20): campaign levers, all arms are

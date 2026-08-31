@@ -361,6 +361,33 @@ def _apply_crab_hex_bridge_shallow_parkour_geometry(tg) -> None:
         tg.sub_terrains["parkour"].pit_depth = (0.05, 0.12)
 
 
+def _apply_crab_hex_recal_2b2_parkour_geometry(tg) -> None:
+    """PLAN F (2026-08-26): the 2b2 end-state geometry RE-DERIVED for the measured plant,
+    resolving the old TODO — the stock 2b2 numbers were sized for the half-size robot.
+    Anchors: tibia 0.83 m (spans wide gaps), swing lift ~0.05 typical / 0.09 max (steps
+    and hurdles must fit inside that envelope or they are unnegotiable by construction),
+    steady walk 0.10-0.20 m/s.
+    """
+    if "parkour_gap" in tg.sub_terrains:
+        gap = tg.sub_terrains["parkour_gap"]
+        gap.gap_depth = (0.06, 0.14)
+        gap.gap_size = "0.10 + 0.25 * difficulty"  # 0.15-0.275 m over d 0.2-0.7
+        gap.half_valid_width = (0.85, 1.15)
+    if "parkour" in tg.sub_terrains:
+        stone = tg.sub_terrains["parkour"]
+        stone.pit_depth = (0.06, 0.14)
+        stone.incline_height = "0.10 * difficulty"
+        stone.last_incline_height = "incline_height + 0.04 - 0.03 * difficulty"
+    if "parkour_step" in tg.sub_terrains:
+        tg.sub_terrains["parkour_step"].step_height = "0.02 + 0.06 * difficulty"  # 3.2-6.2 cm
+    if "parkour_hurdle" in tg.sub_terrains:
+        # Single eval'd expression string (terrain generator evals the comma expression
+        # into the tuple); capped under the 0.09 lift envelope.
+        tg.sub_terrains["parkour_hurdle"].hurdle_height_range = (
+            "0.02 + 0.05 * difficulty, 0.03 + 0.06 * difficulty"
+        )
+
+
 @configclass
 class CrabHexTeacherEnvCfg(UnitreeGo2TeacherParkourEnvCfg):
     viewer = CRAB_HEX_VIEWER
@@ -490,9 +517,56 @@ class CrabHexFlatWalkEnvCfg(CrabHexTeacherEnvCfg):
             clip = dict(self.actions.joint_pos.clip)
             clip[".*_Body_CamShaft_RevoluteJoint"] = (float(_cam_lo), 1.0)
             self.actions.joint_pos.clip = clip
-        self.events.push_by_setting_velocity = None
-        self.events.randomize_rigid_body_mass = None
-        self.events.randomize_rigid_body_com = None
+        # NOTE(PLAN F gated lineage, 2026-08-26): DR events default OFF (as always for
+        # flat-walk) but each is now individually armable for the P6 elements.
+        _dr_push = os.environ.get("KRABBY_DR_PUSH")
+        if _dr_push is not None and self.events.push_by_setting_velocity is not None:
+            _pv = float(_dr_push)
+            self.events.push_by_setting_velocity.params["velocity_range"] = {
+                "x": (-_pv, _pv), "y": (-_pv, _pv)
+            }
+        else:
+            self.events.push_by_setting_velocity = None
+        _dr_mass = os.environ.get("KRABBY_DR_MASS")
+        if _dr_mass is not None and self.events.randomize_rigid_body_mass is not None:
+            _mlo, _mhi = (float(x) for x in _dr_mass.split(":"))
+            self.events.randomize_rigid_body_mass.params["mass_distribution_params"] = (_mlo, _mhi)
+        else:
+            self.events.randomize_rigid_body_mass = None
+        _dr_com = os.environ.get("KRABBY_DR_COM")
+        if _dr_com is not None and self.events.randomize_rigid_body_com is not None:
+            _cv = float(_dr_com)
+            self.events.randomize_rigid_body_com.params["com_range"] = {
+                "x": (-_cv, _cv), "y": (-_cv, _cv), "z": (-_cv, _cv)
+            }
+        else:
+            self.events.randomize_rigid_body_com = None
+        # PLAN F: turning school — heading command band ("lo:hi", rad). Default stays (0,0).
+        _hd = os.environ.get("KRABBY_HEADING")
+        if _hd is not None:
+            _hlo, _hhi = (float(x) for x in _hd.split(":"))
+            self.commands.base_velocity.ranges.heading = (_hlo, _hhi)
+        _hcs = os.environ.get("KRABBY_HEADING_STIFFNESS")
+        if _hcs is not None:  # pre-authorized turning-school fallback (1.5 -> 0.75)
+            self.commands.base_velocity.heading_control_stiffness = float(_hcs)
+        # PLAN F: episode length switch (P2 onward trains at 40 s).
+        _eps = os.environ.get("KRABBY_EPISODE_S")
+        if _eps is not None:
+            self.episode_length_s = float(_eps)
+        # PLAN F: termination knobs (flat defaults 0.5 rad / 500 N stay unless set).
+        _ta = os.environ.get("KRABBY_TERM_ANGLE")
+        if _ta is not None:
+            self.terminations.crab_failure.params["limit_angle"] = float(_ta)
+        _tc = os.environ.get("KRABBY_TERM_CONTACT_N")
+        if _tc is not None:
+            self.terminations.crab_failure.params["contact_force_threshold"] = float(_tc)
+        # PLAN F: terrain-level promotion fractions recalibrated for the plant's ~0.5
+        # tracking ratio (stock 0.8/0.4 can never promote here) — "up:down".
+        _tp = os.environ.get("KRABBY_TERRAIN_PROMOTE")
+        if _tp is not None:
+            _up, _down = (float(x) for x in _tp.split(":"))
+            self.parkours.base_parkour.move_up_frac = _up
+            self.parkours.base_parkour.move_down_frac = _down
         tg = getattr(self.scene.terrain, "terrain_generator", None) if self.scene.terrain else None
         if tg is not None:
             tg.curriculum = False
@@ -516,7 +590,32 @@ class CrabHexFlatWalkEnvCfg(CrabHexTeacherEnvCfg):
                 float(x) for x in os.environ.get("KRABBY_FLAT_TERRAIN_DIFF", "0.05:0.2").split(":")
             )
             _apply_crab_hex_easy_mixed_terrain(tg, flat_proportion=_frac, difficulty_range=(_lo, _hi))
-            _apply_crab_hex_bridge_shallow_parkour_geometry(tg)
+            # PLAN F: geometry preset — "shallow" (bridge-era default) or "recal2b2" (the
+            # plant-recalibrated end-state geometry).
+            _geom = os.environ.get("KRABBY_FLAT_TERRAIN_GEOM", "shallow").strip().lower()
+            if _geom == "recal2b2":
+                _apply_crab_hex_recal_2b2_parkour_geometry(tg)
+            else:
+                _apply_crab_hex_bridge_shallow_parkour_geometry(tg)
+            # PLAN F: terrain-level curriculum enable (applied AFTER the mixed-terrain
+            # helper, which forces curriculum False).
+            if os.environ.get("KRABBY_FLAT_TERRAIN_CURRICULUM", "").strip() in ("1", "true", "yes"):
+                self.parkours.base_parkour.freeze_terrain_levels = False
+                tg.curriculum = True
+        # NOTE(PLAN G gait-income phase-out, 2026-08-31): in-run cosine anneal of reward
+        # term weights via the (already-constructed) CurriculumManager. Armed only by
+        # KRABBY_PHASEOUT="term:w0:w1:t0:t1[,...]" (t in env steps, relative to process
+        # start); unset leaves self.curriculum = None — bit-identical to before.
+        # Targets are epsilon-clamped (>=1e-3): weight-exactly-0.0 terms are skipped by
+        # ParkourRewardManager and their Episode_Reward telemetry (the campaign's gait
+        # gate metric) would flatline.
+        _phaseout = os.environ.get("KRABBY_PHASEOUT")
+        if _phaseout:
+            from parkour_tasks.crab_hexapod_task.mdp.curriculums import (
+                phaseout_curriculum_cfg_from_env,
+            )
+
+            self.curriculum = phaseout_curriculum_cfg_from_env(_phaseout)
 
 
 @configclass

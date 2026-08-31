@@ -47,6 +47,43 @@ scenarios:
       Gait-formation campaign scenario: 3 x 10 s holds (~4-5 gait cycles per steady
       window at the pi rad/s cam), 36 s episode fits schedule + prologue with margin.
 
+  # PLAN F turning-school probe (P1 gate): forward walk with injected delta_yaw steering
+  # at two magnitudes. Gate = achieved-yaw-rate / wz_ref ratio >= 0.5 at the trained band.
+  - id: turn_walk_v1
+    role: teacher
+    task: Isaac-Crab-Hex-Flat-Walk-v0
+    terrain_label: flat
+    checkpoint: SUPPLIED-PER-RUN--pass---checkpoint
+    episodes: 100
+    env_seed: 1
+    episode_length_s: 46.0
+    probe: yaw
+    yaw_mode: delta_yaw_inject
+    schedule:
+      - {vx: 0.25, hold_s: 10.0, label: straight}
+      - {vx: 0.25, hold_s: 10.0, delta_yaw: 0.4, label: turn_l}
+      - {vx: 0.25, hold_s: 10.0, delta_yaw: -0.4, label: turn_r}
+      - {vx: 0.25, hold_s: 10.0, delta_yaw: 0.8, label: turn_hard}
+    notes: >-
+      Turning-school gate probe. delta_yaw injection is the policy's only steering channel
+      (wz commands cannot reach it); wz_ref = clamp(delta_yaw * heading_stiffness).
+
+  # PLAN F speed-widening probe (P5 gate): holds at and above the formation band top.
+  - id: flat_walk_speed_v1
+    role: teacher
+    task: Isaac-Crab-Hex-Flat-Walk-v0
+    terrain_label: flat
+    checkpoint: SUPPLIED-PER-RUN--pass---checkpoint
+    episodes: 100
+    env_seed: 1
+    episode_length_s: 36.0
+    schedule:
+      - {vx: 0.35, hold_s: 10.0, label: band_top}
+      - {vx: 0.45, hold_s: 10.0, label: widened}
+      - {vx: 0.55, hold_s: 10.0, label: ceiling}
+    notes: >-
+      Speed-band widening gate: tracking_ratio >= 0.30 at vx 0.45 promotes the band.
+
   # Stand-first probe for Phase A survival arms trained on KRABBY_LIN_VEL_X="0.0:0.35".
   - id: flat_walk_slow_v2
     role: teacher

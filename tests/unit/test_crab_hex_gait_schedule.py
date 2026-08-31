@@ -138,6 +138,24 @@ def test_delta_yaw_channel_compiled_when_present():
     assert comp.delta_yaw[prologue + hold + 1, 0] == pytest.approx(0.4)
 
 
+def test_committed_v2_manifest_parses_with_plan_f_probes():
+    """The shipped scenarios_v2.yaml must load, including the PLAN F turn/speed probes
+    (turn_walk_v1 exercises the yaw-probe fields end-to-end)."""
+    manifest = (
+        SCRIPTS_DIR.parent / "eval" / "scenarios_v2.yaml"
+    )
+    scenarios, defaults = S.load_manifest(manifest)
+    by_id = {s.id: s for s in scenarios}
+    assert {"flat_walk_forward_v2", "flat_walk_slow_v2", "turn_walk_v1",
+            "flat_walk_speed_v1"} <= set(by_id)
+    turn = by_id["turn_walk_v1"]
+    assert turn.yaw_mode == "delta_yaw_inject" and turn.probe == "yaw"
+    deltas = [h.delta_yaw for h in turn.schedule]
+    assert deltas == [None, 0.4, -0.4, 0.8]
+    speed = by_id["flat_walk_speed_v1"]
+    assert [h.vx for h in speed.schedule] == [0.35, 0.45, 0.55]
+
+
 def test_episode_shorter_than_schedule_is_rejected():
     with pytest.raises(S.ManifestError, match="shorter than"):
         S.validate_scenario(_scenario(episode_length_s=5.0))

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import torch
 from isaaclab.managers import ManagerTermBase, SceneEntityCfg
 from isaaclab.utils.math import euler_xyz_from_quat, wrap_to_pi
@@ -120,8 +122,20 @@ class CrabHexParkourObservations(ExtremeParkourObservations):
             )
             self.measured_heights = self._get_heights()
         # Flat-walk: velocity command is straight ahead; parkour goal yaw biases crab/drift.
-        delta_yaw = torch.where(on_flat, torch.zeros_like(self.delta_yaw), self.delta_yaw)
-        delta_next_yaw = torch.where(on_flat, torch.zeros_like(self.delta_next_yaw), self.delta_next_yaw)
+        # NOTE(PLAN F turning school, 2026-08-27): with KRABBY_HEADING set, flat tiles carry
+        # the HEADING-COMMAND error in the steering channels instead of zero — otherwise the
+        # ang-vel tracking reward pays for turning toward a target the policy cannot observe
+        # (blind turning). Same channel the turn_walk_v1 eval probe injects, so training and
+        # eval steering semantics match. Strictly env-var-gated: all pre-PLAN-F policies keep
+        # their original zeroed-on-flat semantics.
+        if os.environ.get("KRABBY_HEADING") is not None:
+            cmd_term = env.command_manager.get_term("base_velocity")
+            heading_err = wrap_to_pi(cmd_term.heading_target - self.asset.data.heading_w)
+            delta_yaw = torch.where(on_flat, heading_err, self.delta_yaw)
+            delta_next_yaw = torch.where(on_flat, heading_err, self.delta_next_yaw)
+        else:
+            delta_yaw = torch.where(on_flat, torch.zeros_like(self.delta_yaw), self.delta_yaw)
+            delta_next_yaw = torch.where(on_flat, torch.zeros_like(self.delta_next_yaw), self.delta_next_yaw)
         commands = env.command_manager.get_command("base_velocity")
         clock_phase = env.action_manager.get_term("joint_pos").clock_phase
         joint_pos_delta = self.asset.data.joint_pos - self.asset.data.default_joint_pos
