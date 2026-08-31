@@ -47,6 +47,9 @@ endfunction()
 
 set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/test_units
+    arduino/src/test_telemetry
+    arduino/src/imu/test_imu_calibrator
+    arduino/src/i2c/test_i2c_recovery
 )
 
 # The manifest and the directory must agree in both directions: a listed test
