@@ -2,14 +2,21 @@
 # Deploy FleetServiceStack via CDK. Requires an activated fleet/infra venv
 # (see ./scripts/setup-venv.sh). Puts project-local Node + cdk CLI on PATH.
 #
-# Requires -c domainName=... -c hostedZoneName=... as arguments to this
-# script (forwarded to `cdk deploy` via "$@"; see fleet/infra/fleet-service.md).
-# app.py fails cleanly if they're missing.
+# Requires -c domainName=... -c hostedZoneName=... plus the GitHub Actions
+# OIDC context keys (githubOwner, githubRepo, githubBranch,
+# githubOidcProviderArn, cdkBootstrapQualifier) as arguments to this script
+# (forwarded to `cdk deploy` via "$@"; see fleet/infra/fleet-service.md).
+# app.py / FleetServiceStack fail cleanly if they're missing.
 #
 # Example:
 #   ./scripts/deploy-fleet-service.sh \
 #     -c domainName={domain-name} \
-#     -c hostedZoneName={hosted-zone-name}
+#     -c hostedZoneName={hosted-zone-name} \
+#     -c githubOwner={github-owner} \
+#     -c githubRepo={github-repo} \
+#     -c githubBranch={github-branch} \
+#     -c githubOidcProviderArn={github-oidc-provider-arn} \
+#     -c cdkBootstrapQualifier={cdk-bootstrap-qualifier}
 
 set -euo pipefail
 

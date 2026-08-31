@@ -21,11 +21,15 @@ Index: [`README.md`](README.md).
    Then create an enroll access key once (CDK does not create keys):
    `aws iam create-access-key --user-name krabby-enroll --output json`
 
-2. Deploy the fleet service stack (EC2, Cognito, tunnel API — see
+2. Deploy the fleet service stack (EC2, Cognito, tunnel API — required `-c`
+   keys including GitHub OIDC trust: see
    [`infra/fleet-service.md`](infra/fleet-service.md)):
 
    ```bash
-   ./scripts/deploy-fleet-service.sh
+   ./scripts/deploy-fleet-service.sh \
+     -c domainName=... -c hostedZoneName=... \
+     -c githubOwner=... -c githubRepo=... -c githubBranch=... \
+     -c githubOidcProviderArn=... -c cdkBootstrapQualifier=...
    ```
 
 3. On each robot Orin, enroll and start the agent
@@ -340,7 +344,10 @@ Redeploy CDK at a prior git SHA:
 git checkout <sha>
 cd fleet/infra && source .venv/bin/activate
 ./scripts/deploy-control-plane.sh
-./scripts/deploy-fleet-service.sh
+./scripts/deploy-fleet-service.sh \
+  -c domainName=... -c hostedZoneName=... \
+  -c githubOwner=... -c githubRepo=... -c githubBranch=... \
+  -c githubOidcProviderArn=... -c cdkBootstrapQualifier=...
 ```
 
 SSM restart on the fleet EC2 picks up new service artifacts after
