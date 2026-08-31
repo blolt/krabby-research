@@ -14,6 +14,11 @@ line rather than environment variables or hardcoded constants.
 | `domainName` | `{domain-name}` | Fully-qualified DNS name for the fleet host |
 | `hostedZoneName` | `{hosted-zone-name}` | The Route 53 hosted zone that owns the domain above -- its ID is resolved via a live AWS lookup at synth time, not supplied directly |
 | `cognitoDomainPrefix` (optional) | `{cognito-domain-prefix}` | Cognito Hosted UI domain prefix — must be globally unique across AWS; defaults to `krabby-fleet-<account-id>` if unset |
+| `githubOwner` | `{github-owner}` | GitHub org/user for Actions OIDC trust (`krabby-fleet-ci`) |
+| `githubRepo` | `{github-repo}` | GitHub repo name for Actions OIDC trust |
+| `githubBranch` | `{github-branch}` | Branch whose pushes may assume the role (also trusts same-repo `pull_request`) |
+| `githubOidcProviderArn` | `{github-oidc-provider-arn}` | Existing account GitHub OIDC IdP ARN to import (this stack does **not** create a second IdP — one per issuer URL per account) |
+| `cdkBootstrapQualifier` | `{cdk-bootstrap-qualifier}` | Qualifier used when granting `sts:AssumeRole` on CDK bootstrap roles |
 
 ## Deploy
 
@@ -22,7 +27,12 @@ cd fleet/infra
 source .venv/bin/activate
 ./scripts/deploy-fleet-service.sh \
   -c domainName={domain-name} \
-  -c hostedZoneName={hosted-zone-name}
+  -c hostedZoneName={hosted-zone-name} \
+  -c githubOwner={github-owner} \
+  -c githubRepo={github-repo} \
+  -c githubBranch={github-branch} \
+  -c githubOidcProviderArn={github-oidc-provider-arn} \
+  -c cdkBootstrapQualifier={cdk-bootstrap-qualifier}
 ```
 
 Requires `ControlPlaneStack` to already be deployed (its `IotAtsEndpoint`
@@ -71,7 +81,8 @@ AWS credentials to resolve at synth time.
 | `FleetPoolDomain` | Cognito Hosted UI domain | `cognitoDomainPrefix` (or the account-scoped default). |
 | `FleetOperatorClient` | `AWS::Cognito::UserPoolClient` | App client name `krabby-fleet`. Supports `USER_SRP_AUTH` and OAuth authorization-code + PKCE (no client secret). |
 | `CognitoUserPoolIdParam` / `CognitoAppClientIdParam` | `AWS::SSM::Parameter` (`/krabby/fleet/cognito-user-pool-id`, `/krabby/fleet/cognito-app-client-id`) | The user pool ID and app client ID above, published to SSM Parameter Store so `krabby-fleet-service`'s JWT middleware can read them at runtime and know which pool/client to validate tokens against. Instance role has read access. |
-| `FleetServiceInstanceId`, `FleetServicePublicIp`, `FleetServiceDomainName`, `FleetCognitoUserPoolId`, `FleetCognitoUserPoolClientId`, `FleetCognitoDomain` (outputs) | `CfnOutput` | Console visibility. `FleetCognitoUserPoolId` and `FleetCognitoUserPoolClientId` are also exported for cross-stack use. |
+| `FleetGitHubActionsRole` | `AWS::IAM::Role` (`krabby-fleet-ci`) | GitHub Actions OIDC role for `fleet-ci.yml` / `fleet-deploy.yml`. Trusts the configured `githubOwner`/`githubRepo` branch pushes and same-repo `pull_request` subjects (not forks); imports the account's existing GitHub OIDC provider ARN from context. Permissions: assume CDK bootstrap roles, `cloudformation:DescribeStacks` + SSM Run Command for post-deploy, Cognito admin on this pool, IoT/Secure Tunneling/teleop MQTT for bench E2E. |
+| `FleetServiceInstanceId`, `FleetServicePublicIp`, `FleetServiceDomainName`, `FleetCognitoUserPoolId`, `FleetCognitoUserPoolClientId`, `FleetCognitoDomain`, `FleetGitHubActionsRoleArn` (outputs) | `CfnOutput` | Console visibility. Cognito IDs and `FleetGitHubActionsRoleArn` are also exported for cross-stack / workflow use. |
 
 ## Remove the stack
 
@@ -80,7 +91,12 @@ cd fleet/infra
 source .venv/bin/activate
 ./scripts/destroy-fleet-service.sh \
   -c domainName={domain-name} \
-  -c hostedZoneName={hosted-zone-name}
+  -c hostedZoneName={hosted-zone-name} \
+  -c githubOwner={github-owner} \
+  -c githubRepo={github-repo} \
+  -c githubBranch={github-branch} \
+  -c githubOidcProviderArn={github-oidc-provider-arn} \
+  -c cdkBootstrapQualifier={cdk-bootstrap-qualifier}
 ```
 
 (CDK has to construct the stack to destroy it, so the same context values
