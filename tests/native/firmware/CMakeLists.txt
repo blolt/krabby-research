@@ -46,6 +46,7 @@ function(add_firmware_native_test test_path)
 endfunction()
 
 set(KRABBY_FIRMWARE_NATIVE_TESTS
+    arduino/test_units
 )
 
 # The manifest and the directory must agree in both directions: a listed test
