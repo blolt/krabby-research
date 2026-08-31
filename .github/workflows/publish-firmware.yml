@@ -51,7 +51,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install Python deps
-        run: pip install boto3
+        run: pip install boto3 pytest pytest-cov pytest-timeout keyboard pyserial
+
+      - name: Run native and Python firmware tests
+        run: make -C firmware test-firmware
 
       - name: Install arduino-cli 1.1.1
         run: |
@@ -62,13 +65,35 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.arduino15
-          key: arduino-avr-${{ runner.os }}-cli1.1.1-core1.8.7
+          key: arduino-avr-${{ runner.os }}-cli1.1.1-core1.8.8
 
+      # Pinned to the core version the bench-verified hex was built with;
+      # bump together with firmware/Makefile's arduino-core target and the
+      # cache key above.
       - name: Install arduino AVR core
-        run: arduino-cli core install arduino:avr
+        run: arduino-cli core install arduino:avr@1.8.8
 
       - name: Generate version.h
         run: python firmware/scripts/gen_version_h.py
+
+      # The SparkFun LSM6DSO library is not in the Library Manager index, so it
+      # installs from a pinned git commit into the sketchbook.
+      # Guarded: scheduled runs take this workflow file from the default branch
+      # but check out the newest release/*, which may predate the M16 sensor and
+      # need no library, so skip instead of failing.
+      - name: Cache pinned Arduino libraries
+        uses: actions/cache@v4
+        with:
+          path: ~/Arduino/libraries
+          key: arduino-libs-${{ hashFiles('firmware/Makefile') }}
+
+      - name: Fetch pinned Arduino libraries
+        run: |
+          if grep -q '^fetch-libs:' firmware/Makefile; then
+            make -C firmware fetch-libs
+          else
+            echo "No fetch-libs target on this ref (pre-M16 release branch); skipping"
+          fi
 
       - name: Compile firmware
         run: |
