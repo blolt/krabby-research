@@ -20,6 +20,7 @@ from hal.server.jetson.front_camera_factory import (
     FRONT_RGB_DEPTH_CAMERA_FACTORIES,
     create_front_rgb_depth_camera,
 )
+from firmware.krabby_mcu import DEFAULT_BAUD
 from hal.server.jetson.krabby_mcusdk import KrabbyMCUSDK
 from hal.server.jetson.sensor_backend_jetson import (
     JETSON_SENSOR_CATALOG,
@@ -135,7 +136,7 @@ class JetsonHalServer(HalServerBase):
         action_dim: int,
         robot_definition: RobotDefinition,
         mcu_port: Optional[str] = None,
-        mcu_baud: int = 115200,
+        mcu_baud: int = DEFAULT_BAUD,
         mcu_auto_connect: bool = True,
     ):
         """Initialize Jetson HAL server.
