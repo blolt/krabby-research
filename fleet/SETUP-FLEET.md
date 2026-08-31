@@ -35,12 +35,17 @@ Index: [`README.md`](README.md).
 
 ## Enroll and SSH
 
-- Enroll one Orin: [`ENROLL.md`](ENROLL.md)
+- Enroll one Orin: [`ENROLL.md`](ENROLL.md) — needs
+  **`krabby-launcher` ≥ 0.1.16** (first release with `enroll` / `agent`)
 - One SSH source → one Orin: [`SSH-TUNNEL.md`](SSH-TUNNEL.md)
 - Cognito operators (CLI + Console): [`OPERATORS.md`](OPERATORS.md)
 
 Later, with the fleet service up: `krabby-fleet ssh` / portal Open SSH
 ([`cli/README.md`](cli/README.md)).
+
+**Scale path (document only):** when per-device enroll-time AWS creds no
+longer scale, switch onboarding to AWS IoT Fleet Provisioning by claim —
+see [`ENROLL.md` § Scale path](ENROLL.md#scale-path-not-implemented).
 
 ## MQTT topic scheme
 

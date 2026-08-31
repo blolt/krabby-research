@@ -18,6 +18,18 @@ Placeholders: `<region>`, `<thing-name>`. Tip: `export AWS_PAGER=""`.
 
 ## Install `krabby` on the Orin
 
+`enroll` / `agent` require **`krabby-launcher` ≥ 0.1.16** (first-including
+version). From PyPI:
+
+```bash
+python3 -m venv .venv-krabby && source .venv-krabby/bin/activate
+pip install -U pip && pip install 'krabby-launcher>=0.1.16'
+command -v krabby
+krabby --help | grep -E 'enroll|agent'
+```
+
+Or from a clone:
+
 ```bash
 cd /path/to/krabby-research
 python3 -m venv .venv-krabby && source .venv-krabby/bin/activate
@@ -25,9 +37,6 @@ pip install -U pip && pip install ./krabby
 command -v krabby
 krabby --help | grep -E 'enroll|agent'
 ```
-
-(Or `pip install -U krabby-launcher` once a published build includes
-enroll/agent.)
 
 ## Enroll
 
@@ -80,6 +89,30 @@ krabby get telemetry
 `krabby agent` uses one MQTT connection for shadow telemetry (1/min), tunnel
 notify → destination `localproxy` → `localhost:22`, and teleop signaling
 shim. Details: [`krabby/README.md`](../krabby/README.md).
+
+## Scale path (not implemented)
+
+Today’s enroll path is fine for a small fleet: an operator exports
+`krabby-enroll` IAM keys on the Orin once, `krabby enroll` creates the thing
+and cert, then those keys are discarded. That still means **per-device
+enroll-time AWS credentials**.
+
+When the fleet outgrows that model, move onboarding to
+[AWS IoT Fleet Provisioning by claim](https://docs.aws.amazon.com/iot/latest/developerguide/provision-wo-cert.html):
+
+1. Provision a claim certificate + template that creates the thing, attaches
+   the same per-thing IoT policy (`${iot:Connection.Thing.ThingName}`), and
+   issues the device cert.
+2. Bake the claim cert into the Orin image (or deliver it out-of-band once).
+3. Replace `krabby enroll`’s boto3 create-thing / create-cert calls with the
+   Fleet Provisioning MQTT API (`CreateCertificateFromCsr` /
+   `RegisterThing` against the template). Private key still generated
+   on-device via CSR; claim cert is only for bootstrap.
+4. Retire `krabby-enroll` IAM access keys for day-to-day onboarding.
+
+Do **not** implement this for the current milestone — document-only scale
+path so later work can drop per-device AWS creds without redesigning
+identity layout under `/etc/krabby/iot/`.
 
 ## Next
 
