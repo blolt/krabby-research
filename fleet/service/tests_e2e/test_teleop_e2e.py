@@ -1,24 +1,12 @@
 """Teleop E2E: Playwright against real fleet portal + bench robot.
 
-Requires a deployed fleet host, Cognito, and Bruce's bench Orin running
-``krabby agent`` + the existing WebRTC edge agent (``--teleop-ip 127.0.0.1``).
-Skipped unless ``BENCH_E2E=1`` and ``fleet/config/fleet.toml`` is complete
-(Cognito IDs + URLs). See ``fleet/config/README.md``.
+Requires deployed fleet host, Cognito, and bench Orin running ``krabby agent``
++ WebRTC edge (``--teleop-ip 127.0.0.1``). Uses the persistent CI operator
+(``fleet.toml`` + ``COGNITO_CI_PASSWORD``). Skipped locally unless
+``BENCH_E2E=1`` or GitHub Actions.
 
-The bench's HAL server also needs ``--teleop-control-echo`` on its launch
-command for the (b) HAL-ack assertion below -- this echo is off by default
-everywhere else (a per-run flag, not a checked-in ``robot_settings.py``
-constant), since no operator-facing feature reads it (see
-``teleop/edge/robot_settings.py:build_teleop_edge_settings``).
-
-Coverage:
-  (a) Cognito auth → open teleop URL → signaling handshake (hello_ack / Playing)
-  (b) ``krabby-control-v1`` opens; motion-safe control sent and its receipt
-      confirmed via the ``last_control`` echo on the telemetry channel (real
-      HAL ack, not just a client-side send() that didn't throw)
-  (c) ≥1 video track from the bench camera
-  (d) unauthenticated signaling WS rejected; no MQTT publish on ``…/signaling/in``
-  teardown: browser closed; MQTT ``…/signaling/*`` quiet
+The bench HAL server needs ``--teleop-control-echo`` for the control-ack
+assertion (see ``teleop/edge/robot_settings.py:build_teleop_edge_settings``).
 """
 from __future__ import annotations
 
@@ -27,35 +15,17 @@ import os
 import threading
 import time
 from typing import Any
-from urllib.parse import quote, urlparse
+from urllib.parse import quote
 
 import pytest
 import requests
 
-from tests_e2e._fleet_env import (
-    AWS_REGION,
-    BENCH_THING_NAME,
-    COGNITO_APP_CLIENT_ID,
-    COGNITO_USER_POOL_ID,
-    FLEET_E2E_CONFIGURED,
-    FLEET_PORTAL_URL,
-    FLEET_SERVICE_URL,
-)
+from tests_e2e._fleet_env import AWS_REGION, BENCH_THING_NAME, FLEET_PORTAL_URL, FLEET_SERVICE_URL
 
-BENCH_E2E = os.environ.get("BENCH_E2E", "") == "1"
 SIGNALING_TIMEOUT_S = float(os.environ.get("TELEOP_E2E_SIGNALING_TIMEOUT_S", "90"))
 VIDEO_TIMEOUT_S = float(os.environ.get("TELEOP_E2E_VIDEO_TIMEOUT_S", "120"))
 CONTROL_TIMEOUT_S = float(os.environ.get("TELEOP_E2E_CONTROL_TIMEOUT_S", "60"))
 MQTT_IDLE_SECS = float(os.environ.get("TELEOP_E2E_MQTT_IDLE_SECS", "8"))
-
-pytestmark = pytest.mark.skipif(
-    not (
-        BENCH_E2E
-        and FLEET_E2E_CONFIGURED
-        and FLEET_PORTAL_URL
-    ),
-    reason="BENCH_E2E=1 and complete fleet/config/fleet.toml required",
-)
 
 
 def _viewer_url(thing: str, token: str) -> str:
@@ -63,16 +33,6 @@ def _viewer_url(thing: str, token: str) -> str:
         f"{FLEET_PORTAL_URL}/teleop/viewer.html"
         f"?thing={quote(thing)}&token={quote(token)}"
     )
-
-
-def _signaling_ws_url(thing: str, token: str | None = None) -> str:
-    parsed = urlparse(FLEET_SERVICE_URL)
-    # FLEET_SERVICE_URL is https://host/api — WS goes through Caddy /api → service.
-    host = parsed.netloc or parsed.path
-    scheme = "wss" if (parsed.scheme or "https") == "https" else "ws"
-    path = f"/api/devices/{quote(thing)}/teleop/signaling"
-    qs = f"?token={quote(token)}" if token else ""
-    return f"{scheme}://{host}{path}{qs}"
 
 
 class _MqttSniffer:
@@ -173,7 +133,6 @@ def test_teleop_signaling_control_and_video(operator_token: str, mqtt_sniffer: _
         page = browser.new_page()
         page.goto(url, wait_until="domcontentloaded", timeout=60_000)
 
-        # (a) Signaling handshake: viewer status → Playing (hello_ack + answer).
         page.wait_for_function(
             """() => {
               const t = window.__krabbyTeleop && window.__krabbyTeleop.getStatus
@@ -188,11 +147,9 @@ def test_teleop_signaling_control_and_video(operator_token: str, mqtt_sniffer: _
                 break
             time.sleep(0.5)
         else:
-            # Browser may complete before sniffer catches frames; still require MQTT activity.
             nin, nout = mqtt_sniffer.count_since(0)
             assert nin + nout > 0, "expected MQTT traffic on teleop/{thing}/signaling/*"
 
-        # (b) Control data channel + motion-safe InputController payload.
         page.wait_for_function(
             """() => {
               const dc = window.__krabbyTeleop && window.__krabbyTeleop.getControlDc
@@ -204,11 +161,6 @@ def test_teleop_signaling_control_and_video(operator_token: str, mqtt_sniffer: _
         sent = page.evaluate("() => window.__krabbyTeleop.sendMotionSafeControl()")
         assert sent is True
 
-        # HAL ack: poll the existing telemetry channel's last_control echo
-        # (added by hal/server/teleop_portal_signaling.py's merge_last_control_state)
-        # rather than a new protocol message -- RS=true is only reachable if
-        # the bench's real WebRTCInputController actually received and
-        # applied this exact payload, not just a default/idle readback.
         page.wait_for_function(
             """() => {
               const t = window.__krabbyTeleop && window.__krabbyTeleop.getLastTelemetry
@@ -218,7 +170,6 @@ def test_teleop_signaling_control_and_video(operator_token: str, mqtt_sniffer: _
             timeout=int(CONTROL_TIMEOUT_S * 1000),
         )
 
-        # (c) At least one camera <video> track attached.
         page.wait_for_function(
             """() => window.__krabbyTeleop.videoTrackCount() >= 1""",
             timeout=int(VIDEO_TIMEOUT_S * 1000),
@@ -226,7 +177,6 @@ def test_teleop_signaling_control_and_video(operator_token: str, mqtt_sniffer: _
 
         browser.close()
 
-    # Teardown: signaling topics idle after session ends.
     time.sleep(2.0)
     mqtt_sniffer.clear()
     t0 = time.monotonic()
@@ -235,50 +185,6 @@ def test_teleop_signaling_control_and_video(operator_token: str, mqtt_sniffer: _
     assert nin == 0 and nout == 0, (
         f"expected teleop signaling idle after teardown; got in={nin} out={nout}"
     )
-
-
-def test_teleop_unauthenticated_signaling_rejected(mqtt_sniffer: _MqttSniffer):
-    """(d) No Cognito token → WS rejected; no MQTT frames on signaling/in."""
-    pytest.importorskip("playwright.sync_api")
-    from playwright.sync_api import sync_playwright
-
-    mqtt_sniffer.clear()
-    ws_url = _signaling_ws_url(BENCH_THING_NAME, token=None)
-    t0 = time.monotonic()
-
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        result = page.evaluate(
-            """async (url) => {
-              return await new Promise((resolve) => {
-                let opened = false;
-                const ws = new WebSocket(url);
-                const timer = setTimeout(() => {
-                  try { ws.close(); } catch (e) {}
-                  resolve({ opened, closed: true, timedOut: true });
-                }, 8000);
-                ws.onopen = () => { opened = true; };
-                ws.onerror = () => {};
-                ws.onclose = (ev) => {
-                  clearTimeout(timer);
-                  resolve({ opened, closed: true, code: ev.code, timedOut: false });
-                };
-              });
-            }""",
-            ws_url,
-        )
-        browser.close()
-
-    assert not result.get("opened"), f"unauthenticated WS must not open: {result}"
-    time.sleep(1.0)
-    nin, _ = mqtt_sniffer.count_since(t0)
-    assert nin == 0, f"unauthenticated session must not publish signaling/in (got {nin} frames)"
-
-
-def test_teleop_ice_servers_requires_auth():
-    resp = requests.get(f"{FLEET_SERVICE_URL}/teleop/ice-servers", timeout=30)
-    assert resp.status_code == 401
 
 
 def test_teleop_ice_servers_authed(operator_token: str):

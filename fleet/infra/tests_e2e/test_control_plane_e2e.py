@@ -1,7 +1,7 @@
 """Control-plane E2E against the permanently enrolled bench Orin.
 
-Enabled only when BENCH_E2E=1 is set. Without it, the whole module is skipped
-so ordinary unit-test runs never touch AWS or the bench.
+Skipped locally unless ``BENCH_E2E=1`` or GitHub Actions; when enabled, missing
+config, AWS access, tools, or bench connectivity → **fail**.
 """
 from __future__ import annotations
 
@@ -18,24 +18,14 @@ from typing import Any, Iterator
 import boto3
 import pytest
 
-try:
-    from krabby_fleet_config.e2e_env import AWS_REGION, BENCH_THING_NAME
-except ImportError:
-    AWS_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
-    BENCH_THING_NAME = os.environ.get("BENCH_THING_NAME", "bench-krabby-ci")
+from krabby_fleet_config.e2e_env import AWS_REGION, BENCH_THING_NAME
 
-BENCH_E2E = os.environ.get("BENCH_E2E", "").strip() in ("1", "true", "yes")
 SHADOW_MAX_AGE_SECS = int(os.environ.get("SHADOW_MAX_AGE_SECS", "180"))
 
 KRAB_THING_TYPE = "Krab"
 KRAB_DEVICE_POLICY = "KrabDevicePolicy"
 AMAZON_ROOT_CA_URL = "https://www.amazontrust.com/repository/AmazonRootCA1.pem"
 _LOCALPROXY_BIN = "localproxy"
-
-pytestmark = pytest.mark.skipif(
-    not BENCH_E2E,
-    reason="BENCH_E2E not set (export BENCH_E2E=1 to run control-plane bench tests)",
-)
 
 
 def _iot() -> Any:
@@ -242,9 +232,9 @@ def test_scratch_cert_cannot_update_bench_shadow(scratch_device: dict[str, Any])
         assert "timestamp" in after_reported
 
 
-@pytest.mark.skipif(not shutil.which(_LOCALPROXY_BIN), reason=f"{_LOCALPROXY_BIN} not on PATH")
 def test_secure_tunnel_source_proxy_reaches_ssh():
     """OpenTunnel → destination localproxy on bench → source TCP sees SSH."""
+    assert shutil.which(_LOCALPROXY_BIN), f"{_LOCALPROXY_BIN} not on PATH (required for bench E2E)"
     client = _tunneling()
     tunnel = client.open_tunnel(
         description=f"task1-e2e:{BENCH_THING_NAME}",

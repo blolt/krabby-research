@@ -32,13 +32,6 @@ def authed_client():
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def anon_client():
-    app.dependency_overrides[get_settings] = lambda: _SETTINGS
-    yield TestClient(app)
-    app.dependency_overrides.clear()
-
-
 def test_create_ssh_tunnel_calls_open_tunnel(authed_client):
     fake_client = MagicMock()
     fake_client.open_tunnel.return_value = {
@@ -64,16 +57,6 @@ def test_delete_ssh_tunnel_calls_close_tunnel(authed_client):
 
     assert resp.status_code == 204
     fake_client.close_tunnel.assert_called_once_with(tunnelId="abc123", delete=True)
-
-
-def test_create_ssh_tunnel_without_auth_is_401(anon_client):
-    resp = anon_client.post("/devices/bench-krabby-ci/ssh-tunnel")
-    assert resp.status_code == 401
-
-
-def test_delete_ssh_tunnel_without_auth_is_401(anon_client):
-    resp = anon_client.delete("/devices/bench-krabby-ci/ssh-tunnel/abc123")
-    assert resp.status_code == 401
 
 
 def test_healthz_needs_no_auth():

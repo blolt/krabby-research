@@ -1,4 +1,4 @@
-"""Fleet E2E settings: committed ``fleet/config/fleet.toml`` + env overrides."""
+"""Fleet env for service E2E (committed fleet.toml + optional env overrides)."""
 from krabby_fleet_config.e2e_env import (
     AWS_REGION,
     BENCH_THING_NAME,
@@ -7,7 +7,6 @@ from krabby_fleet_config.e2e_env import (
     FLEET_E2E_CONFIGURED,
     FLEET_PORTAL_URL,
     FLEET_SERVICE_URL,
-    get_fleet_config,
 )
 
 __all__ = [
@@ -18,5 +17,4 @@ __all__ = [
     "FLEET_E2E_CONFIGURED",
     "FLEET_PORTAL_URL",
     "FLEET_SERVICE_URL",
-    "get_fleet_config",
 ]

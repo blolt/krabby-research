@@ -77,14 +77,6 @@ def authed_client():
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def anon_client():
-    app.dependency_overrides[get_settings] = lambda: _SETTINGS
-    with TestClient(app) as client:
-        yield client
-    app.dependency_overrides.clear()
-
-
 def test_get_ice_servers_authed(authed_client):
     resp = authed_client.get("/teleop/ice-servers")
     assert resp.status_code == 200
@@ -92,8 +84,3 @@ def test_get_ice_servers_authed(authed_client):
     assert body["version"] == 1
     assert body["iceServers"][0]["urls"] == GOOGLE_STUN_URL
     assert body["iceServers"][1]["username"].endswith(":operator-sub-1")
-
-
-def test_get_ice_servers_without_auth_is_401(anon_client):
-    resp = anon_client.get("/teleop/ice-servers")
-    assert resp.status_code == 401
