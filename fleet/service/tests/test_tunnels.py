@@ -16,10 +16,10 @@ from krabby_fleet_service._config import Settings, get_settings
 from krabby_fleet_service.app import app
 
 _SETTINGS = Settings(
-    aws_region="us-east-1",
-    cognito_user_pool_id="us-east-1_TESTPOOL",
+    aws_region="us-east-2",
+    cognito_user_pool_id="us-east-2_TESTPOOL",
     cognito_app_client_id="test-client-id",
-    iot_ats_endpoint="example-ats.iot.us-east-1.amazonaws.com",
+    iot_ats_endpoint="example-ats.iot.us-east-2.amazonaws.com",
 )
 _FAKE_CLAIMS = {"sub": "test-operator", "cognito:groups": ["operator"]}
 
@@ -43,7 +43,7 @@ def test_create_ssh_tunnel_calls_open_tunnel(authed_client):
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body == {"tunnelId": "abc123", "sourceAccessToken": "src-token", "region": "us-east-1"}
+    assert body == {"tunnelId": "abc123", "sourceAccessToken": "src-token", "region": "us-east-2"}
 
     fake_client.open_tunnel.assert_called_once()
     _, kwargs = fake_client.open_tunnel.call_args

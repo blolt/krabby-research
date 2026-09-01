@@ -6,12 +6,22 @@ connection.
 """
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import pytest
 
 from krabby_fleet_service._signaling import SignalingBridge
 from krabby_fleet_service.app import app
+
+
+@pytest.fixture(autouse=True)
+def _fleet_config_env() -> None:
+    """Match committed fleet.toml (same as CI github_actions export)."""
+    from krabby_fleet_config import load_fleet_config
+
+    for key, value in load_fleet_config().as_env().items():
+        os.environ.setdefault(key, value)
 
 
 class NoopMqtt:

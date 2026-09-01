@@ -48,10 +48,15 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Fleet config + service unit tests
+      - name: Load fleet config
         run: |
           python -m pip install --upgrade pip
-          pip install -e fleet/config -e "fleet/service[dev]"
+          pip install -e fleet/config
+          python -m krabby_fleet_config.github_actions
+
+      - name: Fleet config + service unit tests
+        run: |
+          pip install -e "fleet/service[dev]"
           pytest fleet/config/tests fleet/service/tests -q
 
   bench-e2e:
