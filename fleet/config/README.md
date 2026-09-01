@@ -19,6 +19,8 @@ aws cloudformation describe-stacks --stack-name FleetServiceStack \
 ```
 
 Set `[ci].operator_username` to the CI operator’s Cognito email (sign-in alias).
+Set `[ci].github_actions_role_arn` from the `FleetGitHubActionsRoleArn` stack output
+after deploy (OIDC role for `fleet-ci.yml` / `fleet-deploy.yml`).
 
 ## Python client
 

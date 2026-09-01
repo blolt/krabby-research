@@ -39,6 +39,7 @@ class FleetConfig:
     iot_device_policy: str
     bench_thing_name: str
     ci_operator_username: str = ""
+    ci_github_actions_role_arn: str = ""
 
     @property
     def cognito_issuer(self) -> str:
@@ -62,6 +63,8 @@ class FleetConfig:
         }
         if self.ci_operator_username:
             out["COGNITO_CI_USERNAME"] = self.ci_operator_username
+        if self.ci_github_actions_role_arn:
+            out["FLEET_CI_ROLE_ARN"] = self.ci_github_actions_role_arn
         return out
 
 
@@ -137,6 +140,7 @@ def load_fleet_config(path: Path | None = None) -> FleetConfig:
 
     bench_thing_name = _optional_str(raw, "bench", "thing_name") or "bench-krabby-ci"
     ci_operator_username = _optional_str(raw, "ci", "operator_username")
+    ci_github_actions_role_arn = _optional_str(raw, "ci", "github_actions_role_arn")
 
     return FleetConfig(
         aws_region=aws_region,
@@ -149,6 +153,7 @@ def load_fleet_config(path: Path | None = None) -> FleetConfig:
         iot_device_policy=iot_device_policy,
         bench_thing_name=bench_thing_name,
         ci_operator_username=ci_operator_username,
+        ci_github_actions_role_arn=ci_github_actions_role_arn,
     )
 
 

@@ -27,3 +27,5 @@ thing_name = "bench-krabby-ci"
 [ci]
 # Cognito sign-in alias for the persistent CI operator (email). Not a secret.
 operator_username = "ci-fleet-operator@krabbyco.com"
+# FleetServiceStack output FleetGitHubActionsRoleArn (krabby-fleet-ci OIDC role).
+github_actions_role_arn = "arn:aws:iam::632914961627:role/krabby-fleet-ci"

@@ -36,6 +36,7 @@ def test_load_fleet_config_derives_urls(tmp_path):
 
         [ci]
         operator_username = "ci@example.com"
+        github_actions_role_arn = "arn:aws:iam::123456789012:role/krabby-fleet-ci"
         """,
     )
     cfg = load_fleet_config(path)
@@ -45,6 +46,7 @@ def test_load_fleet_config_derives_urls(tmp_path):
     assert cfg.cognito_issuer.endswith("/us-east-2_ABC")
     assert cfg.bench_thing_name == "bench-krabby-ci"
     assert cfg.ci_operator_username == "ci@example.com"
+    assert cfg.ci_github_actions_role_arn == "arn:aws:iam::123456789012:role/krabby-fleet-ci"
 
 
 def test_as_env(tmp_path):
