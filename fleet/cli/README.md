@@ -8,28 +8,34 @@ workstation), not on the Orin — the Orin uses `krabby` / `krabby-agent` instea
 From the `krabby-research` repo root (venv recommended):
 
 ```bash
-pip install ./fleet/cli
+pip install -e ./fleet/config -e ./fleet/cli
 ```
 
 For editable / test installs:
 
 ```bash
-pip install -e "./fleet/cli[dev]"
+pip install -e "./fleet/config" -e "./fleet/cli[dev]"
 ```
 
-Confirm: `krabby-fleet --help`. Cognito pool/client IDs come from
-`FleetServiceStack` outputs (or SSM `/krabby/fleet/cognito-*`); see
-[`../OPERATORS.md`](../OPERATORS.md). For `krabby-fleet ssh`, also install
-`localproxy` and `ssh` on the same machine ([`../SSH-TUNNEL.md`](../SSH-TUNNEL.md)).
+Confirm: `krabby-fleet --help`. Non-secret fleet settings come from committed
+[`../config/fleet.toml`](../config/fleet.toml) (see [`../config/README.md`](../config/README.md)).
+For `krabby-fleet ssh`, also install `localproxy` and `ssh` on the same machine
+([`../SSH-TUNNEL.md`](../SSH-TUNNEL.md)).
 
 ## Config
 
-`~/.config/krabby-fleet/config.toml`:
+**Default:** shared [`fleet/config/fleet.toml`](../config/fleet.toml) in the repo
+(loaded automatically after `pip install -e fleet/config`).
+
+**Override:** copy the same TOML shape to `~/.config/krabby-fleet/config.toml`,
+or set `KRABBY_FLEET_CONFIG=/path/to/fleet.toml`.
+
+Legacy operator-only layout (still supported when using an explicit path):
 
 ```toml
 [fleet]
 service_url = "https://{fleet-domain}/api"
-# optional: portal_url = "https://{fleet-domain}"  # default = service_url without /api
+# optional: portal_url = "https://{fleet-domain}"
 
 [cognito]
 user_pool_id = "{cognito-user-pool-id}"

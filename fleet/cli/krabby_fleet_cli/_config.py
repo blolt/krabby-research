@@ -1,9 +1,14 @@
-"""~/.config/krabby-fleet/config.toml loading."""
+"""~/.config/krabby-fleet/config.toml loading — delegates to shared fleet config."""
 from __future__ import annotations
 
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+
+try:
+    from krabby_fleet_config import load_fleet_config as _load_shared
+except ImportError:
+    _load_shared = None  # type: ignore[assignment,misc]
 
 try:
     import tomllib  # type: ignore[import]
@@ -33,21 +38,17 @@ def portal_base_url(config: Config) -> str:
     return service
 
 
-def load_config(path: Path = CONFIG_PATH) -> Config:
-    if not path.exists():
-        print(
-            f"error: {path} not found. Create it with:\n\n"
-            "[fleet]\n"
-            'service_url = "https://<fleet-domain>/api"\n\n'
-            "[cognito]\n"
-            'user_pool_id = "<user-pool-id>"\n'
-            'client_id = "<app-client-id>"\n\n'
-            "[ssh]\n"
-            'default_user = "operator"\n',
-            file=sys.stderr,
-        )
-        sys.exit(1)
+def _from_shared() -> Config:
+    shared = _load_shared()
+    return Config(
+        service_url=shared.service_url,
+        cognito_user_pool_id=shared.cognito_user_pool_id,
+        cognito_client_id=shared.cognito_app_client_id,
+        portal_url=shared.portal_url,
+    )
 
+
+def _from_legacy_toml(path: Path) -> Config:
     raw = tomllib.loads(path.read_text())
     try:
         fleet = raw["fleet"]
@@ -71,3 +72,22 @@ def load_config(path: Path = CONFIG_PATH) -> Config:
         default_ssh_user=raw.get("ssh", {}).get("default_user", "operator"),
         portal_url=str(fleet.get("portal_url") or "").rstrip("/"),
     )
+
+
+def load_config(path: Path = CONFIG_PATH) -> Config:
+    if _load_shared is not None and path == CONFIG_PATH:
+        try:
+            return _from_shared()
+        except FileNotFoundError:
+            pass
+
+    if not path.exists():
+        print(
+            f"error: fleet config not found.\n\n"
+            "Install shared config: pip install -e fleet/config\n"
+            "Or create ~/.config/krabby-fleet/config.toml — see fleet/config/README.md\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return _from_legacy_toml(path)

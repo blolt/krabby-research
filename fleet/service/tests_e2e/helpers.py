@@ -1,16 +1,17 @@
 """Shared helpers for fleet service live E2E tests (Cognito scratch users, etc.)."""
 from __future__ import annotations
 
-import os
 import secrets
 from typing import Iterator
 
 import boto3
 from pycognito import Cognito
 
-AWS_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
-COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
-COGNITO_APP_CLIENT_ID = os.environ.get("COGNITO_APP_CLIENT_ID", "")
+from tests_e2e._fleet_env import (
+    AWS_REGION,
+    COGNITO_APP_CLIENT_ID,
+    COGNITO_USER_POOL_ID,
+)
 
 
 def cognito_idp():

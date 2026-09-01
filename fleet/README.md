@@ -5,6 +5,7 @@ portal, and CLI.
 
 | Doc | Purpose |
 |-----|---------|
+| [`config/`](config/README.md) | Committed `fleet.toml` + Python loader (CI, CLI, E2E) |
 | [`ENROLL.md`](ENROLL.md) | Enroll one Orin |
 | [`SSH-TUNNEL.md`](SSH-TUNNEL.md) | One SSH source → one Orin |
 | [`OPERATORS.md`](OPERATORS.md) | Add Cognito operator users (CLI + Console) |

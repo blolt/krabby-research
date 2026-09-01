@@ -1,25 +1,32 @@
 # Fleet service live E2E (SSH + teleop)
 
-Tests against a **deployed** fleet host and an enrolled bench Orin
-(default thing name `bench-krabby-ci`). Skipped unless the env below is set — unit `pytest tests/`
-without a live environment stays green.
+Tests against a **deployed** fleet host and an enrolled bench Orin. Non-secret
+settings come from committed [`../config/fleet.toml`](../config/fleet.toml)
+(see [`../config/README.md`](../config/README.md)). Skipped when that file is
+incomplete — unit `pytest tests/` without a live environment stays green.
 
-## Env
+## Config vs secrets
 
-| Variable | Required for | Notes |
-|----------|--------------|-------|
-| `FLEET_SERVICE_URL` | SSH + teleop | e.g. `https://fleet.example.com/api` |
-| `FLEET_PORTAL_URL` | teleop | e.g. `https://fleet.example.com` (no `/api`) |
-| `COGNITO_USER_POOL_ID` | both | From `FleetServiceStack` |
-| `COGNITO_APP_CLIENT_ID` | both | From `FleetServiceStack` |
-| `AWS_REGION` | both | Default `us-east-1` |
-| `BENCH_E2E=1` | teleop | Explicit enable for Playwright suite |
-| `BENCH_THING_NAME` | both | Default `bench-krabby-ci` |
+| Source | What |
+|--------|------|
+| `fleet/config/fleet.toml` | URLs, region, Cognito pool/client IDs, bench thing name, CI operator email |
+| GitHub secret `COGNITO_CI_PASSWORD` | CI operator password only (item 6 wires auth) |
+| Env vars | Optional overrides of any committed value |
+
+Fill `[cognito]` after deploy (`FleetCognitoUserPoolId` / `FleetCognitoUserPoolClientId`
+stack outputs). Set `[ci].operator_username` to the CI operator email.
+
+## Env (overrides only)
+
+| Variable | Notes |
+|----------|-------|
+| `BENCH_E2E=1` | Explicit enable for Playwright teleop suite |
+| `COGNITO_CI_PASSWORD` | CI operator password (secret; not in git) |
+| `BENCH_SSH_USER` | Default `operator` |
 
 AWS credentials (default chain) need Cognito admin APIs for scratch users, plus
-`iot:DescribeEndpoint` and MQTT SigV4 `Connect`/`Subscribe`/`Receive` on
-`teleop/*/signaling/*` for the teleop signaling sniffer (mirror the fleet
-instance role's teleop IAM, or grant the CI OIDC role the same).
+`iot:DescribeEndpoint` and MQTT SigV4 on `teleop/*/signaling/*` for teleop
+(signaling sniffer).
 
 Bench preconditions for teleop:
 
@@ -33,15 +40,11 @@ Bench preconditions for teleop:
 ```bash
 cd fleet/service
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[e2e]"
+pip install -e ../config -e ".[e2e]"
 playwright install --with-deps chromium
 
-export FLEET_SERVICE_URL=https://{fleet-domain}/api
-export FLEET_PORTAL_URL=https://{fleet-domain}
-export COGNITO_USER_POOL_ID=...
-export COGNITO_APP_CLIENT_ID=...
-export AWS_REGION=us-east-1
-export BENCH_E2E=1
+# Edit fleet/config/fleet.toml [cognito] first, then:
+export BENCH_E2E=1   # teleop only
 
 pytest tests_e2e/ -q
 ```

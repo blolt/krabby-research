@@ -18,9 +18,13 @@ from typing import Any, Iterator
 import boto3
 import pytest
 
+try:
+    from krabby_fleet_config.e2e_env import AWS_REGION, BENCH_THING_NAME
+except ImportError:
+    AWS_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
+    BENCH_THING_NAME = os.environ.get("BENCH_THING_NAME", "bench-krabby-ci")
+
 BENCH_E2E = os.environ.get("BENCH_E2E", "").strip() in ("1", "true", "yes")
-AWS_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
-BENCH_THING_NAME = os.environ.get("BENCH_THING_NAME", "bench-krabby-ci")
 SHADOW_MAX_AGE_SECS = int(os.environ.get("SHADOW_MAX_AGE_SECS", "180"))
 
 KRAB_THING_TYPE = "Krab"

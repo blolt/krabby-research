@@ -2,8 +2,8 @@
 
 Requires a deployed fleet host, Cognito, and Bruce's bench Orin running
 ``krabby agent`` + the existing WebRTC edge agent (``--teleop-ip 127.0.0.1``).
-Skipped unless ``FLEET_PORTAL_URL``, ``FLEET_SERVICE_URL``, Cognito IDs, and
-``BENCH_E2E=1`` are set — local pytest without a live environment stays green.
+Skipped unless ``BENCH_E2E=1`` and ``fleet/config/fleet.toml`` is complete
+(Cognito IDs + URLs). See ``fleet/config/README.md``.
 
 The bench's HAL server also needs ``--teleop-control-echo`` on its launch
 command for the (b) HAL-ack assertion below -- this echo is off by default
@@ -32,15 +32,16 @@ from urllib.parse import quote, urlparse
 import pytest
 import requests
 
-from tests_e2e.helpers import (
+from tests_e2e._fleet_env import (
     AWS_REGION,
+    BENCH_THING_NAME,
     COGNITO_APP_CLIENT_ID,
     COGNITO_USER_POOL_ID,
+    FLEET_E2E_CONFIGURED,
+    FLEET_PORTAL_URL,
+    FLEET_SERVICE_URL,
 )
 
-FLEET_PORTAL_URL = os.environ.get("FLEET_PORTAL_URL", "").rstrip("/")
-FLEET_SERVICE_URL = os.environ.get("FLEET_SERVICE_URL", "").rstrip("/")
-BENCH_THING_NAME = os.environ.get("BENCH_THING_NAME", "bench-krabby-ci")
 BENCH_E2E = os.environ.get("BENCH_E2E", "") == "1"
 SIGNALING_TIMEOUT_S = float(os.environ.get("TELEOP_E2E_SIGNALING_TIMEOUT_S", "90"))
 VIDEO_TIMEOUT_S = float(os.environ.get("TELEOP_E2E_VIDEO_TIMEOUT_S", "120"))
@@ -50,12 +51,10 @@ MQTT_IDLE_SECS = float(os.environ.get("TELEOP_E2E_MQTT_IDLE_SECS", "8"))
 pytestmark = pytest.mark.skipif(
     not (
         BENCH_E2E
+        and FLEET_E2E_CONFIGURED
         and FLEET_PORTAL_URL
-        and FLEET_SERVICE_URL
-        and COGNITO_USER_POOL_ID
-        and COGNITO_APP_CLIENT_ID
     ),
-    reason="BENCH_E2E=1 and FLEET_PORTAL_URL / FLEET_SERVICE_URL / Cognito IDs required",
+    reason="BENCH_E2E=1 and complete fleet/config/fleet.toml required",
 )
 
 

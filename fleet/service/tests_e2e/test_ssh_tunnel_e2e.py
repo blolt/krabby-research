@@ -3,14 +3,15 @@
 Unlike tests/ (mocked, no external access), everything here is a real network
 call: `boto3` admin Cognito operations, real SRP login via `pycognito`, and
 real HTTP requests to a deployed fleet service backed by real Secure
-Tunneling calls against a real, enrolled robot. Configured entirely by env
-vars, no config file:
+Tunneling calls against a real, enrolled robot. Configured by ``fleet/config/fleet.toml`` (see ``fleet/config/README.md``) with
+optional env overrides. GitHub Actions needs only ``COGNITO_CI_PASSWORD``
+as a secret once CI auth wiring lands (item 6).
 
-  FLEET_SERVICE_URL      e.g. https://fleet.example.com/api
-  COGNITO_USER_POOL_ID
-  COGNITO_APP_CLIENT_ID
-  AWS_REGION             (or AWS_DEFAULT_REGION) -- defaults to us-east-1
-  BENCH_THING_NAME        defaults to bench-krabby-ci
+  FLEET_SERVICE_URL      from config or env
+  COGNITO_USER_POOL_ID   from config or env
+  COGNITO_APP_CLIENT_ID  from config or env
+  AWS_REGION             from config or env
+  BENCH_THING_NAME       from config or env (default bench-krabby-ci)
   BENCH_SSH_USER          defaults to operator
 
 AWS credentials come from the environment's default boto3 credential chain
@@ -47,11 +48,15 @@ import pytest
 import requests
 from pycognito import Cognito
 
-FLEET_SERVICE_URL = os.environ.get("FLEET_SERVICE_URL", "").rstrip("/")
-COGNITO_USER_POOL_ID = os.environ.get("COGNITO_USER_POOL_ID", "")
-COGNITO_APP_CLIENT_ID = os.environ.get("COGNITO_APP_CLIENT_ID", "")
-AWS_REGION = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
-BENCH_THING_NAME = os.environ.get("BENCH_THING_NAME", "bench-krabby-ci")
+from tests_e2e._fleet_env import (
+    AWS_REGION,
+    BENCH_THING_NAME,
+    COGNITO_APP_CLIENT_ID,
+    COGNITO_USER_POOL_ID,
+    FLEET_E2E_CONFIGURED,
+    FLEET_SERVICE_URL,
+)
+
 BENCH_SSH_USER = os.environ.get("BENCH_SSH_USER", "operator")
 
 _CLI_BIN = "krabby-fleet"
@@ -66,8 +71,8 @@ _CLI_CONFIG_PATH = Path.home() / ".config" / "krabby-fleet" / "config.toml"
 _CLI_SESSION_PATH = Path.home() / ".config" / "krabby-fleet" / "session.json"
 
 pytestmark = pytest.mark.skipif(
-    not (FLEET_SERVICE_URL and COGNITO_USER_POOL_ID and COGNITO_APP_CLIENT_ID),
-    reason="FLEET_SERVICE_URL / COGNITO_USER_POOL_ID / COGNITO_APP_CLIENT_ID not set",
+    not FLEET_E2E_CONFIGURED,
+    reason="fleet/config/fleet.toml missing or incomplete (cognito IDs, URLs)",
 )
 
 
