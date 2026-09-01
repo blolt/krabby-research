@@ -14,10 +14,8 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-!fleet/portal/src/lib/
-!fleet/portal/src/lib/**
-lib64/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
