@@ -24,7 +24,7 @@ MQTT data-plane via device certs created in-test.
 ```bash
 cd fleet/infra
 source .venv/bin/activate   # from ./scripts/setup-venv.sh
-pip install -r tests_e2e/requirements.txt
+pip install -e ../config -r tests_e2e/requirements.txt
 pytest tests_e2e/ -q
 ```
 
