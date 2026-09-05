@@ -30,8 +30,7 @@ FetchContent_MakeAvailable(unity)
 
 set(KRABBY_ARDUINO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../firmware/arduino")
 
-# Tests mirror the layout of firmware/arduino, so each entry is a path and the
-# target takes the basename.
+# Test paths mirror firmware/arduino; target names use the basename.
 function(add_firmware_native_test test_path)
     get_filename_component(test_name "${test_path}" NAME)
     add_executable("${test_name}" "${test_path}.cpp")
@@ -52,9 +51,7 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/src/i2c/test_i2c_recovery
 )
 
-# The manifest and the directory must agree in both directions: a listed test
-# with no file, or a file nobody listed, silently shrinks the suite while ctest
-# still reports every remaining test passing.
+# Require every discovered test to appear in the manifest.
 foreach(test_path IN LISTS KRABBY_FIRMWARE_NATIVE_TESTS)
     if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/${test_path}.cpp")
         message(FATAL_ERROR
