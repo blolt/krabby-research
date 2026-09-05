@@ -49,7 +49,17 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/test_actuator_manager
     arduino/src/test_telemetry
     arduino/src/imu/test_imu_calibrator
+    arduino/src/imu/test_imu_measurement
     arduino/src/i2c/test_i2c_recovery
+    arduino/src/display/test_display_frame_model
+    arduino/src/display/test_display_renderer
+    arduino/src/actuator/test_actuator_current_tracker
+    arduino/src/actuator/test_actuator_status
+    arduino/src/actuator/test_actuator_identity
+    arduino/test_board_pins
+    arduino/src/actuator/test_actuator_pot_tracker
+    arduino/src/controller/test_board_role
+    arduino/src/controller/test_controller_freshness_tracker
 )
 
 # Require every discovered test to appear in the manifest.
@@ -78,3 +88,17 @@ foreach(discovered IN LISTS discovered_test_sources)
             "never build or run. Add '${discovered_path}' to the list.")
     endif()
 endforeach()
+
+target_sources(
+    test_display_frame_model
+    PRIVATE
+        "${KRABBY_ARDUINO_DIR}/src/display/display_frame_model.cpp"
+        "${KRABBY_ARDUINO_DIR}/src/telemetry.cpp"
+)
+
+target_sources(
+    test_display_renderer
+    PRIVATE
+        "${KRABBY_ARDUINO_DIR}/src/display/display_frame_model.cpp"
+        "${KRABBY_ARDUINO_DIR}/src/telemetry.cpp"
+)

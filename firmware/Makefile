@@ -121,6 +121,10 @@ LSM6DSO_LIB_URL := https://github.com/sparkfun/SparkFun_Qwiic_6DoF_LSM6DSO_Ardui
 LSM6DSO_LIB_REF := 4addc5ffd7cb71a0481aee259ab85c232aa92afe
 LSM6DSO_LIB_DIR := SparkFun_Qwiic_6Dof_-_LSM6DSO
 
+# Versions from 1.0.14 compile a CH1120 driver that includes C++ <map>, which the
+# AVR toolchain lacks. 1.0.13 is the last that builds for AVR.
+OLED_LIB := SparkFun Qwiic OLED Arduino Library@1.0.13
+
 fetch-libs:
 	@installed="$$($(ARDUINO_CLI) config get directories.user)/libraries/$(LSM6DSO_LIB_DIR)"; \
 	if [ "$$(cat "$$installed/.krabby-pin" 2>/dev/null)" = "$(LSM6DSO_LIB_REF)" ]; then \
@@ -130,6 +134,7 @@ fetch-libs:
 			--git-url "$(LSM6DSO_LIB_URL)#$(LSM6DSO_LIB_REF)" && \
 		echo "$(LSM6DSO_LIB_REF)" > "$$installed/.krabby-pin"; \
 	fi
+	$(ARDUINO_CLI) lib install "$(OLED_LIB)"
 
 compile-firmware: arduino-core fetch-libs
 	$(ARDUINO_CLI) compile --fqbn $(FQBN) $(BUILD_PROPS) --output-dir "$(BUILD_DIR)" $(SKETCH)
