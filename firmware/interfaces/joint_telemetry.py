@@ -8,7 +8,7 @@ from typing import Tuple, Optional
 # connection: locally composed state, 0 unknown / 1 connected / 2 disconnected.
 
 
-class ActuatorConnectionState(IntEnum):
+class ActuatorConnection(IntEnum):
     UNKNOWN = 0
     CONNECTED = 1
     DISCONNECTED = 2
@@ -23,7 +23,7 @@ class JointTelemetry:
     en: Tuple[int, int]
     pwm: Tuple[int, int]
     saf: int
-    connection_state: ActuatorConnectionState = ActuatorConnectionState.UNKNOWN
+    connection_state: ActuatorConnection = ActuatorConnection.UNKNOWN
 
     @classmethod
     def from_tokens(cls, tokens) -> Optional["JointTelemetry"]:
@@ -35,13 +35,13 @@ class JointTelemetry:
         try:
             position = float(pos)
             connection_state = (
-                ActuatorConnectionState(int(tokens[9]))
+                ActuatorConnection(int(tokens[9]))
                 if len(tokens) == 10
-                else ActuatorConnectionState.UNKNOWN
+                else ActuatorConnection.UNKNOWN
             )
             # A non-finite position was the legacy disconnection encoding.
             if not math.isfinite(position):
-                connection_state = ActuatorConnectionState.DISCONNECTED
+                connection_state = ActuatorConnection.DISCONNECTED
             return cls(
                 name=name,
                 pos=position,
@@ -59,7 +59,7 @@ class JointTelemetry:
     def connected(self) -> bool:
         return (
             math.isfinite(self.pos)
-            and self.connection_state is not ActuatorConnectionState.DISCONNECTED
+            and self.connection_state is not ActuatorConnection.DISCONNECTED
         )
 
     def format_compact(self, target: Optional[float] = None) -> str:

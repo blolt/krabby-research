@@ -46,6 +46,7 @@ endfunction()
 
 set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/test_units
+    arduino/test_actuator_manager
     arduino/src/test_telemetry
     arduino/src/imu/test_imu_calibrator
     arduino/src/i2c/test_i2c_recovery
@@ -60,6 +61,12 @@ foreach(test_path IN LISTS KRABBY_FIRMWARE_NATIVE_TESTS)
     endif()
     add_firmware_native_test("${test_path}")
 endforeach()
+
+target_include_directories(test_actuator_manager PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/fakes")
+# Legacy calibration compares Arduino int fields with size_t and a magic literal.
+if(NOT MSVC)
+    target_compile_options(test_actuator_manager PRIVATE -Wno-sign-compare)
+endif()
 
 file(GLOB_RECURSE discovered_test_sources CONFIGURE_DEPENDS
      RELATIVE "${CMAKE_CURRENT_SOURCE_DIR}" "test_*.cpp")

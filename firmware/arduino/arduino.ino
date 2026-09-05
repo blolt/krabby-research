@@ -35,6 +35,9 @@ static inline bool isI2CClusterBoard()
     return currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN;
 }
 
+ControllerFreshnessTracker controllerFreshnessTrackers[BOARD_ROLE_COUNT];
+ActuatorStatus latestActuatorStatus[ActuatorId::ActuatorCount];
+
 // EEPROM address 32: magic sentinel byte (0xAB); address 33: BoardRole value.
 // Calibration data (CalData) occupies addresses 0–25; gap at 26–31 kept for alignment.
 #define EEPROM_ROLE_ADDR  32
@@ -209,8 +212,28 @@ static char rightPartial[TELEMETRY_LINE_MAX];
 static size_t leftPartialPos = 0;
 static size_t rightPartialPos = 0;
 
+void updateActuatorStatusFromTelemetry(
+    const char *line,
+    BoardRole boardRole)
+{
+    ActuatorStatus status[CONTROLLER_ACTUATOR_COUNT];
+    if (!parseActuatorStatus(line, boardRole, status))
+        return;
+
+    controllerFreshnessTrackers[boardRole] =
+        ControllerFreshnessTracker::seenAt(millis());
+    for (const ActuatorStatus &actuatorStatus : status)
+        latestActuatorStatus[actuatorStatus.actuatorId] = actuatorStatus;
+}
+
 // Forward only complete lines (up to and including \n) from follower serial to mainSerial.
-void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, size_t cap, size_t* partialPos)
+void forwardFullLines(
+    HardwareSerial* from,
+    HardwareSerial* to,
+    char* partial,
+    size_t cap,
+    size_t* partialPos,
+    BoardRole boardRole)
 {
     if (!from || !to || !partial || !partialPos) return;
     while (from->available())
@@ -220,7 +243,10 @@ void forwardFullLines(HardwareSerial* from, HardwareSerial* to, char* partial, s
         {
             partial[*partialPos] = '\0';
             if (*partialPos > 0)
+            {
                 to->println(partial);
+                updateActuatorStatusFromTelemetry(partial, boardRole);
+            }
             *partialPos = 0;
             continue;
         }
@@ -348,7 +374,7 @@ void setup()
     Serial.print("Krabby Ready ");
     Serial.print(boardPinRevisionLabel());
     Serial.print(". ");
-    Serial.println(list[0]->name);
+    Serial.println(list[0]->getName());
 }
 
 // Read lines from a follower serial until one starts with "VER "; discard telemetry lines.
@@ -512,14 +538,14 @@ void loop()
 
     // Drain follower serial so RX buffers don't overflow (64-byte default drops middle of ~200-byte lines).
     // Only flush once after both drains so we don't block in flush() twice per loop (~35 ms each at 115200).
-    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos);
-    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos);
+    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos, ROLE_LEFT);
+    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos, ROLE_RIGHT);
 
     actuatorManager->updateAll();
 
     // Drain again in case bytes arrived during updateAll()
-    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos);
-    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos);
+    forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos, ROLE_LEFT);
+    forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos, ROLE_RIGHT);
     mainSerial->flush();
 
     if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS)

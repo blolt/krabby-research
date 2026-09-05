@@ -2,7 +2,7 @@
 import math
 
 from firmware.interfaces.joint_telemetry import (
-    ActuatorConnectionState,
+    ActuatorConnection,
     JointTelemetry,
 )
 from firmware.interfaces.telemetry_frame import TelemetryFrame
@@ -140,14 +140,14 @@ class TestConnectionStateField:
 
     def test_absent_field_reads_as_unknown(self):
         jt = JointTelemetry.from_tokens(self.NINE.split())
-        assert jt.connection_state is ActuatorConnectionState.UNKNOWN
+        assert jt.connection_state is ActuatorConnection.UNKNOWN
         assert jt.connected is True
 
     def test_all_connection_states_are_decoded(self):
         for token, expected in (
-            ("0", ActuatorConnectionState.UNKNOWN),
-            ("1", ActuatorConnectionState.CONNECTED),
-            ("2", ActuatorConnectionState.DISCONNECTED),
+            ("0", ActuatorConnection.UNKNOWN),
+            ("1", ActuatorConnection.CONNECTED),
+            ("2", ActuatorConnection.DISCONNECTED),
         ):
             jt = JointTelemetry.from_tokens((self.NINE + f" {token}").split())
             assert jt.connection_state is expected
@@ -161,9 +161,9 @@ class TestConnectionStateField:
     def test_non_finite_legacy_position_remains_disconnected(self):
         jt = JointTelemetry.from_tokens("FLHY nan 300 210 1 1 0 255 7 1".split())
         assert jt.connected is False
-        assert jt.connection_state is ActuatorConnectionState.DISCONNECTED
+        assert jt.connection_state is ActuatorConnection.DISCONNECTED
 
     def test_disconnected_state_overrides_finite_position(self):
         jt = JointTelemetry.from_tokens((self.NINE + " 2").split())
         assert jt.connected is False
-        assert jt.connection_state is ActuatorConnectionState.DISCONNECTED
+        assert jt.connection_state is ActuatorConnection.DISCONNECTED
