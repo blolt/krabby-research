@@ -6,8 +6,11 @@
 
 #include <Arduino.h>
 #include <EEPROM.h>
+#include <math.h>
 #include "src/imu/imu_calibrator.h"
 #include "src/imu/lsm6dso_adapter.h"
+#include "src/display/ssd1306_adapter.h"
+#include "src/display/display_frame_model.h"
 #include "board_pins.h"
 #include "command.h"
 #include "actuator_manager.h"
@@ -29,6 +32,10 @@ BoardRole currentRole = ROLE_UNKNOWN;
 
 ControllerFreshnessTracker controllerFreshnessTrackers[BOARD_ROLE_COUNT];
 ActuatorStatus latestActuatorStatus[ActuatorId::ActuatorCount];
+ImuMeasurement latestImuMeasurement;
+Ssd1306Adapter oledDisplay;
+unsigned long lastOledDrawMilliseconds = 0;
+constexpr unsigned long OLED_REDRAW_INTERVAL_MILLISECONDS = 250;
 
 // EEPROM address 32: magic sentinel byte (0xAB); address 33: BoardRole value.
 // Calibration data (CalData) occupies addresses 0–25; gap at 26–31 kept for alignment.
@@ -114,7 +121,6 @@ const LinearActuator::ControlConfig ACTUATOR_CONFIG = {
 const size_t CMD_BUF_SIZE = 18;
 Command cmdBuf[CMD_BUF_SIZE];
 
-// TELEMETRY_INTERVAL_MS is the existing actuator telemetry cadence.
 unsigned long lastTelemetry = 0;
 // Schedules blocking OLED writes after telemetry.
 bool wasTelemetryEmittedOnPreviousLoop = false;
@@ -386,7 +392,13 @@ void setup()
     actuatorManager->loadCalibration();
 
     if (currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN)
+    {
+        pinMode(STATUS_LED_PIN, OUTPUT);
+        digitalWrite(STATUS_LED_PIN, LOW);
         imuSetup();
+        if (!oledDisplay.initialize())
+            Serial.println(F("OLED: initialization failed at 0x3D."));
+    }
 
     Serial.print("Krabby Ready ");
     Serial.print(boardPinRevisionLabel());
@@ -560,6 +572,39 @@ void loop()
 
     actuatorManager->updateAll();
 
+    if (currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN)
+    {
+        for (LinearActuator *actuator : ACT_LIST_FRONT)
+        {
+            const ActuatorStatus status = actuator->getStatus();
+            latestActuatorStatus[status.actuatorId] = status;
+        }
+
+        const uint32_t nowMilliseconds = millis();
+        controllerFreshnessTrackers[ROLE_FRONT] =
+            ControllerFreshnessTracker::seenAt(nowMilliseconds);
+
+        DisplayFrame displayFrame = buildDisplayFrame(
+            currentRole,
+            controllerFreshnessTrackers,
+            latestActuatorStatus,
+            latestImuMeasurement,
+            nowMilliseconds,
+            ACTUATOR_CONFIG.pwmDeadband
+        );
+
+        const bool isActuatorDisconnected = hasDisconnectedActuator(displayFrame);
+        digitalWrite(STATUS_LED_PIN, isActuatorDisconnected ? HIGH : LOW);
+
+        // A full OLED transfer takes ~29 ms; start it after telemetry.
+        if (wasTelemetryEmittedOnPreviousLoop &&
+            nowMilliseconds - lastOledDrawMilliseconds >= OLED_REDRAW_INTERVAL_MILLISECONDS)
+        {
+            lastOledDrawMilliseconds = nowMilliseconds;
+            oledDisplay.render(displayFrame);
+        }
+    }
+
     // Drain again in case bytes arrived during updateAll()
     forwardFullLines(leftSerial, mainSerial, leftPartial, TELEMETRY_LINE_MAX, &leftPartialPos, ROLE_LEFT);
     forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos, ROLE_RIGHT);
@@ -580,6 +625,7 @@ void loop()
         if (currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN)
         {
             const ImuMeasurement measurement = imuSensor.measure();
+            latestImuMeasurement = measurement;
             appendImuMeasurement(*mainSerial, measurement);
         }
         mainSerial->println();
