@@ -29,6 +29,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(unity)
 
 set(KRABBY_ARDUINO_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../firmware/arduino")
+set(KRABBY_OLED_SIM_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../../firmware/oled_sim/native")
 
 # Test paths mirror firmware/arduino; target names use the basename.
 function(add_firmware_native_test test_path)
@@ -102,3 +103,20 @@ target_sources(
         "${KRABBY_ARDUINO_DIR}/src/display/display_frame_model.cpp"
         "${KRABBY_ARDUINO_DIR}/src/telemetry.cpp"
 )
+target_include_directories(test_display_renderer PRIVATE "${KRABBY_OLED_SIM_DIR}")
+
+# Build the simulator's trace emitter with the test toolchain.
+add_executable(oled_trace
+    "${KRABBY_OLED_SIM_DIR}/oled_trace.cpp"
+    "${KRABBY_ARDUINO_DIR}/src/display/display_frame_model.cpp"
+    "${KRABBY_ARDUINO_DIR}/src/telemetry.cpp"
+)
+target_include_directories(oled_trace PRIVATE "${KRABBY_ARDUINO_DIR}" "${KRABBY_OLED_SIM_DIR}")
+if(KRABBY_NATIVE_COVERAGE)
+    set_target_properties(oled_trace PROPERTIES EXCLUDE_FROM_ALL TRUE)
+endif()
+if(MSVC)
+    target_compile_options(oled_trace PRIVATE /W4 /WX)
+else()
+    target_compile_options(oled_trace PRIVATE -Wall -Wextra -Werror)
+endif()
