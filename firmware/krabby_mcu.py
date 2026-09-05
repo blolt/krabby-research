@@ -5,8 +5,13 @@ import time
 import threading
 import logging
 from typing import Dict, Optional
+from firmware.interfaces.imu_telemetry import ImuTelemetry
 from firmware.interfaces.joint_telemetry import JointTelemetry
+from firmware.interfaces.telemetry_constants import TELEMETRY_LINE_PREFIXES
+from firmware.interfaces.telemetry_parser import parse_telemetry_line
 from firmware.mcu_port import default_port
+
+DEFAULT_BAUD = 250000
 
 # --- LOGGING SETUP ---
 # When run as `python -m firmware --debug`, __main__.py calls basicConfig(DEBUG) before this import.
@@ -29,11 +34,11 @@ def parse_ver_reply(line: str) -> Optional[list[tuple[str, str, str]]]:
         return None
     versions = parts[0].split("|")
     branches = parts[1].split("|") if len(parts) > 1 else []
-    commits  = parts[2].split("|") if len(parts) > 2 else []
+    commits = parts[2].split("|") if len(parts) > 2 else []
     result = []
     for i, v in enumerate(versions):
         b = branches[i] if i < len(branches) else "-"
-        c = commits[i]  if i < len(commits)  else "-"
+        c = commits[i] if i < len(commits) else "-"
         result.append((v, b, c))
     return result
 
@@ -42,15 +47,6 @@ def _raw_rx_to_stderr() -> bool:
     """When True, every non-empty decoded line is printed to stderr (see __main__.py --debug)."""
     v = os.environ.get("KRABBY_MCU_RAW_RX", "").strip().lower()
     return v in ("1", "true", "yes", "on")
-
-
-# Must match firmware roleName() + "; " in arduino.ino (note "LEFT " has trailing space).
-_TELEMETRY_LINE_PREFIXES = (
-    "FRONT;",
-    "UNKWN;",
-    "LEFT ;",
-    "RIGHT;",
-)
 
 # Joint names by board for readable debug output (FRONT / LEFT / RIGHT)
 JOINT_GROUP_NAMES = (
@@ -61,7 +57,7 @@ JOINT_GROUP_NAMES = (
 
 
 class KrabbyMCUSDK:
-    def __init__(self, port=None, baud=115200):
+    def __init__(self, port=None, baud=DEFAULT_BAUD):
         self.port = port or default_port()
         self.baud = baud
         self.ser = None
@@ -69,6 +65,16 @@ class KrabbyMCUSDK:
 
         # Structured telemetry per joint
         self.joints: Dict[str, Optional[JointTelemetry]] = {}
+
+        #   imu is None          — no IMU segment ever seen. Normal for
+        #                          followers and for firmware that predates
+        #                          the IMU segment
+        #   imu.valid is False   — sensor present but not responding (leader
+        #                          init/read failure)
+        #   imu.valid is True    — fresh sample.
+        self.imu: Optional[ImuTelemetry] = None
+
+        self._imu_stale_warned = False
 
         self.last_feedback_ts = None
         self.thread = None
@@ -90,11 +96,14 @@ class KrabbyMCUSDK:
             ser.dtr = False
             ser.open()
             self.ser = ser
-            time.sleep(5.0)  # wait for boot + 3-board role election before starting reader
+            time.sleep(
+                5.0
+            )  # wait for boot + 3-board role election before starting reader
             self.running = True
             self.last_error = None
-            self.thread = threading.Thread(
-                target=self._reader_loop, daemon=True)
+            self._imu_stale_warned = False
+            self.imu = None  # drop any sample cached from a prior connection
+            self.thread = threading.Thread(target=self._reader_loop, daemon=True)
             self.thread.start()
             logger.info(f"Connected to {self.port}")
 
@@ -113,7 +122,7 @@ class KrabbyMCUSDK:
             try:
                 raw = self.ser.readline()
                 try:
-                    line = raw.decode('utf-8').strip()
+                    line = raw.decode("utf-8").strip()
                 except UnicodeDecodeError as e:
                     logger.warning(
                         "Decode error on serial line (port=%s, len=%d): %s raw=%s",
@@ -122,7 +131,7 @@ class KrabbyMCUSDK:
                         e,
                         raw.hex(),
                     )
-                    line = raw.decode('utf-8', errors='ignore').strip()
+                    line = raw.decode("utf-8", errors="ignore").strip()
                 except Exception:
                     logger.exception("Decode error")
                     continue
@@ -132,8 +141,8 @@ class KrabbyMCUSDK:
                     print(f"[serial rx] {line}", file=sys.stderr, flush=True)
                 elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug("serial rx: %s", line)
-                if line.startswith(_TELEMETRY_LINE_PREFIXES):
-                    self._parse_joint_line(line)
+                if line.startswith(TELEMETRY_LINE_PREFIXES):
+                    self._parse_telemetry_line(line)
                     self.last_feedback_ts = time.time()
                 elif line.startswith("VER "):
                     self._last_ver_line = line
@@ -154,16 +163,42 @@ class KrabbyMCUSDK:
                 self.running = False
                 break
 
-    def _parse_joint_line(self, line: str):
-        jts = JointTelemetry.parse_line(line)
-        if not jts:
+    def _store_imu(self, imu: ImuTelemetry):
+        """Store the latest IMU sample; surface the valid->invalid transition.
+
+        valid=0 means the sensor is present but not responding (leader-side
+        init or read failure — actionable: Qwiic wiring, I2C address, 3.3V
+        rail). It arrives every tick while the condition persists, so it is
+        logged once per transition (one-shot flag), never per tick, and never
+        raised: an unhappy optional sensor is not a transport failure. The
+        sample itself is stored either way — the host preserves everything
+        the wire carries.
+        """
+        self.imu = imu
+        if imu.valid:
+            self._imu_stale_warned = False  # re-arm for the next transition
+        elif not self._imu_stale_warned:
+            logger.warning(
+                "IMU reports valid=0 (sensor present but not responding); "
+                "readout is STALE. Check Qwiic wiring / I2C address / 3.3V rail."
+            )
+            self._imu_stale_warned = True
+
+    def _parse_telemetry_line(self, line: str):
+        parsed = parse_telemetry_line(line)
+        if parsed.imu is not None:
+            self._store_imu(parsed.imu)
+        if not parsed.joints:
             return
-        for jt in jts:
+        for jt in parsed.joints:
             self.joints[jt.name] = jt
 
         # Debug Log: FRONT / LEFT / RIGHT each on its own line
         now = time.time()
-        if logger.isEnabledFor(logging.DEBUG) and (now - self._last_debug_log_ts) >= 0.25:
+        if (
+            logger.isEnabledFor(logging.DEBUG)
+            and (now - self._last_debug_log_ts) >= 0.25
+        ):
             for group_name, names in JOINT_GROUP_NAMES:
                 parts = []
                 for name in names:
@@ -172,6 +207,8 @@ class KrabbyMCUSDK:
                         parts.append(jt.format_compact(self.last_cmd.get(name)))
                 if parts:
                     logger.debug("JOINTS %s %s", group_name, "; ".join(parts))
+            if self.imu is not None:
+                logger.debug("IMU %s", self.imu.format_compact())
             self._last_debug_log_ts = now
 
     def send_command_joints(self, cmds_by_joint: Dict[str, float]):
@@ -193,7 +230,7 @@ class KrabbyMCUSDK:
             parts.append(f"{val:.3f}")
 
         cmd = " ".join(parts) + "\n"
-        self.ser.write(cmd.encode('utf-8'))
+        self.ser.write(cmd.encode("utf-8"))
         self.ser.flush()
 
         logger.info("CMD -> %s", " ".join(parts))
@@ -211,16 +248,16 @@ class KrabbyMCUSDK:
             parts.append(name)
             parts.append(str(pwm))
         cmd = " ".join(parts) + " \n"
-        self.ser.write(cmd.encode('utf-8'))
+        self.ser.write(cmd.encode("utf-8"))
         self.ser.flush()
 
     def send_command_jog(self, joint_name: str, pwm: int):
-        """ Send J<name> <pwm> (-255 to 255) """
+        """Send J<name> <pwm> (-255 to 255)"""
         if not self.ser or not self.ser.is_open:
             return
         pwm = max(-255, min(255, int(pwm)))
         cmd = f"J{joint_name} {pwm}\n"
-        self.ser.write(cmd.encode('utf-8'))
+        self.ser.write(cmd.encode("utf-8"))
         self.ser.flush()
 
     def read_version(self, timeout: float = 1.0) -> Optional[str]:
