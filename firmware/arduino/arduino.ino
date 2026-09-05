@@ -119,7 +119,7 @@ Command cmdBuf[CMD_BUF_SIZE];
 // TELEMETRY_INTERVAL_MS is the existing actuator telemetry cadence.
 unsigned long lastTelemetry = 0;
 
-// --- I2C sensor cluster (Milestone 16) — leader board only ---
+// --- I2C sensor cluster — leader board only ---
 // The LSM6DSO IMU rides the leader's telemetry tick; followers never touch the bus.
 Lsm6dsoAdapter imuSensor;
 static_assert(
