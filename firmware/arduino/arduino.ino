@@ -27,14 +27,6 @@
 
 BoardRole currentRole = ROLE_UNKNOWN;
 
-// M16 I2C sensor cluster is leader-only.
-// ROLE_UNKNOWN also qualifies: it is the solo-board-on-USB bench case (defaults
-// to front actuators + USB serial), not a follower.
-static inline bool isI2CClusterBoard()
-{
-    return currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN;
-}
-
 ControllerFreshnessTracker controllerFreshnessTrackers[BOARD_ROLE_COUNT];
 ActuatorStatus latestActuatorStatus[ActuatorId::ActuatorCount];
 
@@ -59,16 +51,20 @@ static BoardRole loadRole()
     return ROLE_UNKNOWN;
 }
 
-static const char* roleName(BoardRole r)
+static bool i2cAddressResponds(uint8_t address)
 {
-    switch (r)
-    {
-        case ROLE_UNKNOWN: return "UNKWN";
-        case ROLE_FRONT:   return "FRONT";
-        case ROLE_LEFT:   return "LEFT ";
-        case ROLE_RIGHT:  return "RIGHT";
-        default:          return "UNKWN";
-    }
+    Wire.clearWireTimeoutFlag();
+    Wire.beginTransmission(address);
+    return Wire.endTransmission() == 0;
+}
+
+static bool hasFrontImu()
+{
+    Wire.begin();
+    Wire.setClock(I2C_DEFAULT_BUS_CLOCK_HZ);
+    Wire.setWireTimeout(I2C_BUS_TIMEOUT_MICROSECONDS, true);
+    return i2cAddressResponds(LSM6DSO_PRIMARY_ADDRESS) ||
+           i2cAddressResponds(LSM6DSO_ALTERNATE_ADDRESS);
 }
 
 // --- All 18 actuators (names fixed; each board uses the same physical pins for its 6) ---
@@ -120,6 +116,8 @@ Command cmdBuf[CMD_BUF_SIZE];
 
 // TELEMETRY_INTERVAL_MS is the existing actuator telemetry cadence.
 unsigned long lastTelemetry = 0;
+// Schedules blocking OLED writes after telemetry.
+bool wasTelemetryEmittedOnPreviousLoop = false;
 
 // --- I2C sensor cluster — leader board only ---
 // The LSM6DSO IMU rides the leader's telemetry tick; followers never touch the bus.
@@ -286,11 +284,13 @@ void determineRole()
     SERIAL_LEFT.begin(BAUD_RATE);
     SERIAL_RIGHT.begin(BAUD_RATE);
 
-    bool syncFromLeft = false, syncFromRight = false;
+    const bool isI2cHost = hasFrontImu();
+    bool hasSyncFromLeft = false, hasSyncFromRight = false;
+    bool isLeftAssigned = false, isRightAssigned = false;
     unsigned long start = millis();
     unsigned long lastSync = 0;
 
-    while (millis() - start < 3000)
+    do
     {
         // Everyone sends a SYNC_TOKEN every 10ms to see what serial lines are connected
         if (millis() - lastSync >= 10)
@@ -304,7 +304,8 @@ void determineRole()
         {
             String s = SERIAL_LEFT.readStringUntil('\n');
             // If the leader has sent us an ASSIGN_LEFT command, we're the left follower
-            if (s.indexOf(ASSIGN_LEFT) >= 0)
+            if (!isI2cHost &&
+                s.indexOf(ASSIGN_LEFT) >= 0)
             {
                 currentRole = ROLE_LEFT;
                 actuatorManager = new ActuatorManager(ACT_LIST_LEFT, ACT_COUNT);
@@ -313,13 +314,14 @@ void determineRole()
                 Serial.println("ROLE: LEFT");
                 return;
             }
-            if (s.indexOf(SYNC_TOKEN) >= 0) syncFromLeft = true;
+            if (s.indexOf(SYNC_TOKEN) >= 0) hasSyncFromLeft = true;
         }
         if (SERIAL_RIGHT.available())
         {
             String s = SERIAL_RIGHT.readStringUntil('\n');
             // If the leader has sent us an ASSIGN_RIGHT command, we're the right follower
-            if (s.indexOf(ASSIGN_RIGHT) >= 0)
+            if (!isI2cHost &&
+                s.indexOf(ASSIGN_RIGHT) >= 0)
             {
                 currentRole = ROLE_RIGHT;
                 actuatorManager = new ActuatorManager(ACT_LIST_RIGHT, ACT_COUNT);
@@ -328,22 +330,37 @@ void determineRole()
                 Serial.println("ROLE: RIGHT");
                 return;
             }
-            if (s.indexOf(SYNC_TOKEN) >= 0) syncFromRight = true;
+            if (s.indexOf(SYNC_TOKEN) >= 0) hasSyncFromRight = true;
         }
-        // Received SYNC from both sides: we are the leader. Assign followers then set ourselves as FRONT.
-        if (syncFromLeft && syncFromRight)
+
+        // The front controller assigns discovered followers.
+        if (isI2cHost || (hasSyncFromLeft && hasSyncFromRight))
         {
-            SERIAL_LEFT.println(ASSIGN_LEFT);
-            SERIAL_RIGHT.println(ASSIGN_RIGHT);
-            currentRole = ROLE_FRONT;
-            actuatorManager = new ActuatorManager(ACT_LIST_FRONT, ACT_COUNT);
-            mainSerial = &Serial;
-            leftSerial = &SERIAL_LEFT;
-            rightSerial = &SERIAL_RIGHT;
-            saveRole(ROLE_FRONT);
-            Serial.println("ROLE: FRONT");
-            return;
+            if (hasSyncFromLeft && !isLeftAssigned)
+            {
+                SERIAL_LEFT.println(ASSIGN_LEFT);
+                isLeftAssigned = true;
+            }
+            if (hasSyncFromRight && !isRightAssigned)
+            {
+                SERIAL_RIGHT.println(ASSIGN_RIGHT);
+                isRightAssigned = true;
+            }
         }
+    }
+    while (millis() - start < 3000 && !(hasSyncFromLeft && hasSyncFromRight));
+
+    // The I2C host is the front controller.
+    if (isI2cHost || (hasSyncFromLeft && hasSyncFromRight))
+    {
+        currentRole = ROLE_FRONT;
+        actuatorManager = new ActuatorManager(ACT_LIST_FRONT, ACT_COUNT);
+        mainSerial = &Serial;
+        leftSerial = &SERIAL_LEFT;
+        rightSerial = &SERIAL_RIGHT;
+        saveRole(ROLE_FRONT);
+        Serial.println("ROLE: FRONT");
+        return;
     }
 
     // Timeout: no both-sync, default to front actuators but report UNKNOWN.
@@ -368,7 +385,7 @@ void setup()
     hallHwInit();
     actuatorManager->loadCalibration();
 
-    if (isI2CClusterBoard())
+    if (currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN)
         imuSetup();
 
     Serial.print("Krabby Ready ");
@@ -548,16 +565,19 @@ void loop()
     forwardFullLines(rightSerial, mainSerial, rightPartial, TELEMETRY_LINE_MAX, &rightPartialPos, ROLE_RIGHT);
     mainSerial->flush();
 
-    if (millis() - lastTelemetry >= TELEMETRY_INTERVAL_MS)
+    wasTelemetryEmittedOnPreviousLoop = false;
+    const unsigned long telemetryNowMilliseconds = millis();
+    if (telemetryNowMilliseconds - lastTelemetry >= TELEMETRY_INTERVAL_MS)
     {
-        lastTelemetry = millis();
-        mainSerial->print(roleName(currentRole));
+        wasTelemetryEmittedOnPreviousLoop = true;
+        lastTelemetry = telemetryNowMilliseconds;
+        mainSerial->print(boardTelemetryRoleLabel(currentRole));
         mainSerial->print(TELEMETRY_SEGMENT_DELIMITER);
         mainSerial->print(TELEMETRY_FIELD_SEPARATOR);
         actuatorManager->printTelemetry(*mainSerial);
         // Leader appends its sensor segments to its own line only; forwarded
         // LEFT/RIGHT lines pass through forwardFullLines() untouched.
-        if (isI2CClusterBoard())
+        if (currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN)
         {
             const ImuMeasurement measurement = imuSensor.measure();
             appendImuMeasurement(*mainSerial, measurement);
