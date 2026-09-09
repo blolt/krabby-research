@@ -13,3 +13,5 @@ Stage 3 student: distillation from [Appendix F](../2026-05-26_21-46-37/) teacher
 **USD:** `runs/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda` (same as teacher bundles).
 
 See task README [Appendix G](../../README.md#appendix-g--stage-3-student-distillation--2026-05-26).
+
+Plant: the pre-generator snapshot USD bundled in `runs/2026-05-23_10-15-21/` (`KRABBY_HEX_USD_PATH` to it); `KRABBY_HEX_SPAWN_Z=1.05` was the setting of record then (current default 1.085, main asset `assets/crab.usda` = A15+B).

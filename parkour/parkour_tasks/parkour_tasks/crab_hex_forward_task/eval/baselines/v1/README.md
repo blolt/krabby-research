@@ -56,8 +56,12 @@ capability measurement -- see `eval_crab_hex_gait.py`'s module docstring and
 
 ```bash
 cd krabby-research/parkour
-python3 parkour_tasks/parkour_tasks/crab_hexapod_task/scripts/run_gait_eval_suite.py
+python3 parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/run_gait_eval_suite.py --plant legacy_golden
 ```
+
+`--plant legacy_golden` is required: these baseline checkpoints predate the A15+B lineage and were trained on the
+legacy golden geometry (`assets/crab_simple.usda`), whereas the default plant is now the main asset
+`assets/crab.usda` (A15+B).
 
 Each scenario is a separate `isaaclab.sh -p` process (only one Isaac Sim process fits the GPU at
 a time). `--repeat 2` reruns a scenario with different seeds to check the tripod-score

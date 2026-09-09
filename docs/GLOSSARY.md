@@ -19,7 +19,7 @@ For in-depth explanations of the stack see [TECHNOLOGY_AND_TERMINOLOGY.md](TECHN
 | **HAL** | Hardware Abstraction Layer | The boundary that lets the *same* policy run against either simulation or real hardware. Talks over ZMQ; swap the backend, not the policy. |
 | **Hall (sensor)** | Hall-effect sensor | A magnetic position sensor. On Krabby it gives *incremental* counts (relative motion), used on the hip-lift and yaw joints. |
 | **H-bridge** | — | The motor-driver circuit (one per motor) that lets the MCU drive a motor forward or backward. Also outputs the current-sense ("IS") signal. |
-| **Hexapod / "hex"** | — | A six-legged robot. Krabby's target chassis; the reference model lives in `assets/crab_hex_ref.urdf`. |
+| **Hexapod / "hex"** | — | A six-legged robot. Krabby's target chassis. The **training plant** is `assets/crab.usda` (generated, A15+B geometry; see [crab-hexapod-plant.md](crab-hexapod-plant.md)); `assets/crab_hex_ref.*` is the legacy teleop/HAL demo model. |
 | **HL** | Hip-Lift | The joint that raises/lowers a leg. Driven by a Hall linear actuator. |
 | **HY** | Hip-Yaw | The joint that swings a leg sideways. Uses a Hall encoder. |
 | **IAM** | (AWS) Identity and Access Management | Controls *what* a device or user is allowed to do in AWS. Each bench device has its own IAM identity. |

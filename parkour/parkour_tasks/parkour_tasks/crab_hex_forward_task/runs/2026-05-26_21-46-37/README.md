@@ -11,3 +11,5 @@ Log: `logs/rsl_rl/crab_hex_teacher/2026-05-26_21-46-37/`. USD: `runs/2026-05-23_
 Play: `../play_crab_hex_2b2_baseline.sh` with Appendix C USD + `model_6300.pt`. See task README [Appendix F](../../README.md#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26).
 
 `model_6400.pt` and `model_6500.pt` from the log are kept for reference; selected baseline remains `model_6300.pt` by play quality.
+
+Plant: the pre-generator snapshot USD bundled in `runs/2026-05-23_10-15-21/` (`KRABBY_HEX_USD_PATH` to it); `KRABBY_HEX_SPAWN_Z=1.05` was the setting of record then (current default 1.085, main asset `assets/crab.usda` = A15+B).

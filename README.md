@@ -99,3 +99,5 @@ See [bench/README.md](bench/README.md) for config reference and forced-failure t
 | [krabby/README.md](krabby/README.md) | Full `krabby` CLI reference |
 | [controller/scripts/jetson/E2E_GAMEPAD_KRABBY.md](controller/scripts/jetson/E2E_GAMEPAD_KRABBY.md) | Gamepad E2E guide |
 | [bench/README.md](bench/README.md) | Bench watchdog setup and alerter config |
+| [docs/crab-hexapod-plant.md](docs/crab-hexapod-plant.md) | Simulation training plant: generated `assets/crab.usda` (A15+B), plant selection, provenance |
+| [parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/README.md](parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/README.md) | Crab-hex forward-walk RL task: phases, training, evaluation |

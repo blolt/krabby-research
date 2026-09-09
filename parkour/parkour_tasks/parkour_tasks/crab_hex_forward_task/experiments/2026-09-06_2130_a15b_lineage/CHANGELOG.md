@@ -1,3 +1,5 @@
+> Superseded 2026-09-09: A15+B is now the MAIN asset (assets/crab.usda); the golden geometry is assets/crab_simple.usda = legacy_golden. See docs/crab-hexapod-plant.md.
+
 # A15+B lineage retrain — CHANGELOG
 
 ## Charter (2026-09-06)

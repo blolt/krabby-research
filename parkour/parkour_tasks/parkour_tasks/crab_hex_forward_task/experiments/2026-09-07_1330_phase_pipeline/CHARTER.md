@@ -28,7 +28,7 @@ sub-phases matching the baked curriculum, phase 3 extending past the 20k head.
 | Runner | `agents/rsl_rl_ppo_cfg.py` | phase modes mirror the flat-walk runner (LR 3e-4, noise 1.5, clip 1.0, mirror loss via `_apply_flat_walk_symmetry`) |
 | Driver | `sim_fine_tuning/tools/run_phases.py` + `launch_phases.sh` + `heartbeat_phases.sh` | train env = `KRABBY_PHASE` + `KRABBY_PLANT` only; evals with explicit keys (+ `KRABBY_STUDENT_MDP=1`, `--task Isaac-Crab-Hex-Student-v0` for phase 3); REPORT / CHANGELOG / state / heads; pauses after 2c, 3a, 3b |
 | Tests | `tests/unit/test_crab_hex_phases.py` (20), `tests/integration/test_crab_hex_phase_configs.py` + `crab_hex_phase_cfg_dump.py` | see below |
-| Docs | crab task README §2 / §3.1 / §4.0 / §4.4; `docs/crab-hexapod-policy-config.md` | phase table, commands, env-var rows |
+| Docs | crab task README §2 / §3.1 / §4.0 / §4.4; `docs/crab-hex-forward-policy-config.md` | phase table, commands, env-var rows |
 
 ## Verification record
 

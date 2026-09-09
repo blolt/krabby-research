@@ -1,3 +1,5 @@
+> Superseded 2026-09-09: A15+B is now the MAIN asset (assets/crab.usda); the golden geometry is assets/crab_simple.usda = legacy_golden. See docs/crab-hexapod-plant.md.
+
 # Leg-mount morphology campaign (PLAN G) — evaluate splay and outboard-axis variants
 
 **STATUS: PAUSED 2026-09-03 11:40 by the user — default plant stays the golden `assets/crab_simple.usda`; training-side explorations take priority; resume via `run_formation_arms.py` (see RESULTS.md "CAMPAIGN PAUSED").**

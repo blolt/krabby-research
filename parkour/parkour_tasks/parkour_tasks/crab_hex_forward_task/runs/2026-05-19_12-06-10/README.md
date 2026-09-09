@@ -18,3 +18,5 @@ Key flat-walk settings from this baseline:
 - `KRABBY_HEX_SPAWN_Z = 1.05`
 
 Use `../play_crab_hex_flat_walk_baseline.sh` to play this checkpoint with the bundled USD.
+
+Plant: the pre-generator snapshot USD bundled in `runs/2026-05-23_10-15-21/` (`KRABBY_HEX_USD_PATH` to it); `KRABBY_HEX_SPAWN_Z=1.05` was the setting of record then (current default 1.085, main asset `assets/crab.usda` = A15+B).
