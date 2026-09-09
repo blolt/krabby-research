@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-09_0106_stride_length_v4/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_0106_stride_length_v4/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`. Older records may call this directory `sim_fine_tuning/stride_length_v4`.
+
 # Changelog: `sim_fine_tuning/2026-08-09_0106_stride_length_v4`
 
 **Milestone 18, Task 1 item**: §2.2 "Stride length" (continued -- redesign of the term after

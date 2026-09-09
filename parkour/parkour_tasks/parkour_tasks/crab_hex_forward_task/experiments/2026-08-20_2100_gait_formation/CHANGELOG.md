@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-20_2100_gait_formation/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-20_2100_gait_formation/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 # Gait-formation campaign (PLAN D) — CHANGELOG
 
 Objectives (priority order): 1) stable tripod gait; 2) legs lifting well; 3) smooth,

@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-09_0920_short_runs/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_0920_short_runs/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`. Older records may call this directory `sim_fine_tuning/short_runs`.
+
 # Short-run gait fine-tuning ledger (Milestone 18, Task 1)
 
 Autonomous weight/param sweep campaign, per the plan approved 2026-08-09 (revised same day: air-time threshold is tuned before air-time weight). Every run is a **flat-walk-only**, short resume (1000-2000 iters) from the v3 reference checkpoint, with overrides passed to `train.py` via Hydra CLI (`env.rewards.<term>.weight=X`, `env.rewards.<term>.params.<p>=Y`) -- no code changes for weight/param exploration. Each run is gait-eval'd (`--scenario flat_walk_forward`) and scored against the reference row below. See `/home/nickmagus/.claude/plans/the-newest-version-of-cheerful-codd.md` for the full plan.

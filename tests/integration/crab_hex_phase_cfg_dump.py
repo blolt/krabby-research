@@ -2,7 +2,7 @@
 
 Run from ``parkour/`` with the Isaac venv python, headless::
 
-    OMNI_KIT_ACCEPT_EULA=yes KRABBY_PHASE=2c KRABBY_PLANT=A15+B \\
+    OMNI_KIT_ACCEPT_EULA=yes KRABBY_PHASE=2c \\   # KRABBY_PLANT optional: the main asset is A15+B
         python tests/integration/crab_hex_phase_cfg_dump.py --headless \\
         --task Isaac-Crab-Hex-Teacher-v0 --task Isaac-Crab-Hex-Flat-Walk-v0 --out /tmp/cfgs.json
 

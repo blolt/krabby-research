@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-12_1017_lean_reduction/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-12_1017_lean_reduction/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 # Lean-reduction campaign: weights-only sweep on existing terms
 
 Goal (user, 2026-08-12): lessen the +12° forward lean and increase tripod score by tuning

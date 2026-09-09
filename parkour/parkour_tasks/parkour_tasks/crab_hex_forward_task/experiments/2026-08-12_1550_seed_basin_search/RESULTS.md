@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-12_1550_seed_basin_search/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-12_1550_seed_basin_search/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 # Seed basin search: run the from-scratch lottery as a deliberate search
 
 User-approved 2026-08-12 ("seed search first, symmetry second and conditional"). Diagnosis

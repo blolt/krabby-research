@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-26_0200_teacher_handoff/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-26_0200_teacher_handoff/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 # Teacher-stack hand-off (M1C -> bridge -> 2b1 -> 2b2), new plant — CHANGELOG
 
 Base: the baked reference M1C `2026-08-25_19-09-15/model_24900.pt` (flat 0.604/0.94,

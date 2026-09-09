@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-20_1506_hardware_morphology/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-20_1506_hardware_morphology/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 # 2026-08-20 hardware morphology: rebuild sim model from measured physical robot
 
 User supplied measured dimensions/weights/ROMs of the built robot (body 28×48×12.5 in,

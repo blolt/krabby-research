@@ -23,6 +23,7 @@ Set ``KRABBY_CFG_DUMP_DIR`` to a directory holding ``cfg_<fixture>.json`` files 
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import os
 import subprocess
@@ -55,6 +56,8 @@ FIXTURES: dict[str, tuple[dict[str, str], tuple[str, ...]]] = {
     "2b": ({"KRABBY_PHASE": "2b", "KRABBY_PLANT": PLANT}, (TEACHER, FLAT)),
     "2c": ({"KRABBY_PHASE": "2c", "KRABBY_PLANT": PLANT}, (TEACHER, FLAT, TEACHER_PLAY, FLAT_PLAY)),
     "3a": ({"KRABBY_PHASE": "3a", "KRABBY_PLANT": PLANT}, (STUDENT, STUDENT_PLAY)),
+    # no plant variable at all: the main asset (assets/crab.usda, A15+B) must be what the preset gets
+    "2c_noplant": ({"KRABBY_PHASE": "2c"}, (FLAT,)),
 }
 # phase -> lineage window whose recorded params it must reproduce (A15+B lineage, seed 3)
 RECORDED_WINDOW = {"1a": "0", "2a": "1", "2b": "2", "2c": "3"}
@@ -119,6 +122,25 @@ def strip(d: dict, paths) -> dict:
     return d
 
 
+OLD_CAMPAIGN_PREFIX = str(REPO / "sim_fine_tuning") + "/"
+NEW_CAMPAIGN_PREFIX = str(REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments") + "/"
+
+
+def _by_content(value):
+    """Asset paths (``.usda``, ``.npz``) become ``sha256:<digest>`` of the file: the recorded runs name the
+    A15+B variant file while the preset now yields the byte-identical main asset ``assets/crab.usda``
+    (2026-09-09), and the RSI banks moved with the campaigns from ``sim_fine_tuning/`` to the
+    package's ``experiments/`` (same bytes). Unknown/missing files are left as they are."""
+    if not isinstance(value, str) or not value.endswith((".usda", ".usd", ".npz")):
+        return value
+    p = Path(value)
+    if not p.is_file() and value.startswith(OLD_CAMPAIGN_PREFIX):
+        p = Path(NEW_CAMPAIGN_PREFIX + value[len(OLD_CAMPAIGN_PREFIX):])
+    if p.is_file():
+        return "sha256:" + hashlib.sha256(p.read_bytes()).hexdigest()
+    return value
+
+
 def runtime_resolve(d: dict) -> dict:
     """Bring a fresh cfg dict and a recorded (post-``gym.make``) one to the same form."""
     d = strip(d, RUNTIME_DROP)
@@ -129,7 +151,7 @@ def runtime_resolve(d: dict) -> dict:
         if isinstance(x, list):
             return [walk(v) for v in x]
         if isinstance(x, str):
-            return x.replace("{ENV_REGEX_NS}", "/World/envs/env_.*")
+            return _by_content(x.replace("{ENV_REGEX_NS}", "/World/envs/env_.*"))
         return x
 
     d = walk(d)
@@ -237,7 +259,7 @@ def test_phase_preset_equals_legacy_env_stack(dumps):
     if "2c_legacy" not in dumps:
         pytest.skip("A15+B lineage state not on this machine")
     a, b = dumps["2c"][FLAT], dumps["2c_legacy"][FLAT]
-    diffs = diff_paths(normalize(a["env"]), normalize(b["env"])) + diff_paths(normalize(a["agent"]), normalize(b["agent"]))
+    diffs = diff_paths(runtime_resolve(a["env"]), runtime_resolve(b["env"])) + diff_paths(normalize(a["agent"]), normalize(b["agent"]))
     assert not diffs, f"KRABBY_PHASE=2c != raw window-3 KRABBY_* stack\n{fmt_diffs(diffs)}"
 
 
@@ -258,6 +280,16 @@ def test_student_phase_mirrors_2c_mdp(dumps):
     assert dumps["3a"][STUDENT]["agent"]["clip_actions"] == dumps["2c"][TEACHER]["agent"]["clip_actions"], \
         "student runner clip_actions differs from the 2c teacher runner"
     assert "KRABBY_PHASEOUT" not in dumps["3a"]["_environ"]
+
+
+def test_no_plant_variable_means_the_main_asset(dumps):
+    """KRABBY_PHASE alone (no KRABBY_PLANT / KRABBY_HEX_USD_PATH) builds the A15+B main asset and the
+    same env as the preset with KRABBY_PLANT=A15+B."""
+    a, b = dumps["2c_noplant"][FLAT], dumps["2c"][FLAT]
+    assert a["env"]["scene"]["robot"]["spawn"]["usd_path"].endswith("assets/crab.usda")
+    assert "KRABBY_HEX_USD_PATH" not in dumps["2c_noplant"]["_environ"]
+    diffs = diff_paths(runtime_resolve(a["env"]), runtime_resolve(b["env"])) + diff_paths(normalize(a["agent"]), normalize(b["agent"]))
+    assert not diffs, f"no-plant 2c != KRABBY_PLANT=A15+B 2c\n{fmt_diffs(diffs)}"
 
 
 def test_play_variants_keep_the_train_mdp(dumps):

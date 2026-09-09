@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-10_0058_tripod_stability/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-10_0058_tripod_stability/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 # tripod_stability: tripod-first reward tuning campaign
 
 Autonomous weight/param sweep campaign, per the plan approved 2026-08-10 (`~/.claude/plans/the-newest-version-of-cheerful-codd.md`), following TASK-1-REWARD-SHAPING.md priorities in order: (1) improve `tripod_score`, (2) don't degrade tippy/stride/slip/completion, (3) improve upright stability (the user observed the current gait leans forward and isn't always stably supported by planted legs).

@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-09_1526_gait_tuned/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_1526_gait_tuned/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`. Older records may call this directory `sim_fine_tuning/gait_tuned`.
+
 # gait_tuned: Teacher-stack carry-up study (T0/T1/T2)
 
 Milestone 18 Task 1 follow-on to `2026-08-09_0920_short_runs/`. That campaign baked a winning

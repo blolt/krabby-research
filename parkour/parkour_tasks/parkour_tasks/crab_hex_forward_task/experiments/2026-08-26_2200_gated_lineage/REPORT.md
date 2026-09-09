@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-26_2200_gated_lineage/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-26_2200_gated_lineage/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 ## BASELINE control — round 0 (r0_001_control)
 - probe @2k: clock income 0.457 | failure tail 0.134 | ep len 955.441 | trends clock +0.009 fail -0.011
 - flat canary: tripod 0.494 | completion 0.970 | tracking 0.449

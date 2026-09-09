@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-09-07_1330_phase_pipeline/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-07_1330_phase_pipeline/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 # Phase pipeline campaign `2026-09-07_1330_phase_pipeline`
 
 Plant **A15+B** (`/home/nickmagus/krabby/krabby-research/assets/variants/crab_simple__splay15_axis2p5in.usda`), seed 3, phases 3a, 3b. Driver: `sim_fine_tuning/tools/run_phases.py`; presets: `crab_hex_phases.py` (`KRABBY_PHASE` / `KRABBY_PLANT`).

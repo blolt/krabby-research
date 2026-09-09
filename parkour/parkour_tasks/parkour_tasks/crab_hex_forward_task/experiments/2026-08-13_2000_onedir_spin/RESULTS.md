@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-13_2000_onedir_spin/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-13_2000_onedir_spin/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 
 ## Round 2 (escalation, user-approved): -0.6 / -1.0 — CONCLUSIVE FAIL of the penalty route
 

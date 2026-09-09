@@ -1,3 +1,6 @@
+<!-- paths-note -->
+> **Paths note (2026-09-09):** this campaign moved from `sim_fine_tuning/2026-08-31_1414_gait_income_phaseout/` to `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-31_1414_gait_income_phaseout/`. Absolute paths below (`/home/.../sim_fine_tuning/...`, `parkour/logs/rsl_rl/...`) name raw artifacts that stay on disk untracked; the tracked checkpoint of record is `head/` (see `bundle.yaml`) and the eval summaries are in place / under `evals/`.
+
 # Gait-income phase-out — REPORT
 
 Reporting contract: blocks terminated by `>>> ENTRY <marker>` markers, relayed to chat
