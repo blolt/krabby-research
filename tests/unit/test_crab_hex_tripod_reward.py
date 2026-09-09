@@ -1,5 +1,5 @@
 """Unit tests for the crab-hex tripod-alternation reward's pure step function (Milestone 18
-Task 1 follow-on; see ``sim_fine_tuning/2026-08-10_0058_tripod_stability/RESULTS.md`` for the
+Task 1 follow-on; see ``parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-10_0058_tripod_stability/RESULTS.md`` for the
 v1-v5 design history these tests pin down).
 
 Pure torch -- no Isaac Sim needed. v5 design goals under test:

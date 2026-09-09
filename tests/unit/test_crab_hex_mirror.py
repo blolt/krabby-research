@@ -1,5 +1,5 @@
 """Unit tests for the crab-hex L/R mirror maps (mirror-symmetry training campaign,
-sim_fine_tuning/2026-08-13_0035_mirror_symmetry/).
+parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-13_0035_mirror_symmetry/).
 
 Pure torch. Pins:
 1. All maps are involutions: mirror(mirror(x)) == x exactly (perm is pairwise, partner joints

@@ -127,7 +127,7 @@ def _apply_flat_walk_symmetry(runner_cfg) -> None:
     # target that five reward versions and three weight campaigns never reached (tripod
     # 0.517 vs 0.401 baseline; duty 0.356/0.339 vs 0.146/0.556; 10/10 eval episodes
     # balanced) with zero degradation. Set KRABBY_SYM_LOSS_COEF=0 to disable (e.g. for
-    # ablations) — see sim_fine_tuning/2026-08-13_0035_mirror_symmetry/RESULTS.md and
+    # ablations) — see parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-13_0035_mirror_symmetry/RESULTS.md and
     # crab_hex_mirror.py.
     import os
 

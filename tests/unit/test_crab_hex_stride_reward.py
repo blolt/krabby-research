@@ -14,7 +14,7 @@ Pure torch -- no Isaac Sim needed. These pin down ``crab_hex_stride_reward.py``'
    phase's accumulator leak into the next one.
 
 (v4, a later per-foot touchdown-to-touchdown redesign, was tried and reverted -- see
-``sim_fine_tuning/2026-08-09_0106_stride_length_v4/CHANGELOG.md``. This file tests the reinstated v3 design.)
+``parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_0106_stride_length_v4/CHANGELOG.md``. This file tests the reinstated v3 design.)
 """
 
 import sys

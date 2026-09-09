@@ -268,7 +268,7 @@ class CrabHexRewardsCfg:
             # _power terms are no longer needed. min_phase_duration still guards against a spurious
             # one-step contact reading being trusted as a real stance. (v4, per-foot signed
             # touchdown displacement, was tried and reverted -- see
-            # sim_fine_tuning/2026-08-09_0106_stride_length_v4/CHANGELOG.md.)
+            # parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_0106_stride_length_v4/CHANGELOG.md.)
             "min_phase_duration": 0.1,
             "min_cmd_norm": 0.12,
         },
@@ -279,9 +279,9 @@ class CrabHexRewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
     # NOTE(teacher-carry-up): -0.1 -> -0.3, matching the flat-walk campaign's baked winner
-    # (sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md) after the T0/T1/T2 teacher-stack
+    # (parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_0920_short_runs/CHANGELOG.md) after the T0/T1/T2 teacher-stack
     # screening study picked T2 (this weight kept, reversal penalty unchanged) over the control
-    # and the full-mirror arm -- see sim_fine_tuning/2026-08-09_1526_gait_tuned/CHANGELOG.md.
+    # and the full-mirror arm -- see parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_1526_gait_tuned/CHANGELOG.md.
     reward_action_rate = RewTerm(
         func=mdp_rewards.reward_action_rate,
         weight=-0.3,
@@ -858,7 +858,7 @@ class CrabHexFlatWalkRewardsCfg:
     # NOTE(tripod-stability-campaign): registered at weight 0.0 (inert) so it's Hydra-sweepable.
     # reward_orientation is direction-blind (roll^2+pitch^2); this term is signed and forward-gated,
     # so it's the only lever that can target the sustained ~12deg nose-down lean measured on the
-    # baseline checkpoint (see sim_fine_tuning/2026-08-10_0058_tripod_stability/RESULTS.md).
+    # baseline checkpoint (see parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-10_0058_tripod_stability/RESULTS.md).
     penalty_base_pitch_forward_linear = RewTerm(
         func=mdp_rewards.penalty_base_pitch_forward_linear,
         weight=0.0,
@@ -870,7 +870,7 @@ class CrabHexFlatWalkRewardsCfg:
     )
     # NOTE(tripod-stability-campaign): the explicit contact-schedule reward from Task 1 §2.3,
     # registered at weight 0.0 (inert). None of the config-only knobs tried in
-    # sim_fine_tuning/2026-08-10_0058_tripod_stability/ moved tripod_score, so this term rewards
+    # parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-10_0058_tripod_stability/ moved tripod_score, so this term rewards
     # genuine tripod-set alternation directly -- see crab_hex_tripod_reward.py for the full math.
     # v5 pays an event credit per zero-crossing of the smoothed support difference between the
     # two tripod sets, scaled by swing amplitude and anti-correlation quality, inside a 0.10-0.60s
@@ -959,7 +959,7 @@ class CrabHexFlatWalkRewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=_CRAB_POSITION_ACTUATED_JOINT_NAMES)},
     )
     # NOTE(short-run-campaign): weight raised 0.40 -> 0.8, the winning value from the Milestone 18
-    # Task 1 short-run tuning campaign (sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md) -- threshold=0.05
+    # Task 1 short-run tuning campaign (parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_0920_short_runs/CHANGELOG.md) -- threshold=0.05
     # itself was swept (0.10, 0.15) and found not to move gait quality on its own, so it stays at
     # default. Improves tippy_tap and measured stride together vs the untouched v3 baseline.
     reward_feet_air_time_positive = RewTerm(
@@ -998,7 +998,7 @@ class CrabHexFlatWalkRewardsCfg:
             # _power terms are no longer needed. min_phase_duration still guards against a spurious
             # one-step contact reading being trusted as a real stance. (v4, per-foot signed
             # touchdown displacement, was tried and reverted -- see
-            # sim_fine_tuning/2026-08-09_0106_stride_length_v4/CHANGELOG.md.)
+            # parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_0106_stride_length_v4/CHANGELOG.md.)
             "min_phase_duration": 0.1,
             "min_cmd_norm": 0.12,
         },
@@ -1108,7 +1108,7 @@ class CrabHexFlatWalkRewardsCfg:
     )
     # NOTE(cam-mechanism-migration, superseded by short-run-campaign): originally penalized the
     # cam-shaft motor reversing rotational direction at weight=-0.3. The Milestone 18 Task 1
-    # short-run campaign (sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md) ran a 3-arm study testing this
+    # short-run campaign (parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_0920_short_runs/CHANGELOG.md) ran a 3-arm study testing this
     # mechanism against general action-smoothness terms for the same goal (suppressing
     # high-frequency reversals): retuning this weight alone (-0.15, -0.6) never beat the
     # air-time-only baseline, but turning it OFF and using reward_action_rate/reward_delta_torques
@@ -1129,7 +1129,7 @@ class CrabHexFlatWalkRewardsCfg:
     )
     # NOTE(short-run-campaign): weights raised from 0.0 (previously inactive on flat-walk, only
     # used in the teacher-stage rewards above) to the winning values from the 3-arm study
-    # described above -- see sim_fine_tuning/2026-08-09_0920_short_runs/CHANGELOG.md for the full comparison.
+    # described above -- see parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-09_0920_short_runs/CHANGELOG.md for the full comparison.
     # Combined with reward_feet_air_time_positive=0.8 and penalty_motor_direction_reversal=0.0,
     # this config cleared every Task 1 §1c/§1f target at a 2000-iteration validation: tippy_tap
     # 19.09%->13.39% (<= baseline's 13.5%), measured stride 0.178m->0.1975m (best of the entire

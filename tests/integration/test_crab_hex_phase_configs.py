@@ -6,7 +6,7 @@ fixture, no simulation stepped) and compares ``class_to_dict`` outputs:
 * phase-2 ``Isaac-Crab-Hex-Teacher-v0`` in mode ``2a|2b|2c`` == ``Isaac-Crab-Hex-Flat-Walk-v0``
   under the same preset (the lineage of record trained those windows in the flat-walk task);
 * a ``KRABBY_PHASE`` preset reproduces the recorded ``params/env.yaml`` / ``agent.yaml`` of the
-  A15+B lineage window it encodes (``sim_fine_tuning/2026-09-06_2130_a15b_lineage``);
+  A15+B lineage window it encodes (``parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-06_2130_a15b_lineage``);
 * the preset equals the raw legacy ``KRABBY_*`` stack of that window;
 * phase-3 ``Isaac-Crab-Hex-Student-v0`` carries the phase-2c MDP (terrain, commands, events,
   horizon, plant) into distillation;
@@ -38,7 +38,7 @@ REPO = Path(__file__).resolve().parents[2]
 PARKOUR = REPO / "parkour"
 DUMP = Path(__file__).resolve().parent / "crab_hex_phase_cfg_dump.py"
 PY = os.environ.get("KRABBY_ISAAC_PYTHON", "/home/nickmagus/krabby/isaac_venv/bin/python")
-LINEAGE_STATE = REPO / "sim_fine_tuning/2026-09-06_2130_a15b_lineage/state.json"
+LINEAGE_STATE = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-06_2130_a15b_lineage/state.json"
 PLANT = "A15+B"
 
 FLAT = "Isaac-Crab-Hex-Flat-Walk-v0"

@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from isaaclab.envs import ViewerCfg
 from isaaclab.managers import SceneEntityCfg
@@ -528,9 +529,9 @@ def apply_flat_walk_knobs(cfg, *, include_reward_anneal: bool = True) -> None:
 
         from parkour_tasks.crab_hex_forward_task.mdp import crab_hex_rsi as _rsi_mod
 
-        _bank_default = (
-            "/home/nickmagus/krabby/krabby-research/sim_fine_tuning/"
-            "2026-08-22_1200_gait_formation_v2/rsi_bank_setAB.npz"
+        _bank_default = str(
+            Path(__file__).resolve().parents[2]
+            / "experiments/2026-08-22_1200_gait_formation_v2/rsi_bank_setAB.npz"
         )
         cfg.events.rsi_reference_reset = _EventTerm(
             func=_rsi_mod.reset_from_reference_states,

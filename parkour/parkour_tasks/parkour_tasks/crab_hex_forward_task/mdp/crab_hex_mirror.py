@@ -2,7 +2,7 @@
 
 The crab hexapod's L/R mirror maps tripod set A = {FL, MR, RL} exactly onto set B =
 {FR, ML, RR}. A mirror-equivariant policy therefore cannot encode a permanent lead-set
-preference — the "handedness" the seed-basin search (sim_fine_tuning/2026-08-12_1550_
+preference — the "handedness" the seed-basin search (parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-12_1550_
 seed_basin_search/) showed unconstrained training breaks randomly and the reward campaigns
 showed no pricing can undo.
 

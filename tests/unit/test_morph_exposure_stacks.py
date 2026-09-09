@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-ORCH = REPO / "sim_fine_tuning" / "2026-09-04_1105_morph_x_exposure" / "run_morph_exposure.py"
+ORCH = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments" / "2026-09-04_1105_morph_x_exposure" / "run_morph_exposure.py"
 
 
 @pytest.fixture(scope="module")

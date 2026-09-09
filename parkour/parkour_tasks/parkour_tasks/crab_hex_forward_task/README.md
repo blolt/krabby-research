@@ -99,7 +99,7 @@ actions and runner as `Flat-Walk-v0`; only the experiment directory differs:
 the golden-plant 30k schedule (20 s episodes, `recal2b2`, 0.45:0.25) for record-keeping only;
 the clock anneal past 0.5 is **not** part of the paradigm (late-window collapse on both plants).
 The bridge / 2b1 / 2b2 / `full` stages below are the **legacy** teacher path and stay selectable
-through `KRABBY_HEX_TEACHER_MODE`. Driver: `sim_fine_tuning/tools/run_phases.py` ([§4.0](#40-training-commands-curriculum)).
+through `KRABBY_HEX_TEACHER_MODE`. Driver: `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/tools/run_phases.py` ([§4.0](#40-training-commands-curriculum)).
 
 ### At a glance (legacy stages)
 
@@ -347,9 +347,9 @@ KRABBY_PHASE=3b ... --resume --checkpoint "$HEAD_3A"
 The pipeline driver runs the phases in order with the campaign evals, records and pauses:
 
 ```bash
-sim_fine_tuning/tools/launch_phases.sh --campaign-dir sim_fine_tuning/<campaign> --plant A15+B \
+parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/tools/launch_phases.sh --campaign-dir parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/<campaign> --plant A15+B \
   --phases 1a,2a,2b,2c,3a,3b --seed 3            # add --from-checkpoint <pt> --phases 3a,3b to extend a head
-sim_fine_tuning/tools/heartbeat_phases.sh <unit> sim_fine_tuning/<campaign>
+parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/tools/heartbeat_phases.sh <unit> parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/<campaign>
 ```
 
 Logs: `logs/rsl_rl/crab_hex_flat_walk/` (1a), `crab_hex_teacher/` (2a–2c), `crab_hex_student/` (3a–3b).
@@ -684,7 +684,7 @@ Evaluate with the gait harness and `--task Isaac-Crab-Hex-Student-v0` plus `KRAB
 (`CrabHexStudentPPORunnerCfg.clip_actions = 1.0`, in code since 2026-09-08). Without it the vec-env
 wrapper passes unclipped outputs to the full ±4.8 action space and every rollout falls — the
 distillation losses still decrease, so check rollout survival (episode length, `crab_failure`), not
-the losses. Record: `sim_fine_tuning/2026-09-07_1330_phase_pipeline/`.
+the losses. Record: `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-07_1330_phase_pipeline/`.
 
 The legacy 2b2-based distillation follows. Uses [§3.1](#31-teacher-vs-student) student MDP. **Prerequisite:** [Appendix F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) `model_6300.pt`.
 

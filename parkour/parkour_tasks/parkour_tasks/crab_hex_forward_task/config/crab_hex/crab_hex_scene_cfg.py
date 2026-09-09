@@ -203,7 +203,7 @@ def _crab_simple_robot_cfg() -> ArticulationCfg:
                 # front/rear legs 8.9 deg from the +/-28.54 deg mechanism limit and centered
                 # their +/-0.24 rad action window at 82% cam gear, which is why only the mid
                 # legs provided forward thrust (see
-                # sim_fine_tuning/2026-08-13_1230_perpendicular_mounts/). Zero defaults center
+                # parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-13_1230_perpendicular_mounts/). Zero defaults center
                 # every leg's command window on the mount neutral at 100% cam gear with the full
                 # symmetric stroke. The standing stance is the policy's choice within the
                 # window, not the default's.

@@ -1,6 +1,6 @@
 """Pure-torch tripod-alternation reward math for the crab hexapod (Milestone 18 Task 1 follow-on).
 
-Config-only reward-weight/param sweeps (`sim_fine_tuning/2026-08-10_0058_tripod_stability/`) found
+Config-only reward-weight/param sweeps (`parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-10_0058_tripod_stability/`) found
 that no combination of existing terms -- a stance-count bracket at exactly 3, air-time weight/
 threshold, a signed forward-pitch penalty at two doses, or angular-velocity damping -- meaningfully
 moved the gait-eval harness's `tripod_score` (`gait_eval/metrics.py`) within a 1000-iteration
@@ -43,7 +43,7 @@ standing still or pure in-place turning, where "tripod gait" isn't a meaningful 
 
 **v2 addendum (in-band stance-count support bonus).** v1 of this term -- just the shape reward
 and anti-freeze gate above -- caused a catastrophic regression when trained from scratch (see
-`sim_fine_tuning/2026-08-10_0058_tripod_stability/RESULTS.md`): the policy converged on a unison
+`parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-10_0058_tripod_stability/RESULTS.md`): the policy converged on a unison
 lunging gait (all legs moving together, flight phases, 0.488m strides, half the eval episodes
 ending in falls). Two structural flaws enabled that: (1) unison motion keeps ``a == b`` at all
 times, so ``|a - b| = 0`` and v1 scored it exactly 0 -- no gradient *away* from the exploit, only
@@ -124,7 +124,7 @@ already produces emergently.
 **v5 addendum (amplitude- and anti-correlation-qualified crossing credit; v4 machinery
 REPLACED).** v4's screen produced falls by iteration 5000 -- but the decisive autopsy came from a
 new mandatory gate: replaying the reward function offline over saved gait-eval npz traces
-(``sim_fine_tuning/2026-08-10_0058_tripod_stability/offline_replay/``). That replay showed v4's
+(``parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-10_0058_tripod_stability/offline_replay/``). That replay showed v4's
 income structure was *inverted*: the healthy baseline earned exactly 0.000/min (its ~0.30s-period
 gait has raw contact bouts of median 0.10s, so the 0.08s debounce erased its stance sets, the
 swap detector never fired, and the never-fed anti-freeze timer kept ``r_shape`` at zero too),

@@ -8,8 +8,8 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[2]
 PHASES_PY = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/config/crab_hex/crab_hex_phases.py"
-LINEAGE_PY = REPO / "sim_fine_tuning/2026-09-06_2130_a15b_lineage/run_lineage.py"
-EXPOSURE_PY = REPO / "sim_fine_tuning/2026-09-03_1156_obstacle_exposure/run_exposure.py"
+LINEAGE_PY = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-06_2130_a15b_lineage/run_lineage.py"
+EXPOSURE_PY = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-03_1156_obstacle_exposure/run_exposure.py"
 
 
 def _load(path: Path, name: str):

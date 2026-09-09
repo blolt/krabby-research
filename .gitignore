@@ -226,17 +226,6 @@ __marimo__/
 parkour/logs/
 parkour/outputs/
 
-# sim_fine_tuning/ comparison + short-run campaigns: keep CHANGELOG.md, curriculum_state.json
-# (a direct file under logs/rsl_rl/, not swept by the rule below), scenario_metrics.json,
-# summary.md, and gait diagrams (small, meaningful provenance); drop the per-experiment
-# checkpoint/tensorboard subdirectories under logs/rsl_rl/, Hydra bookkeeping (outputs/), and
-# per-episode raw npz arrays (gait_eval/**/raw/) and console logs (*.log) -- multi-GB per run,
-# regenerable from a checkpoint.
-sim_fine_tuning/**/logs/rsl_rl/*/
-sim_fine_tuning/**/outputs/
-sim_fine_tuning/**/gait_eval/**/raw/
-sim_fine_tuning/**/*.log
-
 # Crab hex local-only scripts (RSL runner, diagnostics; not committed)
 parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/tempscripts/
 
@@ -257,13 +246,5 @@ fleet/infra/.cdk.staging/
 fleet/infra/cdk.context.json
 node_modules/
 
-# Campaign-dir heavy artifacts (2026-08-26): same philosophy as parkour/logs/ above.
-# Checkpoints, per-episode raw arrays, console logs, tensorboard events, and videos in
-# sim_fine_tuning/ are regenerable or superseded; the campaign record (CHANGELOG/RESULTS,
-# scripts, metrics json, diagrams, and small reference npz like RSI banks / probe fixtures
-# at campaign-dir top level) stays committed.
-sim_fine_tuning/**/*.pt
-sim_fine_tuning/**/raw/
-sim_fine_tuning/**/*.log
-sim_fine_tuning/**/events.out.tfevents.*
-sim_fine_tuning/**/*.mp4
+# Campaign records live in parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/
+# (nested experiments/.gitignore holds the keep-set rules).

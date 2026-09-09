@@ -12,8 +12,8 @@ Each phase is a dict of the SAME ``KRABBY_*`` environment knobs the fine-tuning 
 ``activate_phase()`` expands ``KRABBY_PHASE`` (+ ``KRABBY_PLANT``) into the process environment
 with ``setdefault`` before any config module reads it, so the knob code paths -- and therefore
 the trained MDPs -- are unchanged and bit-identical to the recorded campaigns
-(``sim_fine_tuning/2026-09-06_2130_a15b_lineage/run_lineage.py::window_stack`` for 1a-2c,
-``sim_fine_tuning/2026-09-03_1156_obstacle_exposure/run_exposure.py::lineage_stack`` for the
+(``parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-06_2130_a15b_lineage/run_lineage.py::window_stack`` for 1a-2c,
+``parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-03_1156_obstacle_exposure/run_exposure.py::lineage_stack`` for the
 legacy golden schedule). Explicitly set variables always win over the preset.
 
 Pure Python (no Isaac imports): unit-tested in ``tests/unit/test_crab_hex_phases.py``.
@@ -27,7 +27,7 @@ from typing import Mapping, MutableMapping
 
 REPO_ROOT = Path(__file__).resolve().parents[6]
 ASSETS = REPO_ROOT / "assets"
-FINE_TUNING = REPO_ROOT / "sim_fine_tuning"
+EXPERIMENTS = Path(__file__).resolve().parents[2] / "experiments"  # the task's campaign records
 
 EPS = "0.001"
 STEPS_PER_ITER = 24
@@ -86,7 +86,7 @@ FORMATION: dict[str, str] = {
     "KRABBY_CLOCK_W": "1.0",
     "KRABBY_APEX_W": "1.0",
     "KRABBY_RSI_FRAC": "0.2",
-    "KRABBY_RSI_BANK": str(FINE_TUNING / "2026-08-26_2200_gated_lineage/rsi_bank_P0_null.npz"),
+    "KRABBY_RSI_BANK": str(EXPERIMENTS / "2026-08-26_2200_gated_lineage/rsi_bank_P0_null.npz"),
     "KRABBY_FLAT_TERRAIN_MODE": "light",
     "KRABBY_FLAT_TERRAIN_FLAT_FRAC": "0.8",
     "KRABBY_FLAT_TERRAIN_DIFF": "0.05:0.2",
@@ -162,10 +162,10 @@ def phaseout_spec(ramps: list[tuple[str, float, float]]) -> str:
 LEGACY_GOLDEN_BANKS: dict[int, str] = {
     0: FORMATION["KRABBY_RSI_BANK"],
     1: FORMATION["KRABBY_RSI_BANK"],
-    2: str(FINE_TUNING / "2026-08-31_1414_gait_income_phaseout/rsi_bank_pg_r1.npz"),
-    3: str(FINE_TUNING / "2026-08-31_1414_gait_income_phaseout/rsi_bank_pg_r2.npz"),
-    4: str(FINE_TUNING / "2026-08-31_1414_gait_income_phaseout/rsi_bank_pg_r3.npz"),
-    5: str(FINE_TUNING / "2026-08-31_1414_gait_income_phaseout/rsi_bank_pg_r4.npz"),
+    2: str(EXPERIMENTS / "2026-08-31_1414_gait_income_phaseout/rsi_bank_pg_r1.npz"),
+    3: str(EXPERIMENTS / "2026-08-31_1414_gait_income_phaseout/rsi_bank_pg_r2.npz"),
+    4: str(EXPERIMENTS / "2026-08-31_1414_gait_income_phaseout/rsi_bank_pg_r3.npz"),
+    5: str(EXPERIMENTS / "2026-08-31_1414_gait_income_phaseout/rsi_bank_pg_r4.npz"),
 }
 
 
