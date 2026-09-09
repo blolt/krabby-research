@@ -7,7 +7,7 @@ question: Can disciplined one-change-per-run reward screens (C1 tracking L1, C2 
 verdict: 'CHANGELOG.md BAKED block (user decision 2026-08-16): C2 model_2999 adopted
   as the velocity-era reference with C1 (-0.5 L1) and C2 (0.20 air-time threshold)
   defaults baked; all three carry-up lineages later closed, successor = 2026-08-17_1500_phased_flat.'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases: []
 records:
 - CHANGELOG.md

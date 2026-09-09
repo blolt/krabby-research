@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rung (iv) driver: checkpoint transfer probe. Runs the 30k phase-out head and the 20k
 graduation reference head on every configuration x {slow, fwd, step} scenario of
-eval/scenarios_morph.yaml (one Isaac process per scenario, serial), saves raw traces, and
+experiments/eval/scenarios_morph.yaml (one Isaac process per scenario, serial), saves raw traces, and
 writes the transfer table (fall rate, fall classes, polygon margins) to RESULTS.md.
 Stdlib only; resumable (skips scenario/head pairs whose metrics exist under the output root).
 """
@@ -18,7 +18,7 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[5]  # campaign -> experiments -> crab_hex_forward_task -> parkour_tasks -> parkour_tasks -> parkour -> repo
 PARKOUR = REPO / "parkour"
 PY = "/home/nickmagus/krabby/isaac_venv/bin/python"
-MANIFEST = PARKOUR / "parkour_tasks/parkour_tasks/crab_hex_forward_task/eval/scenarios_morph.yaml"
+MANIFEST = PARKOUR / "parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/eval/scenarios_morph.yaml"
 EVAL = PARKOUR / "parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/eval_crab_hex_gait.py"
 OUT_ROOT = PARKOUR / "logs/rsl_rl/gait_eval/leg_mount_morphology"
 RESULTS = HERE / "RESULTS.md"

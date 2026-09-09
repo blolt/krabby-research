@@ -4,7 +4,7 @@ set -u
 cd "$(dirname "$0")/../../parkour"
 PY=/home/nickmagus/krabby/isaac_venv/bin/python
 D=../parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-22_1200_gait_formation_v2
-M=parkour_tasks/parkour_tasks/crab_hex_forward_task/eval/scenarios_v2.yaml
+M=parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/eval/scenarios_v2.yaml
 export OMNI_KIT_ACCEPT_EULA=yes TERM=xterm
 
 BANK="$PWD/../parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-22_1200_gait_formation_v2/rsi_bank_E1.npz"

@@ -26,7 +26,7 @@ _TASK_DIR = Path(__file__).resolve().parent.parent
 _SCRIPT_DIR = Path(__file__).resolve().parent
 # scripts → crab_hex_forward_task → parkour_tasks → parkour_tasks → parkour
 _PARKOUR_ROOT = _SCRIPT_DIR.parents[3]
-_DEFAULT_CHECKPOINT = _TASK_DIR / "runs" / "2026-05-26_22-57-01" / "model_9800.pt"
+_DEFAULT_CHECKPOINT = _TASK_DIR / "experiments" / "old-runs" / "2026-05-26_22-57-01" / "model_9800.pt"
 # Load cli_args without putting ``parkour/scripts`` on sys.path (shadows pip ``rsl_rl``).
 _cli_args_path = _PARKOUR_ROOT / "scripts" / "rsl_rl" / "cli_args.py"
 _cli_spec = importlib.util.spec_from_file_location("parkour_rsl_rl_cli_args", _cli_args_path)

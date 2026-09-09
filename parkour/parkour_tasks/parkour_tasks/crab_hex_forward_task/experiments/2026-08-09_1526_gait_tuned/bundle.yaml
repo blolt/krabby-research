@@ -9,7 +9,7 @@ verdict: 'KEPT: T2 hybrid (reward_action_rate=-0.3, reward_delta_torques=-1e-6, 
   penalty kept at default) recommended for the teacher stack on its 2b2 batch1 result;
   the batches 2-4 extension worsened held-out gait quality; bake proposed but not
   applied (CHANGELOG.md Verdict / Bake proposal block).'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases:
 - sim_fine_tuning/gait_tuned
 records:

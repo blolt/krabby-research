@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Rung (v) driver: 5k formation on seed 3 for every sound configuration (identical 0-5k config
 to the lineage anchor 2026-08-31_03-42-16/model_4999.pt), first 2k doubling as the plant
-soundness smoke, then slow/fwd/step evals via eval/scenarios_morph.yaml. The control row is
+soundness smoke, then slow/fwd/step evals via experiments/eval/scenarios_morph.yaml. The control row is
 the anchor itself evaluated on the base plant in the same harness. Serial, resumable
 (state.json). Run AFTER STOP 2. Stdlib only.
 
@@ -24,7 +24,7 @@ REPO = HERE.parents[5]  # campaign -> experiments -> crab_hex_forward_task -> pa
 PARKOUR = REPO / "parkour"
 PY = "/home/nickmagus/krabby/isaac_venv/bin/python"
 LINEAGE = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-26_2200_gated_lineage"
-MANIFEST = PARKOUR / "parkour_tasks/parkour_tasks/crab_hex_forward_task/eval/scenarios_morph.yaml"
+MANIFEST = PARKOUR / "parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/eval/scenarios_morph.yaml"
 EVAL = PARKOUR / "parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/eval_crab_hex_gait.py"
 TRAIN = PARKOUR / "scripts/rsl_rl/train.py"
 FLAT_RUNS = PARKOUR / "logs/rsl_rl/crab_hex_flat_walk"

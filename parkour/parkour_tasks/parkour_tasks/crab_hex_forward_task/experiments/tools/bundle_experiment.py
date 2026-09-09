@@ -41,7 +41,7 @@ Manifest (``bundle.yaml``)::
 
 What it guarantees: the copied head's sha256 equals the manifest (and the source), heads stay
 under 64 MB, only keep-glob files are copied from eval sources, nothing git-ignored and no stray
-``.pt/.npz/.log/.mp4`` is staged, and ``head/README.md`` is written in the ``runs/`` README style.
+``.pt/.npz/.log/.mp4`` is staged, and ``head/README.md`` is written in the ``old-runs/`` README style.
 """
 
 from __future__ import annotations
@@ -335,10 +335,15 @@ def index_text() -> str:
         "**Plant names in old records:** before 2026-09-09 the config default was the 2026-08-20 golden geometry;",
         "records that say *golden* / *base* mean `legacy_golden` (`assets/variants/crab_simple__splay00_axis5p5in.usda`). Since 2026-09-09 the",
         "main asset `assets/crab.usda` is the A15+B plant of record (see `docs/crab-hexapod-plant.md`). Campaigns",
-        "before 2026-08-20 trained on the pre-generator USD snapshots bundled under `../runs/`.",
+        "before 2026-08-20 trained on the pre-generator USD snapshots bundled under `old-runs/`.",
         "",
         "**Pre-campaign stage baselines (2026-05):** the bridge / 2b1 / 2b2 / student stage bundles live in",
-        "[`../runs/`](../runs/) (see the task README appendices).",
+        "[`old-runs/`](old-runs/) (moved here from the package-level `runs/` on 2026-09-09; see the task README appendices).",
+        "",
+        "**Not campaigns:** [`eval/`](eval/) holds the gait-eval scenario manifests (`scenarios_v1.yaml`, `scenarios_v2.yaml`,",
+        "`scenarios_morph.yaml`) and the committed v1 baselines ([`eval/baselines/v1/`](eval/baselines/v1/)); the",
+        "`lit-review-*.md` files are the literature reviews the campaign records cite. Neither they nor `old-runs/` carry a",
+        "`bundle.yaml`, so `--all` / `--index` skip them.",
         "",
         "| campaign | dates | era | plant | question | outcome | head of record | eval runs | records |",
         "|---|---|---|---|---|---|---|---|---|",

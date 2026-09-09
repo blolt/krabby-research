@@ -8,7 +8,7 @@ verdict: 'RESULTS.md VERDICT: config change verified and committed (mechanism PA
   MDP healthy: from-scratch 3000 it reaches reward 21.0 with all six shafts thrusting
   but oscillating instead of one-direction spin); training methodology forks to the
   user (reversal penalty, tripod max_period, from-scratch vs FT path).'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases: []
 records:
 - CHANGELOG.md

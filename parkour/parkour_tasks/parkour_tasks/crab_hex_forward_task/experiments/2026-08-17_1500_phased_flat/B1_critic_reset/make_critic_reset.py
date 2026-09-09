@@ -4,7 +4,7 @@ Loads an RSL-RL checkpoint, re-initializes every `critic.*` parameter with fresh
 nn.Linear-default init (Kaiming-uniform weights, fan-in-uniform bias), clears the
 optimizer state entirely (fresh Adam moments for actor and critic), and writes a new
 checkpoint. Same procedure as the 2026-08-17 falsification test on the v2 base
-(docs/lit-review-plasticity-cliff.md §5); here applied to the plastic 3k base at the
+(parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/lit-review-plasticity-cliff.md §5); here applied to the plastic 3k base at the
 Phase-B boundary where the reward stack changes (reversal -0.3 turned on).
 """
 

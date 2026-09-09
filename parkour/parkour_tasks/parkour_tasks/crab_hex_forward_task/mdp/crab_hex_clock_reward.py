@@ -2,7 +2,7 @@
 """Clock-referenced contact-schedule reward (gait-formation-v2 Phase 1, 2026-08-22).
 
 The literature's standard fix for the chicken-and-egg that killed every crossing-credit
-campaign (see docs/lit-review-hexapod-reward-stability.md section 2; Siekmann et al. ICRA
+campaign (see parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/lit-review-hexapod-reward-stability.md section 2; Siekmann et al. ICRA
 2021, Margolis & Agrawal CoRL 2022): the target gait exists in the reward FROM STEP 0 as a
 periodic per-foot contact schedule driven by an external monotonic clock, instead of being
 an income that only pays once the gait already exists.

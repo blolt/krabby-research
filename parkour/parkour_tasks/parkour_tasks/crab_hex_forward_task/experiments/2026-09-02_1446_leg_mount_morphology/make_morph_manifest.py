@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate eval/scenarios_morph.yaml: per-configuration clones of flat_walk_slow_v2,
+"""Generate experiments/eval/scenarios_morph.yaml: per-configuration clones of flat_walk_slow_v2,
 flat_walk_forward_v2 and a light-obstacle step-onset scenario, selecting the plant via the
 manifest ``env:`` block (KRABBY_HEX_USD_PATH) -- informational: the drivers export it into the
 process environment. Since 2026-09-09 the config default is the A15+B plant of record
@@ -8,7 +8,7 @@ legacy golden ``assets/variants/crab_simple__splay00_axis5p5in.usda``."""
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[6]
-OUT = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/eval/scenarios_morph.yaml"
+OUT = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/eval/scenarios_morph.yaml"
 VARIANTS = REPO / "assets/variants"
 # (config name, USDA path or None for the config default = A15+B main asset)
 CONFIGS = [("base", VARIANTS / "crab_simple__splay00_axis5p5in.usda"), ("B", VARIANTS / "crab_simple__splay00_axis2p5in.usda"),

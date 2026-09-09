@@ -25,3 +25,6 @@ __pycache__/
 !*/statics/statics_*.npz
 # the bundled checkpoint of record (re-inclusion works because head/ itself is not excluded)
 !*/head/model_*.pt
+# the May-2026 stage-baseline bundles (moved here from <task>/runs/ on 2026-09-09): one checkpoint of
+# record + USD snapshot + ONNX export each, tracked as stage releases (README appendices, scenarios_v1)
+!old-runs/**/*.pt

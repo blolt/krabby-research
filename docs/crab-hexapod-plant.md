@@ -119,8 +119,8 @@ loads the other's robot.
 | Heads | Plant | How to select |
 |---|---|---|
 | A15+B lineage and later (2c head `crab_hex_flat_walk/2026-09-07_04-38-50/model_19996.pt`, 3a head `crab_hex_student/2026-09-08_05-54-01/model_24995.pt`, all `launch_phases.sh --plant A15+B` runs) | `A15+B` | nothing |
-| Pre-a15b heads: golden 30k `crab_hex_flat_walk/2026-09-02_00-42-53/model_29994.pt`, golden 20k `crab_hex_flat_walk/2026-09-01_15-10-31/model_19996.pt`, the v1 eval baselines (`eval/baselines/v1/`) | `legacy_golden` | `--plant legacy_golden` / `KRABBY_PLANT=legacy_golden` |
-| May-2026 bundled stage checkpoints under `crab_hex_forward_task/runs/<ts>/` | the pre-generator USD snapshot bundled next to each checkpoint, e.g. `runs/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda` | `KRABBY_HEX_USD_PATH=<that file>` plus their setting of record `KRABBY_HEX_SPAWN_Z=1.05` |
+| Pre-a15b heads: golden 30k `crab_hex_flat_walk/2026-09-02_00-42-53/model_29994.pt`, golden 20k `crab_hex_flat_walk/2026-09-01_15-10-31/model_19996.pt`, the v1 eval baselines (`crab_hex_forward_task/experiments/eval/baselines/v1/`) | `legacy_golden` | `--plant legacy_golden` / `KRABBY_PLANT=legacy_golden` |
+| May-2026 bundled stage checkpoints under `crab_hex_forward_task/experiments/old-runs/<ts>/` | the pre-generator USD snapshot bundled next to each checkpoint, e.g. `experiments/old-runs/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda` | `KRABBY_HEX_USD_PATH=<that file>` plus their setting of record `KRABBY_HEX_SPAWN_Z=1.05` |
 
 Checkpoint paths above are relative to `parkour/logs/rsl_rl/` (git-ignored); the one checkpoint of
 record per campaign is also kept under `<campaign>/head/` in the experiments tree.
@@ -148,7 +148,7 @@ parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/tools/launch_phase
 A May-2026 snapshot head:
 
 ```bash
-RUNS=parkour_tasks/parkour_tasks/crab_hex_forward_task/runs
+RUNS=parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/old-runs
 KRABBY_HEX_USD_PATH="$RUNS/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda" KRABBY_HEX_SPAWN_Z=1.05 \
   <play or eval command> --checkpoint "$RUNS/2026-05-23_10-15-21/model_6000.pt"
 ```

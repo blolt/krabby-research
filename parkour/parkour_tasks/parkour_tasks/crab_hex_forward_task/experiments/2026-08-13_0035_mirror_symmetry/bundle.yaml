@@ -7,7 +7,7 @@ question: Can enforcing the robot's L/R mirror symmetry (rsl-rl mirror loss) mak
 verdict: 'User decision 2026-08-13: adopt + bake — mirror loss coef 0.5 alone killed
   handedness (10/10 episodes balanced) and lifted tripod to 0.517 (CHANGELOG.md adoption
   record; RESULTS.md ''SYMMETRY SUFFICIENT'' block).'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases: []
 records:
 - CHANGELOG.md

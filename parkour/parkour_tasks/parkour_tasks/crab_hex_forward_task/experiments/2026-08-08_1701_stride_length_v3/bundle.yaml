@@ -8,7 +8,7 @@ verdict: 'KEPT (CHANGELOG.md Verdict): v3 is by a wide margin the strongest run 
   the series -- bridge/2b1/2b2 crab_failure and gate clearance beat every other run
   incl. baseline, flat-walk stability fully recovered, forward_progress still never
   clears its 0.15 gate; accepted 2b2 model_21900.pt in the record.'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases:
 - sim_fine_tuning/stride_length_v3
 records:

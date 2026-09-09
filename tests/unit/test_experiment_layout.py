@@ -2,7 +2,8 @@
 
 Pure Python + git. The campaign trees live in the package whole (raw artifacts stay on disk); git
 tracks only the keep-set: records, eval summaries, reference banks and ONE checkpoint of record
-per campaign under ``<campaign>/head/`` (``experiments/tools/bundle_experiment.py``).
+per campaign under ``<campaign>/head/`` (``experiments/tools/bundle_experiment.py``), plus the May-2026 stage-baseline
+bundles tracked whole under ``old-runs/<stamp>/`` (checkpoint of record plus any paired USD snapshot / ONNX export).
 """
 import hashlib
 import importlib.util
@@ -32,7 +33,7 @@ def test_no_package_marker_under_experiments():
 def test_only_the_keep_set_is_tracked():
     files = _tracked()
     assert files, "experiments/ must be tracked"
-    bad_pt = [f for f in files if f.endswith(".pt") and "/head/" not in f]
+    bad_pt = [f for f in files if f.endswith(".pt") and "/head/" not in f and not f.startswith(f"{REL}/old-runs/")]
     bad_ext = [f for f in files if f.endswith((".log", ".mp4", ".pid")) or "/events.out.tfevents." in f]
     bad_dirs = [f for f in files if "/metrics/" in f or "/raw/" in f or "/logs/rsl_rl/" in f and not f.endswith("curriculum_state.json")]
     assert not bad_pt, bad_pt[:5]

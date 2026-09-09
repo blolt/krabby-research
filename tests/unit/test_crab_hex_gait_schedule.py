@@ -142,7 +142,7 @@ def test_committed_v2_manifest_parses_with_plan_f_probes():
     """The shipped scenarios_v2.yaml must load, including the PLAN F turn/speed probes
     (turn_walk_v1 exercises the yaw-probe fields end-to-end)."""
     manifest = (
-        SCRIPTS_DIR.parent / "eval" / "scenarios_v2.yaml"
+        SCRIPTS_DIR.parent / "experiments" / "eval" / "scenarios_v2.yaml"
     )
     scenarios, defaults = S.load_manifest(manifest)
     by_id = {s.id: s for s in scenarios}

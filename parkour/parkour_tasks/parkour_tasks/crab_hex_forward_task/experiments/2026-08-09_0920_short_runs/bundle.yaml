@@ -8,7 +8,7 @@ verdict: 'SUCCESS, KEPT pending user review before baking (CHANGELOG.md Verdict 
   r14 combined-winners config (airtime 0.8, reversal 0.0, action_rate -0.3, delta_torques
   -1e-6) clears all three targets at 2000 iters; no checkpoint of record kept here,
   head refers to the v3 campaign.'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases:
 - sim_fine_tuning/short_runs
 records:

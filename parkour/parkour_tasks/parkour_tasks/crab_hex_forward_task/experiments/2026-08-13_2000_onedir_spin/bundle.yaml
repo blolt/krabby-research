@@ -7,7 +7,7 @@ verdict: 'CAMPAIGN CLOSED - UNBAKED (RESULTS.md, user decision 2026-08-15): the 
   reference bake and the -0.3 reversal default were rescinded because all era weight
   evidence was scored with the dominant tracking term inert; successor is the Task-1
   velocity campaign (C1 tracking -> C2 -> C3 -> CPG escalation).'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases: []
 records:
 - RESULTS.md

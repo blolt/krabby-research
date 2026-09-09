@@ -38,7 +38,7 @@ _SCRIPT_DIR = Path(__file__).resolve().parent
 _TASK_DIR = _SCRIPT_DIR.parent
 # scripts -> crab_hex_forward_task -> parkour_tasks -> parkour_tasks -> parkour
 _PARKOUR_ROOT = _SCRIPT_DIR.parents[3]
-_DEFAULT_MANIFEST = _TASK_DIR / "eval" / "scenarios_v1.yaml"
+_DEFAULT_MANIFEST = _TASK_DIR / "experiments" / "eval" / "scenarios_v1.yaml"
 
 # Load cli_args without putting ``parkour/scripts`` on sys.path (it shadows pip ``rsl_rl``).
 _cli_args_path = _PARKOUR_ROOT / "scripts" / "rsl_rl" / "cli_args.py"

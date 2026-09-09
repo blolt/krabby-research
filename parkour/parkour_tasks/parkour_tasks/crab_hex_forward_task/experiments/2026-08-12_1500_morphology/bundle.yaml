@@ -7,7 +7,7 @@ verdict: 'RESULTS.md ''Campaign conclusion'' block: morphology is innocent (leve
   +0.55 deg, CoM -3.3 mm, A-share 51.0% +/- 2.1% over 20 settles); the anchor is the
   baseline policy''s basin, route is basin selection at from-scratch time; campaign
   closed.'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases: []
 records:
 - RESULTS.md

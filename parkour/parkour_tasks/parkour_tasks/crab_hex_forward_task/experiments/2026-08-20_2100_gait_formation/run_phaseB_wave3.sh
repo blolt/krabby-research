@@ -8,7 +8,7 @@ set -u
 cd "$(dirname "$0")/../../parkour"
 PY=/home/nickmagus/krabby/isaac_venv/bin/python
 D=../parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-20_2100_gait_formation
-M=parkour_tasks/parkour_tasks/crab_hex_forward_task/eval/scenarios_v2.yaml
+M=parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/eval/scenarios_v2.yaml
 export OMNI_KIT_ACCEPT_EULA=yes TERM=xterm
 
 BASE="KRABBY_LIN_VEL_X=0.0:0.35 KRABBY_TRACK_L1_W=-1.0 KRABBY_TRACK_SIGMA2=0.1 KRABBY_TRIPOD_W=0.3 KRABBY_TRIPOD_MIN_AMP=0.05"

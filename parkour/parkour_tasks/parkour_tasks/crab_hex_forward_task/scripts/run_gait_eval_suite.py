@@ -26,7 +26,7 @@ from pathlib import Path
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _TASK_DIR = _SCRIPT_DIR.parent
 _PARKOUR_ROOT = _SCRIPT_DIR.parents[3]
-_DEFAULT_MANIFEST = _TASK_DIR / "eval" / "scenarios_v1.yaml"
+_DEFAULT_MANIFEST = _TASK_DIR / "experiments" / "eval" / "scenarios_v1.yaml"
 
 
 def _scenario_ids(manifest: Path) -> list[str]:

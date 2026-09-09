@@ -7,7 +7,7 @@ question: Does a convex per-leg hip-yaw stride-length reward (v2, weight 0.5, on
 verdict: 'Reverted (v2 design): net negative on every headline metric (worst stability
   of the series, 4/10 falls at 2b2, highest tippy-tap fraction at every stage); swing-phase
   reward judged mis-specified; superseded by stride_length_v3 (CHANGELOG.md Verdict).'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases:
 - sim_fine_tuning/stride_length_on
 records:

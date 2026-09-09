@@ -8,7 +8,7 @@ verdict: 'CLOSED (RESULTS.md ''Campaign summary: income follows duty''): S3 reba
   the income split 1.9%->12.0% A exactly as predicted but duty and pitch did not move,
   so the asymmetry is plant-side and reward configuration is exhausted; no arm baked,
   S4 not launched.'
-plant: pre-generator snapshot (runs/)
+plant: pre-generator snapshot (old-runs/)
 aliases: []
 records:
 - RESULTS.md
