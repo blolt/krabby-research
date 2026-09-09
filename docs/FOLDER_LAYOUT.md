@@ -24,8 +24,8 @@ All containers use inproc ZMQ for communication within the same process:
 krabby-research/
 ├── assets/                           # Robot plant (USD) and the generator that produces it
 │   ├── crab.usda                     # MAIN asset: A15+B geometry (15 deg outer-mount splay, outer yaw axes 2.5 in from body ends)
-│   ├── crab_simple.usda              # LEGACY golden: 2026-08-20 build (splay 0, axes 5.5 in), byte-pinned
-│   ├── variants/                     # Splay/axis variants (crab_simple__<tag>.usda) + MANIFEST.md (generated)
+│   ├── crab_simple.usda              # HISTORICAL: hand-authored 2026-08-09 baseline Cube model (sha-pinned, not loaded by any task)
+│   ├── variants/                     # Splay/axis variants incl. the LEGACY golden crab_simple__splay00_axis5p5in.usda + MANIFEST.md (generated)
 │   ├── scripts/generate_crab.py      # Generator: plain run = crab.usda; --legacy-golden; --all-variants
 │   ├── scripts/                      # Also: extract_leg_profiles.py, Isaac Sim script-editor probes (squat.py, simple_walk.py)
 │   ├── crab_hex_ref.usd / .urdf      # Reference model used by the joystick/HAL task (Isaac-CrabHex-Joystick-v0), NOT the training plant
@@ -154,9 +154,10 @@ Provenance records for the current plant and pipeline: `experiments/2026-08-20_1
 ## Assets (robot plant)
 
 - `assets/crab.usda` -- the MAIN asset: the "A15+B" geometry (15 deg outward splay of the front/rear leg mounts, outer yaw axes re-hinged to 2.5 in from the body ends; mid legs unchanged). Training and the gait harness use it by default; no environment variable is needed.
-- `assets/crab_simple.usda` -- the LEGACY golden: the 2026-08-20 build (splay 0, axes 5.5 in), kept byte-pinned. Every head before the a15b lineage was trained on it (select with `KRABBY_PLANT=legacy_golden` or `--plant legacy_golden`).
+- `assets/variants/crab_simple__splay00_axis5p5in.usda` -- the LEGACY golden: the 2026-08-20 build (splay 0, axes 5.5 in), kept byte-pinned. Every head before the a15b lineage was trained on it (select with `KRABBY_PLANT=legacy_golden` or `--plant legacy_golden`).
+- `assets/crab_simple.usda` -- HISTORICAL, not a plant: the hand-authored Cube model of the 2026-08-09 campaign baseline (reverted 2026-09-09, sha-pinned). Kept as a reference of the robot before the measured-hardware rebuild; no task loads it.
 - `assets/variants/*.usda` + `assets/variants/MANIFEST.md` -- the splay/axis variants (B, A10, A15, A20, A10+B, A20+B, and the A15+B file byte-identical to `crab.usda`); the manifest is generated.
-- `assets/scripts/generate_crab.py` -- the generator. A plain run writes the main asset; `--legacy-golden` regenerates `crab_simple.usda`; `--all-variants` regenerates `assets/variants/` and its manifest. Geometry constants come from `crab_hex_forward_task/mdp/crab_hex_dimensions.py`; the byte-pin tests are `tests/unit/test_crab_hex_usd_generation.py`.
+- `assets/scripts/generate_crab.py` -- the generator. A plain run writes the main asset; `--legacy-golden` regenerates the legacy golden variant file; `--all-variants` regenerates `assets/variants/` and its manifest. Geometry constants come from `crab_hex_forward_task/mdp/crab_hex_dimensions.py`; the byte-pin tests are `tests/unit/test_crab_hex_usd_generation.py`.
 - Plant selection: `KRABBY_PLANT=<name>` for training or `--plant <name>` on the gait harness; an explicitly exported `KRABBY_HEX_USD_PATH` wins over both. The joystick/HAL task (`extreme_parkour_task/config/hex`) reads the same `KRABBY_HEX_USD_PATH` but defaults to `assets/crab_hex_ref.usd`, so set the plant per command rather than in a shell profile. Details: [crab-hexapod-plant.md](crab-hexapod-plant.md).
 
 ## Documentation (`docs/`)

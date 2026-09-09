@@ -333,7 +333,7 @@ def index_text() -> str:
         "`none` entry or a pointer to the campaign whose head they used.",
         "",
         "**Plant names in old records:** before 2026-09-09 the config default was the 2026-08-20 golden geometry;",
-        "records that say *golden* / *base* mean `legacy_golden` (`assets/crab_simple.usda`). Since 2026-09-09 the",
+        "records that say *golden* / *base* mean `legacy_golden` (`assets/variants/crab_simple__splay00_axis5p5in.usda`). Since 2026-09-09 the",
         "main asset `assets/crab.usda` is the A15+B plant of record (see `docs/crab-hexapod-plant.md`). Campaigns",
         "before 2026-08-20 trained on the pre-generator USD snapshots bundled under `../runs/`.",
         "",

@@ -3,7 +3,7 @@
 # NOTE: KRABBY_HEX_USD_PATH below is informational -- the scene config reads it at import
 # time, so the campaign drivers ALSO export it in the eval process environment. Since
 # 2026-09-09 the config default is the A15+B main asset (assets/crab.usda): __A15pB rows
-# carry no override; __base rows name the legacy golden assets/crab_simple.usda explicitly.
+# carry no override; __base rows name the legacy golden variants/crab_simple__splay00_axis5p5in.usda explicitly.
 manifest_version: 2
 
 defaults:
@@ -30,7 +30,7 @@ scenarios:
       - {vx: 0.25, hold_s: 10.0, label: creep}
       - {vx: 0.35, hold_s: 10.0, label: low}
     env:
-      KRABBY_HEX_USD_PATH: "/home/nickmagus/krabby/krabby-research/assets/crab_simple.usda"
+      KRABBY_HEX_USD_PATH: "/home/nickmagus/krabby/krabby-research/assets/variants/crab_simple__splay00_axis5p5in.usda"
     notes: PLAN G morphology config base, slow schedule.
 
   - id: fwd__base
@@ -46,7 +46,7 @@ scenarios:
       - {vx: 0.475, hold_s: 10.0, label: mid}
       - {vx: 0.65, hold_s: 10.0, label: high}
     env:
-      KRABBY_HEX_USD_PATH: "/home/nickmagus/krabby/krabby-research/assets/crab_simple.usda"
+      KRABBY_HEX_USD_PATH: "/home/nickmagus/krabby/krabby-research/assets/variants/crab_simple__splay00_axis5p5in.usda"
     notes: PLAN G morphology config base, fwd schedule.
 
   - id: step__base
@@ -66,7 +66,7 @@ scenarios:
       KRABBY_FLAT_TERRAIN_FLAT_FRAC: "0.0"
       KRABBY_FLAT_TERRAIN_GEOM: "shallow"
       KRABBY_FLAT_TERRAIN_DIFF: "0.05:0.2"
-      KRABBY_HEX_USD_PATH: "/home/nickmagus/krabby/krabby-research/assets/crab_simple.usda"
+      KRABBY_HEX_USD_PATH: "/home/nickmagus/krabby/krabby-research/assets/variants/crab_simple__splay00_axis5p5in.usda"
     notes: PLAN G morphology config base, step schedule.
 
   - id: creep20__base
@@ -81,7 +81,7 @@ scenarios:
       - {vx: 0.25, hold_s: 9.0, label: creep_a}
       - {vx: 0.25, hold_s: 9.0, label: creep_b}
     env:
-      KRABBY_HEX_USD_PATH: "/home/nickmagus/krabby/krabby-research/assets/crab_simple.usda"
+      KRABBY_HEX_USD_PATH: "/home/nickmagus/krabby/krabby-research/assets/variants/crab_simple__splay00_axis5p5in.usda"
     notes: PLAN G morphology config base, creep20 schedule.
 
   - id: slow__B

@@ -63,9 +63,11 @@ leg chain rotates rigidly, so joint anchors, masses and limits are untouched). I
 dimensions in [`mdp/crab_hex_dimensions.py`](mdp/crab_hex_dimensions.py) (`OUTER_LEG_AXIS_FROM_BODY_END_IN = 2.5`,
 `OUTER_ROW_SPLAY_DEG = 15`; body 28 × 48 × 12.5 in, 350 lb; legs 26.2 lb each; femur hinge-to-hinge 23.0 in;
 tibia knee-to-toe 32.5 in; ROMs yaw ±25°, hip 45–150°, knee 5–140°). A plain run of the generator writes the
-main asset; `--legacy-golden` regenerates [`assets/crab_simple.usda`](../../../../assets/crab_simple.usda)
+main asset; `--legacy-golden` regenerates [`assets/variants/crab_simple__splay00_axis5p5in.usda`](../../../../assets/variants/crab_simple__splay00_axis5p5in.usda)
 (the 2026-08-20 build, splay 0 / axes 5.5 in — `LEGACY_*` constants), which is kept byte-pinned as the
 **legacy golden**; `--all-variants` regenerates `assets/variants/*.usda` + `assets/variants/MANIFEST.md`.
+[`assets/crab_simple.usda`](../../../../assets/crab_simple.usda) is no longer generated: since 2026-09-09 it is
+the hand-authored Cube model of the 2026-08-09 campaign baseline (sha-pinned historical reference; no task loads it).
 Byte-pin tests: `tests/unit/test_crab_hex_usd_generation.py`. The scene config resolves the main asset
 automatically from the repo layout (`_crab_usd_path()` in `crab_hex_scene_cfg.py`). Provenance:
 [docs/crab-hexapod-plant.md](../../../../docs/crab-hexapod-plant.md).
@@ -77,7 +79,7 @@ another plant by name (`crab_hex_phases.PLANTS`):
 | Name | USD |
 | --- | --- |
 | `A15+B` / `main` (default) | `assets/crab.usda` |
-| `legacy_golden` / `golden` | `assets/crab_simple.usda` |
+| `legacy_golden` / `golden` | `assets/variants/crab_simple__splay00_axis5p5in.usda` |
 | `B`, `A10`, `A15`, `A20`, `A10+B`, `A20+B` | `assets/variants/crab_simple__splay<NN>_axis<2p5|5p5>in.usda` (see `assets/variants/MANIFEST.md`) |
 
 Precedence: an explicitly exported `KRABBY_HEX_USD_PATH` wins over `KRABBY_PLANT` / `--plant`, which
@@ -90,7 +92,7 @@ and are reused on A15+B by design.
 > `KRABBY_HEX_USD_PATH` only for a one-off file that has no plant name (e.g. the May-2026 USD
 > snapshots bundled under `runs/`, [§4.3](#43-play-a-bundled-checkpoint)).
 
-**Spawn height:** The USD root `krabby` is offset **+1 m** in the file; `[_crab_simple_robot_cfg()](config/crab_hex/crab_hex_scene_cfg.py)` sets articulation spawn `z` from `KRABBY_HEX_SPAWN_Z` (default `**1.085`** m; ~11 mm toe clearance over the flat terrain surface — vertical-plate geometry 2026-08-20; validated on A15+B: settled root 1.0620 m vs 1.0612 m on the legacy golden). Use the same value for train, play, and stance checks. If the robot **floats then slams**, **lower** slightly; if **hips scrape** or the root **interpenetrates**, **raise** in ~**0.02** m steps on flat ground.
+**Spawn height:** The USD root `krabby` is offset **+1 m** in the file; `[_crab_robot_cfg()](config/crab_hex/crab_hex_scene_cfg.py)` sets articulation spawn `z` from `KRABBY_HEX_SPAWN_Z` (default `**1.085`** m; ~11 mm toe clearance over the flat terrain surface — vertical-plate geometry 2026-08-20; validated on A15+B: settled root 1.0620 m vs 1.0612 m on the legacy golden). Use the same value for train, play, and stance checks. If the robot **floats then slams**, **lower** slightly; if **hips scrape** or the root **interpenetrates**, **raise** in ~**0.02** m steps on flat ground.
 
 **Default joint pose (rad):** body–hip yaw **0.0** on all legs (perpendicular mounts, 2026-08-13); `Hip_Femur` **0.1105** and `Femur_Tibia` left **+0.2341** / right **−0.2341** — both linear actuators at exact mid-stroke, computed from the measured linkage (`crab_hex_linkage.py`, 2026-08-20). Defaults are derived, not hand-tuned; change the dimensions module, not these numbers.
 
@@ -280,7 +282,7 @@ USD snapshots stored next to them under `runs/`, not on the generated plants abo
 Scene, rewards, and code pointers. Stage differences: [§2](#2-how-stages-differ).
 
 - **Gym registrations:** `config/crab_hex/__init__.py` — `Flat-Walk-v0`, `Teacher-v0`, `Student-v0`, `*-Play-v0`.
-- **Scene / robot:** `crab_hex_scene_cfg.py` — plant USD (`assets/crab.usda` by default; `KRABBY_PLANT` selects a variant or the legacy golden `crab_simple.usda`, [§1](#hexapod-asset-canonical)), spawn `KRABBY_HEX_SPAWN_Z`, contact sensor on `.*_Footpad`.
+- **Scene / robot:** `crab_hex_scene_cfg.py` — plant USD (`assets/crab.usda` by default; `KRABBY_PLANT` selects a variant or the legacy golden `variants/crab_simple__splay00_axis5p5in.usda`, [§1](#hexapod-asset-canonical)), spawn `KRABBY_HEX_SPAWN_Z`, contact sensor on `.*_Footpad`.
 - **Env / curriculum:** `crab_hex_env_cfg.py` — `KRABBY_HEX_TEACHER_MODE` selects bridge / 2b1 / 2b2 / `full`; terrain helpers `_apply_crab_hex_stage_2b_`*.
 - **Rewards / actions:** `parkour_mdp_cfg.py` — config classes per stage ([§2](#2-how-stages-differ)); math in `parkour_isaaclab/envs/mdp/rewards.py`.
 - **2b2 full reward weights:** [§4.2b](#42b-2b2-teacher-sweet-spot) only (not duplicated here).
@@ -537,7 +539,7 @@ forwards the flag to every scenario.
 **Legacy heads need the legacy plant.** Everything trained before the A15+B lineage — the legacy-golden 30k
 head `parkour/logs/rsl_rl/crab_hex_flat_walk/2026-09-02_00-42-53/model_29994.pt`, the legacy-golden 20k head
 `2026-09-01_15-10-31/model_19996.pt`, and the committed v1 eval baselines — was trained on
-`assets/crab_simple.usda` and must be evaluated with `--plant legacy_golden` (training/play:
+the legacy golden `assets/variants/crab_simple__splay00_axis5p5in.usda` and must be evaluated with `--plant legacy_golden` (training/play:
 `KRABBY_PLANT=legacy_golden`):
 
 ```bash
@@ -960,7 +962,7 @@ cd "$KRABBY_ROOT/IsaacLab"
 ```
 
 The hexapod task mirrors this layout (Gym registrations, env cfgs, reward wiring, and train/play commands), so anyone familiar with the Go2 extreme parkour examples should find the crab hexapod task immediately recognizable.  
-Training uses the main asset `**assets/crab.usda**` (A15+B) by default; select the legacy golden `crab_simple.usda` or a variant with `KRABBY_PLANT` ([§1](#hexapod-asset-canonical)) rather than exporting `KRABBY_HEX_USD_PATH`. RSL-RL checkpoints for the commands in **§4** are kept under `**krabby-research/parkour/logs/rsl_rl/`** by running from that directory as documented there.
+Training uses the main asset `**assets/crab.usda**` (A15+B) by default; select the legacy golden (`legacy_golden`) or a variant with `KRABBY_PLANT` ([§1](#hexapod-asset-canonical)) rather than exporting `KRABBY_HEX_USD_PATH`. RSL-RL checkpoints for the commands in **§4** are kept under `**krabby-research/parkour/logs/rsl_rl/`** by running from that directory as documented there.
 
 ---
 
@@ -983,7 +985,7 @@ Baseline **provenance and metrics** only — stage differences: [§2](#2-how-sta
 
 ### Appendix A — General lessons — first successful run
 
-*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda` / `crab_simple.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
+*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
 
 - **Focus on USD, not reward tuning to start:** Removed overlapping reward experiments until `crab_simple.usda` and spawn were credible. Reward tuning can come incrementally after the asset and default stance are trustworthy.
 - **Explicit masses in USD:** Per-link weights (~**104 kg** total for the current `crab_simple.usda`; earlier ~**25 kg** baseline also in logs) instead of relying on PhysX auto-mass. Retrain when additional payload is modeled.
@@ -994,7 +996,7 @@ Baseline **provenance and metrics** only — stage differences: [§2](#2-how-sta
 
 ### Appendix B — Stage 1 flat walk — 2026-05-19 legacy
 
-*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda` / `crab_simple.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
+*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
 
 This commit captures the best flat-walk baseline found during the 2026-05-19 tuning pass and documents why the current flat-walk settings were chosen.
 
@@ -1030,7 +1032,7 @@ Metrics @ `4000`: `track_lin_vel_xy_exp` ~**0.87**; `crab_failure` < **1%**.
 
 ### Appendix C — Stage 1 flat walk — 2026-05-23 baseline
 
-*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda` / `crab_simple.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
+*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
 
 **Log:** `logs/rsl_rl/crab_hex_flat_walk/2026-05-23_10-15-21/`. **Artifacts:** `runs/2026-05-23_10-15-21/` (`model_6000.pt`, paired USD, README).
 
@@ -1056,7 +1058,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 
 ### Appendix D — Stage 2a teacher bridge — 2026-05-25 baseline
 
-*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda` / `crab_simple.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
+*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
 
 **Log:** `logs/rsl_rl/crab_hex_teacher/2026-05-25_22-26-06/`. **Artifacts:** `runs/2026-05-25_22-26-06/model_6099.pt`. Resume flat `6000` → **100** iters.
 
@@ -1084,7 +1086,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 
 ### Appendix E — Stage 2b1 hybrid walk — 2026-05-25 baseline
 
-*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda` / `crab_simple.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
+*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
 
 **Log:** `logs/rsl_rl/crab_hex_teacher/2026-05-25_23-57-58/`. **Artifacts:** `runs/2026-05-25_23-57-58/model_6198.pt`. Resume bridge `6099` → **100** iters. Same terrain as 2a; weak goal/yaw on ([Stage 2b1](#stage-2b1--hybrid-walk)).
 
@@ -1112,7 +1114,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 
 ### Appendix F — Stage 2b2 teacher-ready baseline — 2026-05-26
 
-*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda` / `crab_simple.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
+*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
 
 **Log:** `logs/rsl_rl/crab_hex_teacher/2026-05-26_21-46-37/`. **Artifacts:** `runs/2026-05-26_21-46-37/model_6300.pt`. Resume 2b1 `6198` → **~106** iters; selected `**6300`** after play (`6400/6500` kept for reference).
 
@@ -1144,7 +1146,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 
 ### Appendix G — Stage 3 student distillation — 2026-05-26
 
-*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda` / `crab_simple.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
+*Plant: pre-generator snapshot USD bundled under `runs/` (not the generated `assets/crab.usda`); setting of record then `KRABBY_HEX_SPAWN_Z=1.05`.*
 
 **Log:** `logs/rsl_rl/crab_hex_student/2026-05-26_22-57-01/`. **Artifacts:** `runs/2026-05-26_22-57-01/model_9800.pt`. Train from teacher [Appendix F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) `model_6300.pt`; iter counter starts at **6300**; **256** envs recommended on ~16 GB GPU.
 

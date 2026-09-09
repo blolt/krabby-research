@@ -89,7 +89,7 @@ def promote_fracs_for_horizon(up: float, down: float, horizon_s: float, ref_s: f
 def plant_path(cfg: str) -> str | None:
     tag = CONFIGS[cfg]
     if tag is None:  # "base" = legacy golden, explicit since 2026-09-09 (config default is now A15+B)
-        return str(VARIANTS.parent / "crab_simple.usda")
+        return str(VARIANTS / "crab_simple__splay00_axis5p5in.usda")
     return str(VARIANTS / f"crab_simple__{tag}.usda")
 
 

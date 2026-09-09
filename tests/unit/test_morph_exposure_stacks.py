@@ -62,7 +62,7 @@ class TestPlants:
     def test_base_is_the_explicit_legacy_golden_and_variants_resolve(self, m):
         # since 2026-09-09 the config default is the A15+B main asset, so "base" must be explicit
         base = m.p1_stack("base")["KRABBY_HEX_USD_PATH"]
-        assert base.endswith("assets/crab_simple.usda") and Path(base).exists()
+        assert base.endswith("variants/crab_simple__splay00_axis5p5in.usda") and Path(base).exists()
         for cfg in m.ORDER:
             if cfg == "base":
                 continue
@@ -73,7 +73,7 @@ class TestPlants:
     def test_with_plant_replaces_a_stale_override(self, m):
         ev = m.with_plant({"KRABBY_HEX_USD_PATH": "/stale.usda", "X": "1"}, "A10")
         assert ev["KRABBY_HEX_USD_PATH"].endswith("splay10_axis5p5in.usda") and ev["X"] == "1"
-        assert m.with_plant({"KRABBY_HEX_USD_PATH": "/stale.usda"}, "base")["KRABBY_HEX_USD_PATH"].endswith("assets/crab_simple.usda")
+        assert m.with_plant({"KRABBY_HEX_USD_PATH": "/stale.usda"}, "base")["KRABBY_HEX_USD_PATH"].endswith("variants/crab_simple__splay00_axis5p5in.usda")
 
 
 class TestRanking:

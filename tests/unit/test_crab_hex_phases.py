@@ -106,7 +106,7 @@ class TestActivation:
         for name in ("legacy_golden", "golden"):
             env = {"KRABBY_PHASE": "1a", "KRABBY_PLANT": name}
             ph.activate_phase(env)
-            assert env["KRABBY_HEX_USD_PATH"].endswith("assets/crab_simple.usda")
+            assert env["KRABBY_HEX_USD_PATH"].endswith("variants/crab_simple__splay00_axis5p5in.usda")
             assert "KRABBY_HEX_TEACHER_MODE" not in env
         env = {"KRABBY_PLANT": "B"}
         ph.activate_phase(env)
@@ -115,7 +115,8 @@ class TestActivation:
     def test_plant_name_for_path(self, ph):
         assert ph.plant_name_for_path("/x/assets/crab.usda") == "A15+B"
         assert ph.plant_name_for_path("/x/assets/variants/crab_simple__splay15_axis2p5in.usda") == "A15+B"
-        assert ph.plant_name_for_path("/x/assets/crab_simple.usda") == "legacy_golden"
+        assert ph.plant_name_for_path("/x/assets/variants/crab_simple__splay00_axis5p5in.usda") == "legacy_golden"
+        assert ph.plant_name_for_path("/x/assets/crab_simple.usda") is None  # hand-authored historical model, not a plant
         assert ph.plant_name_for_path("/x/assets/variants/crab_simple__splay20_axis2p5in.usda") == "A20+B"
         assert ph.plant_name_for_path("/x/other.usda") is None and ph.plant_name_for_path(None) is None
 

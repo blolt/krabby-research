@@ -86,7 +86,7 @@ parser.add_argument(
     type=str,
     default=None,
     help="Named plant (crab_hex_phases.PLANTS: A15+B|main = assets/crab.usda, legacy_golden|golden = "
-         "assets/crab_simple.usda, B/A10/A15/A20/A10+B/A20+B variants). Exported as KRABBY_PLANT before "
+         "assets/variants/crab_simple__splay00_axis5p5in.usda, B/A10/A15/A20/A10+B/A20+B variants). Exported as KRABBY_PLANT before "
          "the task package import (the USD is read at config-import time, so a manifest env block cannot "
          "select it). Default: whatever the environment selects, else the main asset.",
 )

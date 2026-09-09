@@ -60,7 +60,7 @@ python3 parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/run_gait_eval_
 ```
 
 `--plant legacy_golden` is required: these baseline checkpoints predate the A15+B lineage and were trained on the
-legacy golden geometry (`assets/crab_simple.usda`), whereas the default plant is now the main asset
+legacy golden geometry (`assets/variants/crab_simple__splay00_axis5p5in.usda`), whereas the default plant is now the main asset
 `assets/crab.usda` (A15+B).
 
 Each scenario is a separate `isaaclab.sh -p` process (only one Isaac Sim process fits the GPU at

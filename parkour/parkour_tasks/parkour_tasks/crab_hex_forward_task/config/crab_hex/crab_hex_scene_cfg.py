@@ -27,7 +27,8 @@ from parkour_tasks.extreme_parkour_task.config.go2.parkour_teacher_cfg import Pa
 def _crab_usd_path() -> str:
     """USD of the training plant. Override with ``KRABBY_HEX_USD_PATH`` (``KRABBY_PLANT=<name>``
     exports it for the named plant); the default is the repo's MAIN asset ``assets/crab.usda``
-    (plant of record A15+B since 2026-09-09; ``assets/crab_simple.usda`` is the legacy golden)."""
+    (plant of record A15+B since 2026-09-09; the legacy golden is ``KRABBY_PLANT=legacy_golden`` =
+    ``assets/variants/crab_simple__splay00_axis5p5in.usda``)."""
     override = os.environ.get("KRABBY_HEX_USD_PATH")
     if override:
         return override
@@ -153,8 +154,8 @@ _FEMUR_TIBIA_EFFORT = {name: 400.0 for name in _KNEE_JOINT_NAMES}
 _FEMUR_TIBIA_VELOCITY_LIMIT = 3.0  # folded-knee rod speed can reach ~2.3 rad/s
 
 
-def _crab_simple_robot_cfg() -> ArticulationCfg:
-    """``crab_simple.usda`` (``defaultPrim = "krabby"``): reference composes into ``{ENV_REGEX_NS}/Robot`` — leave
+def _crab_robot_cfg() -> ArticulationCfg:
+    """The crab plant USDA (``assets/crab.usda`` or the selected variant; ``defaultPrim = "krabby"``): reference composes into ``{ENV_REGEX_NS}/Robot`` — leave
     ``articulation_root_prim_path`` unset so Isaac Lab discovers the root on ``Robot``. Base link ``chassis/body``."""
     # Root spawn height so feet sit on terrain without huge drop or penetration.
     # NOTE(vertical-plate correction, 2026-08-20 evening): the mid-stroke default pose
@@ -304,7 +305,7 @@ def _apply_crab_height_scanner(scene) -> None:
 class CrabHexTeacherSceneCfg(ParkourTeacherSceneCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.robot = _crab_simple_robot_cfg()
+        self.robot = _crab_robot_cfg()
         _apply_crab_height_scanner(self)
         # Aggregate chassis + all leg links (``ParkourHexContactSensor``): default nested ``Robot/krabby/.*/.*``
         # only reports ``chassis/body``; Isaac composes ``krabby`` children flat under ``Robot`` at runtime.
@@ -329,7 +330,7 @@ class CrabHexStudentSceneCfg(ParkourStudentSceneCfg):
 
     def __post_init__(self):
         super().__post_init__()
-        self.robot = _crab_simple_robot_cfg()
+        self.robot = _crab_robot_cfg()
         _apply_crab_height_scanner(self)
         self.contact_forces = ParkourHexContactSensorCfg(
             prim_path="{ENV_REGEX_NS}/Robot/.*",

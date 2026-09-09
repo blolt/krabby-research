@@ -38,7 +38,8 @@ WINDOW_ITERS = 5000
 # Plant name -> USDA path relative to assets/ (None = the MAIN asset ``assets/crab.usda``, which
 # needs no variable). Since 2026-09-09 the main asset IS the A15+B geometry (15 deg outer-mount
 # splay, outer yaw axes 2.5 in from the body ends). Records written before that date say
-# "golden" / "base" for the 2026-08-20 build: that is ``legacy_golden`` = ``assets/crab_simple.usda``.
+# "golden" / "base" for the 2026-08-20 measured-hardware build: that is ``legacy_golden`` =
+# ``assets/variants/crab_simple__splay00_axis5p5in.usda``.
 # The table is locked to ``assets/scripts/generate_crab.py``'s VARIANTS by a unit test.
 MAIN_PLANT = "A15+B"
 MAIN_ASSET = ASSETS / "crab.usda"
@@ -48,8 +49,11 @@ MAIN_ASSET_NAMES = ("crab.usda", "crab_simple__splay15_axis2p5in.usda")
 PLANTS: dict[str, str | None] = {
     "A15+B": None,
     "main": None,
-    "legacy_golden": "crab_simple.usda",
-    "golden": "crab_simple.usda",         # alias used by pre-2026-09-09 records and commands
+    # 2026-08-20 measured-hardware build (splay 0, axes 5.5 in): the "golden"/"base" plant of every
+    # pre-a15b head. (``assets/crab_simple.usda`` is NOT a plant: since 2026-09-09 it is the hand-authored
+    # 2026-08-09 campaign-baseline Cube model, kept for reference; no plant name maps to it.)
+    "legacy_golden": "variants/crab_simple__splay00_axis5p5in.usda",
+    "golden": "variants/crab_simple__splay00_axis5p5in.usda",   # alias used by pre-2026-09-09 records and commands
     "B": "variants/crab_simple__splay00_axis2p5in.usda",
     "A10": "variants/crab_simple__splay10_axis5p5in.usda",
     "A15": "variants/crab_simple__splay15_axis5p5in.usda",

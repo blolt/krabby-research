@@ -5,7 +5,8 @@
 The training plant (the model the RL tasks load) is **generated**, not hand-authored:
 
 - `generate_crab.py` (plain run) writes the **main asset** [`assets/crab.usda`](../crab.usda) — the **A15+B** geometry (15° outward splay of the front/rear leg mounts, outer yaw axes re-hinged to 2.5 in from the body ends).
-- `generate_crab.py --legacy-golden` regenerates [`assets/crab_simple.usda`](../crab_simple.usda), the 2026-08-20 build (splay 0 / axes 5.5 in) kept byte-pinned as the **legacy golden**.
+- `generate_crab.py --legacy-golden` regenerates [`assets/variants/crab_simple__splay00_axis5p5in.usda`](../variants/crab_simple__splay00_axis5p5in.usda), the 2026-08-20 build (splay 0 / axes 5.5 in) kept byte-pinned as the **legacy golden**.
+- [`assets/crab_simple.usda`](../crab_simple.usda) is the one hand-authored USDA: the 2026-08-09 campaign-baseline Cube model, kept as a historical reference (sha-pinned; the generator refuses to write it; no task loads it).
 - `generate_crab.py --all-variants` regenerates `assets/variants/*.usda` and `assets/variants/MANIFEST.md`.
 - Byte-pin tests: `tests/unit/test_crab_hex_usd_generation.py` — the checked-in USDAs must match the generator output byte for byte.
 - Source of truth for every dimension: `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/mdp/crab_hex_dimensions.py`.

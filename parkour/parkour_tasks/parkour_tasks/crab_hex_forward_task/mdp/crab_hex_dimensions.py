@@ -2,8 +2,8 @@
 
 Every number the robot model is generated from lives here, in the units it was measured
 in (inches / pounds), with metric values derived. ``assets/scripts/generate_crab.py``
-consumes this module to emit ``assets/crab.usda`` (the plant of record) and the legacy
-``assets/crab_simple.usda``; sim-side config (defaults,
+consumes this module to emit ``assets/crab.usda`` (the plant of record) and the variants under
+``assets/variants/`` (incl. the legacy golden); sim-side config (defaults,
 limits, actuator parameters) imports the derived constants so the USD and the configs can
 never drift apart.
 
@@ -62,8 +62,8 @@ BODY_SIZE_M = (
 # (axes at +-(14 - 2.5) = +-11.5 in from body centre along X; middle leg at 0) and the
 # front/rear leg mounts are shimmed 15 deg outward (row F toes toward -x, row R toward +x;
 # mid legs never splay). The 2026-08-20 build measured the axes at 5.5 in with no splay --
-# kept below as the LEGACY values (``assets/crab_simple.usda``; every checkpoint before the
-# a15b lineage was trained on that geometry).
+# kept below as the LEGACY values (``assets/variants/crab_simple__splay00_axis5p5in.usda``; every
+# checkpoint before the a15b lineage was trained on that geometry).
 OUTER_LEG_AXIS_FROM_BODY_END_IN = 2.5
 OUTER_ROW_SPLAY_DEG = 15.0
 LEGACY_OUTER_LEG_AXIS_FROM_BODY_END_IN = 5.5  # measured to the yaw axis (2026-08-20)

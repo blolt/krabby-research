@@ -27,6 +27,7 @@ def crab_usd() -> Path:
     return _REPO_ROOT / "assets" / "crab.usda"
 
 
-def crab_simple_usd() -> Path:
-    """The legacy golden plant (2026-08-20 build): heads trained before the a15b lineage."""
-    return _REPO_ROOT / "assets" / "crab_simple.usda"
+def legacy_golden_usd() -> Path:
+    """The legacy golden plant (2026-08-20 measured-hardware build): heads trained before the a15b lineage."""
+    return _REPO_ROOT / "assets" / "variants" / "crab_simple__splay00_axis5p5in.usda"
+

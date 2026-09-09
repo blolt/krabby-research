@@ -4,10 +4,12 @@ Guarantees, all pure-text / stdlib (no Isaac Sim):
 
 1. The MAIN asset ``assets/crab.usda`` (plant of record A15+B) is EXACTLY what
    ``assets/scripts/generate_crab.py`` emits from ``crab_hex_dimensions.py``; the legacy golden
-   ``assets/crab_simple.usda`` (2026-08-20 build) is exactly ``generate(LEGACY_GOLDEN_VARIANT)``;
-   every ``assets/variants/*.usda`` is its named variant. Hand-edits to a USDA (the
-   pre-2026-08-20 workflow, which accumulated anchor-vs-translate drift) fail here: edit the
-   dimensions module and regenerate instead.
+   ``assets/variants/crab_simple__splay00_axis5p5in.usda`` (2026-08-20 build) is exactly
+   ``generate(LEGACY_GOLDEN_VARIANT)``; every ``assets/variants/*.usda`` is its named variant.
+   Hand-edits to a generated USDA (the pre-2026-08-20 workflow, which accumulated
+   anchor-vs-translate drift) fail here: edit the dimensions module and regenerate instead.
+   ``assets/crab_simple.usda`` is the exception by design: the hand-authored Cube model of the
+   2026-08-09 campaign baseline (reverted 2026-09-09, git 5ca0a8c), sha-pinned, never generated.
 2. The masses in the asset add up to the measured hardware totals: 6 x 26.2 lb legs +
    350 lb body = ~230.06 kg, with the per-link split summing exactly per leg.
 """
@@ -20,8 +22,10 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 USDA_PATH = REPO_ROOT / "assets" / "crab.usda"                 # main asset (A15+B)
-LEGACY_PATH = REPO_ROOT / "assets" / "crab_simple.usda"        # legacy golden (2026-08-20 build)
 VARIANTS_DIR = REPO_ROOT / "assets" / "variants"
+LEGACY_PATH = VARIANTS_DIR / "crab_simple__splay00_axis5p5in.usda"   # legacy golden (2026-08-20 build)
+HAND_AUTHORED_PATH = REPO_ROOT / "assets" / "crab_simple.usda"       # 2026-08-09 campaign-baseline Cube model
+HAND_AUTHORED_SHA256 = "0a7417235af037a6a0141ff6089ced19cb52f8a018b5696278a836c2cbeb8c2a"
 GENERATOR_PATH = REPO_ROOT / "assets" / "scripts" / "generate_crab.py"
 
 
@@ -55,13 +59,27 @@ def test_committed_asset_matches_generator():
     )
 
 
-def test_legacy_asset_matches_legacy_variant():
+def test_legacy_golden_variant_matches_generator():
     """The 2026-08-20 golden stays byte-pinned to the generator's LEGACY_GOLDEN_VARIANT."""
     assert LEGACY_PATH.read_text() == generator.generate(generator.LEGACY_GOLDEN_VARIANT), (
-        "assets/crab_simple.usda (legacy golden) drifted; regenerate with "
+        "assets/variants/crab_simple__splay00_axis5p5in.usda (legacy golden) drifted; regenerate with "
         "python3 assets/scripts/generate_crab.py --legacy-golden"
     )
     assert generator.LEGACY_GOLDEN_VARIANT.tag == "splay00_axis5p5in"
+    assert generator.variant_asset_path("legacy_golden") == LEGACY_PATH
+
+
+def test_hand_authored_crab_simple_is_the_campaign_baseline_cube_model():
+    """assets/crab_simple.usda was reverted (2026-09-09) to the hand-authored Cube model of the
+    2026-08-09 campaign baseline (git 5ca0a8c): 31 Cube prims, cam-shaft joints, no generated Mesh
+    links. A historical reference, never generated -- pinned by sha256 so it cannot drift silently."""
+    import hashlib
+
+    text = HAND_AUTHORED_PATH.read_text()
+    assert hashlib.sha256(HAND_AUTHORED_PATH.read_bytes()).hexdigest() == HAND_AUTHORED_SHA256
+    assert text.count("def Cube") == 31 and "CamShaft" in text
+    assert text.count("def Mesh") == 1  # only the ground CollisionMesh; no generated plywood-outline link meshes
+    assert "physics:centerOfMass" not in text  # the generated (measured-hardware) assets author CoM on every link
 
 
 def test_main_asset_is_the_a15b_plant():

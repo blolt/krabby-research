@@ -1,7 +1,7 @@
 # Copyright (c) 2022-2025, The Isaac Lab Project Developers.
 # Policy layout sizes for ``CrabHexParkourObservations`` (see crab_hex_forward_task.mdp.observations).
 #
-# Krabby ``crab_simple.usda``: ``num_joints = 18``, joint_pos action dim ``18``.
+# Krabby ``crab.usda``: ``num_joints = 18``, joint_pos action dim ``18``.
 #   obs_buf_dim = 15 + 2 * num_joints + action_dim + num_contact  ->  15 + 36 + 18 + 6 = 75  (= num_prop; +2 root_lin_vel_xy)
 #   priv_latent   = mass(1+3) + friction(1) + stiffness(N) + damping(N)  ->  4 + 1 + 18 + 18 = 41
 #   policy flat len = (1 + history_length) * obs_buf_dim + 132 + 9 + priv_latent

@@ -24,9 +24,15 @@ masses and inertias, joint limits, the cam mapping and the linkage geometry are 
 The byte-pin test `test_splay_variant_touches_only_outer_leg_mount_lines` enforces that only the
 outer-mount lines differ between variants.
 
-`assets/crab_simple.usda` is the **legacy golden**: the 2026-08-20 measured-robot build with
-splay 0 and outer axes 5.5 in from the body ends. It is kept byte-pinned because every checkpoint
-before the a15b lineage was trained on it (see section 5).
+`assets/variants/crab_simple__splay00_axis5p5in.usda` is the **legacy golden**: the 2026-08-20 measured-robot
+build with splay 0 and outer axes 5.5 in from the body ends. It is kept byte-pinned because every
+checkpoint before the a15b lineage was trained on it (see section 5).
+
+`assets/crab_simple.usda` is **not a plant any more**. On 2026-09-09 it was reverted to the
+hand-authored Cube model of the 2026-08-09 campaign baseline (git `5ca0a8c`: 31 Cube prims with the
+cam-shaft mechanism, before the measured-hardware rebuild replaced it with generated plywood-outline
+meshes). It is kept as a historical reference of the pre-experimentation robot, sha-pinned by
+`tests/unit/test_crab_hex_usd_generation.py`, never generated, and no task or plant name loads it.
 
 ## 2. Measured hardware
 
@@ -58,7 +64,7 @@ import the module.
 ## 3. Spawn height
 
 `KRABBY_HEX_SPAWN_Z=1.085` (m) is the articulation spawn height read by the scene config
-(`_crab_simple_robot_cfg()` in `crab_hex_scene_cfg.py`); the same value is used for training,
+(`_crab_robot_cfg()` in `crab_hex_scene_cfg.py`); the same value is used for training,
 play and stance checks. It was set for the 2026-08-20 vertical-plate geometry and re-validated on
 A15+B in the leg-mount morphology campaign: settled root height 1.0620 m on A15+B versus 1.0612 m
 on the legacy golden, well inside the +-10 mm band the campaign set for keeping the spawn value
@@ -75,7 +81,7 @@ Names are defined in `crab_hex_phases.PLANTS`
 | Plant name | File | Splay (deg) | Outer axis (in) | Note |
 |---|---|---|---|---|
 | `A15+B`, `main` | `assets/crab.usda` | 15 | 2.5 | plant of record; default, nothing to set |
-| `legacy_golden`, `golden` | `assets/crab_simple.usda` | 0 | 5.5 | 2026-08-20 build; every head before the a15b lineage. `golden` is the alias used by pre-2026-09-09 records and commands |
+| `legacy_golden`, `golden` | `assets/variants/crab_simple__splay00_axis5p5in.usda` | 0 | 5.5 | 2026-08-20 build; every head before the a15b lineage. `golden` is the alias used by pre-2026-09-09 records and commands |
 | `B` | `assets/variants/crab_simple__splay00_axis2p5in.usda` | 0 | 2.5 | re-hinge only |
 | `A10` | `assets/variants/crab_simple__splay10_axis5p5in.usda` | 10 | 5.5 | splay only |
 | `A15` | `assets/variants/crab_simple__splay15_axis5p5in.usda` | 15 | 5.5 | splay only |
@@ -167,7 +173,7 @@ the dimensions module by path, no Isaac needed).
 
 ```bash
 python3 assets/scripts/generate_crab.py                  # assets/crab.usda (main asset, A15+B)
-python3 assets/scripts/generate_crab.py --legacy-golden  # assets/crab_simple.usda (legacy golden)
+python3 assets/scripts/generate_crab.py --legacy-golden  # assets/variants/crab_simple__splay00_axis5p5in.usda (legacy golden)
 python3 assets/scripts/generate_crab.py --all-variants   # assets/variants/*.usda + MANIFEST.md
 python3 assets/scripts/generate_crab.py --splay-deg 10 --outer-axis-in 5.5 --out /tmp/x.usda   # ad hoc
 ```
