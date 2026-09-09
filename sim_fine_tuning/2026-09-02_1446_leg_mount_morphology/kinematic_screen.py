@@ -78,8 +78,8 @@ def transform_feet(foot_pos_w, root_pos_w, root_quat_w, splay_deg, outer_axis_in
     rel_b = np.einsum("tji,tkj->tki", R, foot_pos_w - root_pos_w[:, None, :])  # R^T (f - r)
     out_b = np.empty_like(rel_b)
     for i, name in enumerate(FOOT_ORDER):
-        p0 = fk.mount_point(name)
-        dx = fk.mount_x(name, outer_axis_in) - fk.mount_x(name)
+        p0 = fk.mount_point(name, fk.LEGACY_OUTER_AXIS_IN)  # recordings are golden-plant (2026-09-09 note)
+        dx = fk.mount_x(name, outer_axis_in) - fk.mount_x(name, fk.LEGACY_OUTER_AXIS_IN)
         a = mount_yaw_signed(name, splay_deg)
         c, s = math.cos(a), math.sin(a)
         rel = rel_b[:, i, :] - p0

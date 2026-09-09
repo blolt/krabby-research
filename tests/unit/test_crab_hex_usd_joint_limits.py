@@ -25,7 +25,7 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-USDA_PATH = REPO_ROOT / "assets" / "crab_simple.usda"
+USDA_PATH = REPO_ROOT / "assets" / "crab.usda"  # main asset; joint limits are plant-invariant
 _DIMS_PATH = (
     REPO_ROOT
     / "parkour"

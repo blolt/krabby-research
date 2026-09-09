@@ -6,14 +6,20 @@ a fraction of env resets start FROM states sampled along the target gait instead
 default stand, so schedule/phase-conditioned income is live from iteration 0 and the
 policy's problem shifts from "find the gait" (exploration) to "keep it" (retention).
 
-The bank is built offline from the Phase-0 scripted-gait walking stretch (setAB tripod,
-this exact plant -- a dynamically-generated reference, not mocap): full joint state, root
+The bank is built offline from the Phase-0 scripted-gait walking stretch (setAB tripod, a
+dynamically-generated reference, not mocap): full joint state, root
 height/orientation/velocity, and the gait-clock phase consistent with the reference's own
 cam angles. The event stages the clock on the action term
 (``rsi_clock_staged``); the action term's reset consumes it (events run BEFORE
 action-manager reset in Isaac Lab's ``_reset_idx``).
 
 Arm via ``KRABBY_RSI_FRAC`` (fraction of resets seeded, e.g. 0.15).
+
+Plant note (2026-09-09): the banks of record (``rsi_bank_P0_null.npz`` and the ``rsi_bank_pg_r*``
+banks) were harvested on the LEGACY golden geometry (splay 0, outer axes 5.5 in) and are reused
+unchanged on the A15+B plant of record by design (joint-space + root state; the mount transform
+is not baked into joint angles -- the leg-mount morphology campaign found no RSI-shaped
+signature). Re-harvest only if a future plant changes joint kinematics.
 
 PLAN H B4 (2026-09-03, ``KRABBY_RSI_SPAWN_FIX=1`` -> ``fix_spawn=True``): the original
 placement added only the tile origin to the bank's (0, 0) xy, i.e. RSI resets spawned at

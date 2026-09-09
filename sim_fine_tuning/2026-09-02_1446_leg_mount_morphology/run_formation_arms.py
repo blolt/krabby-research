@@ -101,6 +101,10 @@ def plant_env(cfg: str) -> dict:
     ev = dict(BASELINE)
     if CONFIGS[cfg]:
         ev["KRABBY_HEX_USD_PATH"] = str(VARIANTS / f"crab_simple__{CONFIGS[cfg]}.usda")
+    else:
+        # "base" = the 2026-08-20 golden geometry. Explicit since 2026-09-09: the config default
+        # (assets/crab.usda) is now the A15+B plant of record.
+        ev["KRABBY_HEX_USD_PATH"] = str(VARIANTS.parent / "crab_simple.usda")
     return ev
 
 

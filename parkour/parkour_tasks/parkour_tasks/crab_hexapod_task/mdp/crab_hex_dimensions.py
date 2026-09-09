@@ -1,8 +1,9 @@
 """Measured physical-hardware dimensions for the Krabby hexapod (single source of truth).
 
 Every number the robot model is generated from lives here, in the units it was measured
-in (inches / pounds), with metric values derived. ``assets/scripts/generate_crab_simple.py``
-consumes this module to emit ``assets/crab_simple.usda``; sim-side config (defaults,
+in (inches / pounds), with metric values derived. ``assets/scripts/generate_crab.py``
+consumes this module to emit ``assets/crab.usda`` (the plant of record) and the legacy
+``assets/crab_simple.usda``; sim-side config (defaults,
 limits, actuator parameters) imports the derived constants so the USD and the configs can
 never drift apart.
 
@@ -24,6 +25,10 @@ Provenance (2026-08-20 measurement session, user-confirmed against CAD):
   both linear actuators. Leg parts are 1 in plywood; the per-link split below is estimated
   from part volumes + actuator bodies at their anchor positions, normalized to the
   measured leg total. Replace the estimates with real part weights if ever available.
+- 2026-09 leg-mount change (splay 15 deg / outer axes 2.5 in, see the leg-mount layout block):
+  chosen from the sim morphology campaigns (``.../experiments/2026-09-02_1446_leg_mount_morphology``,
+  ``2026-09-04_1105_morph_x_exposure``, ``2026-09-06_2130_a15b_lineage``); it is a rigid mount
+  transform, so every other measurement here is unchanged.
 
 This module is stdlib-only (no torch, no Isaac) so the USD generator and unit tests can
 import it directly (sys.path insertion of this directory, same pattern as
@@ -52,9 +57,17 @@ BODY_SIZE_M = (
 # --------------------------------------------------------------------------------------
 # Leg mount layout (3 legs per 28-inch side; yaw hinge flush with the body side face)
 # --------------------------------------------------------------------------------------
-OUTER_LEG_AXIS_FROM_BODY_END_IN = 5.5  # measured to the yaw axis
-# Outer yaw axes at +-(14 - 5.5) = +-8.5 in from body center along X; middle leg at 0.
-LEG_X_OFFSET_M = (BODY_LENGTH_X_IN / 2.0 - OUTER_LEG_AXIS_FROM_BODY_END_IN) * IN_TO_M
+# Plant of record since 2026-09-09 ("A15+B", leg-mount morphology campaigns 2026-09-02..09-07,
+# user decision 2026-09-06): the outer yaw axes are re-hinged to 2.5 in from the body ends
+# (axes at +-(14 - 2.5) = +-11.5 in from body centre along X; middle leg at 0) and the
+# front/rear leg mounts are shimmed 15 deg outward (row F toes toward -x, row R toward +x;
+# mid legs never splay). The 2026-08-20 build measured the axes at 5.5 in with no splay --
+# kept below as the LEGACY values (``assets/crab_simple.usda``; every checkpoint before the
+# a15b lineage was trained on that geometry).
+OUTER_LEG_AXIS_FROM_BODY_END_IN = 2.5
+OUTER_ROW_SPLAY_DEG = 15.0
+LEGACY_OUTER_LEG_AXIS_FROM_BODY_END_IN = 5.5  # measured to the yaw axis (2026-08-20)
+LEGACY_OUTER_ROW_SPLAY_DEG = 0.0
 LEG_MOUNT_Y_M = BODY_WIDTH_Y_IN / 2.0 * IN_TO_M  # yaw axis sits on the side face plane
 
 # --------------------------------------------------------------------------------------

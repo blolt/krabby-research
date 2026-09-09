@@ -28,7 +28,7 @@ LEGS = ("FL", "FR", "ML", "MR", "RL", "RR")
 def variant_params(usd: str) -> tuple[float, float]:
     m = re.search(r"splay(\d+)_axis(\d)p(\d)in", usd or "")
     if not m:
-        return 0.0, FK.DEFAULT_OUTER_AXIS_IN
+        return FK.LEGACY_SPLAY_DEG, FK.LEGACY_OUTER_AXIS_IN  # base = legacy golden (2026-09-09: FK defaults moved to A15+B)
     return float(m.group(1)), float(f"{m.group(2)}.{m.group(3)}")
 
 

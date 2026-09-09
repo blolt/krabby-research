@@ -24,17 +24,19 @@ from parkour_tasks.extreme_parkour_task.config.go2.parkour_student_cfg import Pa
 from parkour_tasks.extreme_parkour_task.config.go2.parkour_teacher_cfg import ParkourTeacherSceneCfg
 
 
-def _crab_simple_usd_path() -> str:
-    """USD for crab_hexapod_task. Override with KRABBY_HEX_USD_PATH; default is repo `crab_simple.usda` only."""
+def _crab_usd_path() -> str:
+    """USD of the training plant. Override with ``KRABBY_HEX_USD_PATH`` (``KRABBY_PLANT=<name>``
+    exports it for the named plant); the default is the repo's MAIN asset ``assets/crab.usda``
+    (plant of record A15+B since 2026-09-09; ``assets/crab_simple.usda`` is the legacy golden)."""
     override = os.environ.get("KRABBY_HEX_USD_PATH")
     if override:
         return override
-    # .../krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/config/crab_hex/this_file.py
+    # .../krabby-research/parkour/parkour_tasks/parkour_tasks/<task>/config/crab_hex/this_file.py
     repo_root = Path(__file__).resolve().parents[6]
-    default = repo_root / "assets" / "crab_simple.usda"
+    default = repo_root / "assets" / "crab.usda"
     if default.is_file():
         return str(default)
-    return "/workspace/krabby-research/assets/crab_simple.usda"
+    return "/workspace/krabby-research/assets/crab.usda"
 
 
 # NOTE(cam-mechanism-migration): CamShaft's own PD gains. NOT a reuse of the old Body_Hip
@@ -165,7 +167,7 @@ def _crab_simple_robot_cfg() -> ArticulationCfg:
     return ArticulationCfg(
         prim_path="{ENV_REGEX_NS}/Robot",
         spawn=sim_utils.UsdFileCfg(
-            usd_path=_crab_simple_usd_path(),
+            usd_path=_crab_usd_path(),
             activate_contact_sensors=True,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(
                 disable_gravity=False,

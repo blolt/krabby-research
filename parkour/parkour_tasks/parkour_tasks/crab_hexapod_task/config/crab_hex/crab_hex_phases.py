@@ -35,23 +35,49 @@ RAMP_ITERS = 1000
 WINDOW_ITERS = 5000
 
 # ---------------------------------------------------------------------------------- plants
+# Plant name -> USDA path relative to assets/ (None = the MAIN asset ``assets/crab.usda``, which
+# needs no variable). Since 2026-09-09 the main asset IS the A15+B geometry (15 deg outer-mount
+# splay, outer yaw axes 2.5 in from the body ends). Records written before that date say
+# "golden" / "base" for the 2026-08-20 build: that is ``legacy_golden`` = ``assets/crab_simple.usda``.
+# The table is locked to ``assets/scripts/generate_crab.py``'s VARIANTS by a unit test.
+MAIN_PLANT = "A15+B"
+MAIN_ASSET = ASSETS / "crab.usda"
+# file names that mean "the main plant" (the variant file is byte-identical to crab.usda and is
+# what the a15b lineage / phase-pipeline runs recorded)
+MAIN_ASSET_NAMES = ("crab.usda", "crab_simple__splay15_axis2p5in.usda")
 PLANTS: dict[str, str | None] = {
-    "golden": None,                       # assets/crab_simple.usda (the config default)
-    "B": "splay00_axis2p5in",
-    "A10": "splay10_axis5p5in",
-    "A15": "splay15_axis5p5in",
-    "A20": "splay20_axis5p5in",
-    "A10+B": "splay10_axis2p5in",
-    "A15+B": "splay15_axis2p5in",         # plant of record since 2026-09-06
-    "A20+B": "splay20_axis2p5in",
+    "A15+B": None,
+    "main": None,
+    "legacy_golden": "crab_simple.usda",
+    "golden": "crab_simple.usda",         # alias used by pre-2026-09-09 records and commands
+    "B": "variants/crab_simple__splay00_axis2p5in.usda",
+    "A10": "variants/crab_simple__splay10_axis5p5in.usda",
+    "A15": "variants/crab_simple__splay15_axis5p5in.usda",
+    "A20": "variants/crab_simple__splay20_axis5p5in.usda",
+    "A10+B": "variants/crab_simple__splay10_axis2p5in.usda",
+    "A20+B": "variants/crab_simple__splay20_axis2p5in.usda",
 }
 
 
 def plant_usd_path(name: str) -> str | None:
+    """Absolute USDA path for a named plant; ``None`` for the main plant (config default)."""
     if name not in PLANTS:
         raise KeyError(f"unknown plant {name!r}; known: {sorted(PLANTS)}")
-    tag = PLANTS[name]
-    return None if tag is None else str(ASSETS / "variants" / f"crab_simple__{tag}.usda")
+    rel = PLANTS[name]
+    return None if rel is None else str(ASSETS / rel)
+
+
+def plant_name_for_path(path: str | None) -> str | None:
+    """Reverse lookup by file name: which named plant a spawned USD is (``None`` if unknown)."""
+    if not path:
+        return None
+    name = Path(str(path)).name
+    if name in MAIN_ASSET_NAMES:
+        return MAIN_PLANT
+    for plant, rel in PLANTS.items():
+        if rel is not None and Path(rel).name == name:
+            return plant  # first match wins: "legacy_golden" precedes its "golden" alias
+    return None
 
 
 # ---------------------------------------------------------------------------------- knob blocks

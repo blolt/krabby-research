@@ -95,16 +95,36 @@ class TestActivation:
         applied = ph.activate_phase(env)
         assert env["KRABBY_STAND_FRAC"] == "0.35" and "KRABBY_STAND_FRAC" not in applied
         assert env["KRABBY_HEX_TEACHER_MODE"] == "2b"
-        assert env["KRABBY_HEX_USD_PATH"].endswith("crab_simple__splay15_axis2p5in.usda")
+        assert "KRABBY_HEX_USD_PATH" not in env  # A15+B is the main asset: nothing to export
         assert env["KRABBY_FLAT_TERRAIN_GEOM"] == "recal2b2w" and env["KRABBY_EPISODE_S"] == "40"
 
-    def test_plant_only_and_golden(self, ph):
+    def test_main_plant_exports_nothing_and_legacy_golden_is_explicit(self, ph):
+        assert ph.MAIN_PLANT == "A15+B" and ph.PLANTS["A15+B"] is None and ph.PLANTS["main"] is None
         env = {"KRABBY_PLANT": "A15+B"}
         ph.activate_phase(env)
-        assert "KRABBY_HEX_USD_PATH" in env and "KRABBY_HEX_TEACHER_MODE" not in env
-        env = {"KRABBY_PHASE": "1a", "KRABBY_PLANT": "golden"}
-        ph.activate_phase(env)
         assert "KRABBY_HEX_USD_PATH" not in env and "KRABBY_HEX_TEACHER_MODE" not in env
+        for name in ("legacy_golden", "golden"):
+            env = {"KRABBY_PHASE": "1a", "KRABBY_PLANT": name}
+            ph.activate_phase(env)
+            assert env["KRABBY_HEX_USD_PATH"].endswith("assets/crab_simple.usda")
+            assert "KRABBY_HEX_TEACHER_MODE" not in env
+        env = {"KRABBY_PLANT": "B"}
+        ph.activate_phase(env)
+        assert env["KRABBY_HEX_USD_PATH"].endswith("variants/crab_simple__splay00_axis2p5in.usda")
+
+    def test_plant_name_for_path(self, ph):
+        assert ph.plant_name_for_path("/x/assets/crab.usda") == "A15+B"
+        assert ph.plant_name_for_path("/x/assets/variants/crab_simple__splay15_axis2p5in.usda") == "A15+B"
+        assert ph.plant_name_for_path("/x/assets/crab_simple.usda") == "legacy_golden"
+        assert ph.plant_name_for_path("/x/assets/variants/crab_simple__splay20_axis2p5in.usda") == "A20+B"
+        assert ph.plant_name_for_path("/x/other.usda") is None and ph.plant_name_for_path(None) is None
+
+    def test_plant_table_matches_generator_variants(self, ph):
+        gen = _load(REPO / "assets/scripts/generate_crab.py", "generate_crab_for_test")
+        table = {n: Path(p).name for n, p in ph.PLANTS.items() if p is not None and n != "golden"}
+        expected = {n: gen.variant_asset_path(n).name for n in gen.VARIANTS if n != "A15+B"}
+        assert table == expected
+        assert gen.MAIN_ASSET.name == ph.MAIN_ASSET.name == "crab.usda"
 
     def test_no_phase_is_a_noop(self, ph):
         env = {"KRABBY_STAND_FRAC": "0.2"}

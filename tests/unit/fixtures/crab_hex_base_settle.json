@@ -1,4 +1,7 @@
 {
+ "plant": "legacy_golden",
+ "splay_deg": 0.0,
+ "outer_axis_in": 5.5,
  "source": "statics_base.npz last settle, golden plant, 2026-09-02 (PLAN G rung ii)",
  "joint_names": [
   "FL_Body_Hip_RevoluteJoint",

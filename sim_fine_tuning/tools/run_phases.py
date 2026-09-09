@@ -126,7 +126,7 @@ class Campaign:
             mode = f"`{s.task}`" + (f" + mode `{s.teacher_mode}`" if s.teacher_mode else "")
             rows.append(f"| {name} | {mode} | {args.iterations or s.iterations} | {s.resume_from or 'scratch'} | {s.notes} |")
         head = (f"# Phase pipeline campaign `{self.dir.name}`\n\n"
-                f"Plant **{self.plant}** (`{ph.plant_usd_path(self.plant) or 'golden'}`), seed {self.seed}, "
+                f"Plant **{self.plant}** (`{ph.plant_usd_path(self.plant) or 'assets/crab.usda (main)'}`), seed {self.seed}, "
                 f"phases {', '.join(phases)}. Driver: `sim_fine_tuning/tools/run_phases.py`; presets: "
                 f"`crab_hex_phases.py` (`KRABBY_PHASE` / `KRABBY_PLANT`).\n\n" + "\n".join(rows))
         self.report.write_text(head + "\n\n")
@@ -265,9 +265,9 @@ def _plant_guard(run_dir: Path, plant: str, tag: str) -> None:
     got = _run_meta_plant(run_dir)
     if got is None:
         return
-    ok = (want is None and "variants/" not in got) or (want is not None and Path(got).name == Path(want).name)
+    ok = (want is None and Path(got).name in ph.MAIN_ASSET_NAMES) or (want is not None and Path(got).name == Path(want).name)
     if not ok:
-        raise RuntimeError(f"{tag}: eval spawned plant {got} but {plant} requested {want or 'golden'}")
+        raise RuntimeError(f"{tag}: eval spawned plant {got} but {plant} requested {want or 'the main asset'} (rung-iv defect)")
 
 
 def _student_args(spec) -> list[str]:
@@ -371,7 +371,7 @@ def phase_checks(rec: dict, spec, c: Campaign) -> list[tuple[str, bool]]:
     envy = run_dir / "params" / "env.yaml"
     txt = envy.read_text(errors="ignore") if envy.exists() else ""
     want = ph.plant_usd_path(c.plant)
-    checks.append((f"plant is {c.plant} (params/env.yaml usd path)", (Path(want).name in txt) if want else ("variants/" not in txt)))
+    checks.append((f"plant is {c.plant} (params/env.yaml usd path)", (Path(want).name in txt) if want else any(n in txt for n in ph.MAIN_ASSET_NAMES)))
     eps = ph.phase_env(spec.name, c.plant).get("KRABBY_EPISODE_S")
     if eps:
         checks.append((f"episode_length_s {eps} in params", re.search(rf"episode_length_s:\s*{float(eps)}", txt) is not None))
@@ -495,7 +495,8 @@ def interrupted_phase(c: Campaign) -> dict | None:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--campaign-dir", required=True)
-    ap.add_argument("--plant", default="A15+B", choices=sorted(ph.PLANTS))
+    ap.add_argument("--plant", default=ph.MAIN_PLANT, choices=sorted(ph.PLANTS),
+                    help="named plant (default: the main asset = A15+B; legacy_golden for pre-2026-09-09 reproductions)")
     ap.add_argument("--seed", default="3")
     ap.add_argument("--phases", default="1a,2a,2b,2c,3a,3b")
     ap.add_argument("--from-checkpoint", default=None, help="resume the first listed phase from this checkpoint")

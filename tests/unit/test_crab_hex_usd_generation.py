@@ -1,11 +1,13 @@
-"""Pin ``assets/crab_simple.usda`` to its generator and the measured-dimensions module.
+"""Pin the crab-hexapod plants to their generator and the measured-dimensions module.
 
-Two guarantees, both pure-text / stdlib (no Isaac Sim):
+Guarantees, all pure-text / stdlib (no Isaac Sim):
 
-1. The committed asset is EXACTLY what ``assets/scripts/generate_crab_simple.py`` emits
-   from ``crab_hex_dimensions.py`` -- hand-edits to the USDA (the pre-2026-08-20 workflow,
-   which accumulated anchor-vs-translate drift) now fail CI: edit the dimensions module and
-   regenerate instead.
+1. The MAIN asset ``assets/crab.usda`` (plant of record A15+B) is EXACTLY what
+   ``assets/scripts/generate_crab.py`` emits from ``crab_hex_dimensions.py``; the legacy golden
+   ``assets/crab_simple.usda`` (2026-08-20 build) is exactly ``generate(LEGACY_GOLDEN_VARIANT)``;
+   every ``assets/variants/*.usda`` is its named variant. Hand-edits to a USDA (the
+   pre-2026-08-20 workflow, which accumulated anchor-vs-translate drift) fail here: edit the
+   dimensions module and regenerate instead.
 2. The masses in the asset add up to the measured hardware totals: 6 x 26.2 lb legs +
    350 lb body = ~230.06 kg, with the per-link split summing exactly per leg.
 """
@@ -17,8 +19,10 @@ from pathlib import Path
 import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-USDA_PATH = REPO_ROOT / "assets" / "crab_simple.usda"
-GENERATOR_PATH = REPO_ROOT / "assets" / "scripts" / "generate_crab_simple.py"
+USDA_PATH = REPO_ROOT / "assets" / "crab.usda"                 # main asset (A15+B)
+LEGACY_PATH = REPO_ROOT / "assets" / "crab_simple.usda"        # legacy golden (2026-08-20 build)
+VARIANTS_DIR = REPO_ROOT / "assets" / "variants"
+GENERATOR_PATH = REPO_ROOT / "assets" / "scripts" / "generate_crab.py"
 
 
 def _load(name: str, path: Path):
@@ -38,17 +42,34 @@ dims = _load(
     / "mdp"
     / "crab_hex_dimensions.py",
 )
-generator = _load("generate_crab_simple", GENERATOR_PATH)
+generator = _load("generate_crab", GENERATOR_PATH)
 
 
 def test_committed_asset_matches_generator():
     generated = generator.generate()
     committed = USDA_PATH.read_text()
     assert committed == generated, (
-        "assets/crab_simple.usda differs from its generator output. Never hand-edit the "
+        "assets/crab.usda differs from its generator output. Never hand-edit the "
         "asset: change crab_hex_dimensions.py (or the generator) and run "
-        "python3 assets/scripts/generate_crab_simple.py"
+        "python3 assets/scripts/generate_crab.py"
     )
+
+
+def test_legacy_asset_matches_legacy_variant():
+    """The 2026-08-20 golden stays byte-pinned to the generator's LEGACY_GOLDEN_VARIANT."""
+    assert LEGACY_PATH.read_text() == generator.generate(generator.LEGACY_GOLDEN_VARIANT), (
+        "assets/crab_simple.usda (legacy golden) drifted; regenerate with "
+        "python3 assets/scripts/generate_crab.py --legacy-golden"
+    )
+    assert generator.LEGACY_GOLDEN_VARIANT.tag == "splay00_axis5p5in"
+
+
+def test_main_asset_is_the_a15b_plant():
+    assert generator.DEFAULT_VARIANT.tag == "splay15_axis2p5in"
+    assert generator.DEFAULT_VARIANT.row_splay_deg == dims.OUTER_ROW_SPLAY_DEG == 15.0
+    assert generator.DEFAULT_VARIANT.outer_axis_from_end_in == dims.OUTER_LEG_AXIS_FROM_BODY_END_IN == 2.5
+    a15b = VARIANTS_DIR / "crab_simple__splay15_axis2p5in.usda"
+    assert USDA_PATH.read_bytes() == a15b.read_bytes(), "the A15+B variant file must stay byte-identical to crab.usda"
 
 
 def _masses_by_prim(text: str) -> dict[str, float]:
@@ -144,9 +165,11 @@ def test_default_variant_is_byte_identical():
 
 
 def test_committed_variants_match_their_regeneration():
-    vdir = REPO_ROOT / "assets" / "variants"
+    vdir = VARIANTS_DIR
     files = sorted(vdir.glob("crab_simple__splay*_axis*.usda"))
     assert files, "no committed variants found"
+    expected = {p.name for p in generator.variant_files().values()}
+    assert {f.name for f in files} == expected, "assets/variants/ must hold exactly the named plants (generate_crab.py --all-variants)"
     for f in files:
         tag = f.stem.split("__", 1)[1]
         splay = float(tag.split("_")[0].replace("splay", ""))
@@ -158,8 +181,10 @@ def test_committed_variants_match_their_regeneration():
 def test_splay_variant_touches_only_outer_leg_mount_lines():
     import difflib
 
-    golden = generator.generate().splitlines()
-    splayed = generator.generate(generator.MorphVariant(row_splay_deg=20.0)).splitlines()
+    # variant-relative baseline: the unsplayed geometry at the default outer-axis position
+    ax = generator.DEFAULT_VARIANT.outer_axis_from_end_in
+    golden = generator.generate(generator.MorphVariant(0.0, ax)).splitlines()
+    splayed = generator.generate(generator.MorphVariant(20.0, ax)).splitlines()
     added = [l for l in difflib.unified_diff(golden, splayed, lineterm="", n=0)
              if l.startswith("+") and not l.startswith("+++")]
     kinds = {"orient": 0, "translate": 0, "localRot0": 0, "scale": 0}
@@ -180,6 +205,13 @@ def test_variant_masses_unchanged():
     masses = _masses_by_prim(text)
     total = sum(masses.values())
     assert total == pytest.approx(230.06, abs=0.05)
+
+
+def test_manifest_lists_every_plant():
+    text = generator.manifest_text()
+    for name in generator.VARIANTS:
+        assert f"`{name}`" in text
+    assert "assets/crab.usda" in text and "assets/crab_simple.usda" in text
 
 
 def test_variant_cap_and_range():

@@ -7,7 +7,10 @@ femur pivot, knee and toe from its joint angles, for any mount variant:
   toward +x, symmetric about the transverse mid-plane; mid legs never splay);
 * ``outer_axis_in`` -- outer yaw-axis distance from the body ends along the 28-in wall.
 
-Frame chain is transcribed from ``assets/scripts/generate_crab_simple.py`` (``Leg.__init__``)
+Defaults are the plant of record (A15+B); see ``DEFAULT_SPLAY_DEG`` / ``DEFAULT_OUTER_AXIS_IN``
+and the ``LEGACY_*`` constants for records made on the 2026-08-20 golden geometry.
+
+Frame chain is transcribed from ``assets/scripts/generate_crab.py`` (``Leg.__init__``)
 and ``crab_hex_dimensions.py``; angle conventions from the dimensions module:
 
 * yaw: the ``Body_Hip`` revolute (axis +Z, right-hand) rotates the WHOLE leg about the
@@ -40,7 +43,12 @@ _spec.loader.exec_module(dims)
 LEG_NAMES = ("FL", "FR", "ML", "MR", "RL", "RR")
 LEFT = frozenset({"FL", "ML", "RL"})
 ROW_SIGN = {"F": -1.0, "M": 0.0, "R": 1.0}
+# Defaults = the plant of record (A15+B: splay 15 deg, outer axes 2.5 in). Records made before
+# 2026-09-09 ("golden"/"base") are the LEGACY geometry: pass the LEGACY_* values explicitly.
 DEFAULT_OUTER_AXIS_IN = dims.OUTER_LEG_AXIS_FROM_BODY_END_IN
+DEFAULT_SPLAY_DEG = dims.OUTER_ROW_SPLAY_DEG
+LEGACY_OUTER_AXIS_IN = dims.LEGACY_OUTER_LEG_AXIS_FROM_BODY_END_IN
+LEGACY_SPLAY_DEG = dims.LEGACY_OUTER_ROW_SPLAY_DEG
 SPLAY_CAP_DEG = 20.0
 
 FEMUR_LEN_M = dims.FEMUR_HINGE_TO_HINGE_M          # 0.5842
@@ -88,7 +96,7 @@ def leg_points(
     hip: float = 0.0,
     knee: float = 0.0,
     *,
-    splay_deg: float = 0.0,
+    splay_deg: float = DEFAULT_SPLAY_DEG,
     outer_axis_in: float = DEFAULT_OUTER_AXIS_IN,
 ) -> dict[str, np.ndarray]:
     """Body-frame ``pivot``, ``knee``, ``toe`` (each shape (3,)) for one leg pose.
@@ -119,15 +127,18 @@ def transform_recorded_foot(
     splay_deg: float,
     outer_axis_in: float,
     base_outer_axis_in: float = DEFAULT_OUTER_AXIS_IN,
+    base_splay_deg: float = DEFAULT_SPLAY_DEG,
 ) -> np.ndarray:
     """Where a recorded body-frame foot position (same joint angles) lands under a variant.
 
-    Exact for a rigid mount change: rotate about the ORIGINAL yaw axis by the mount yaw,
-    then translate by the axis move along x. Works on ``(..., 3)`` arrays.
+    Exact for a rigid mount change: rotate about the ORIGINAL yaw axis by the change in mount
+    yaw (target minus base plant), then translate by the axis move along x. Works on
+    ``(..., 3)`` arrays. The base defaults to the plant of record; records made on the legacy
+    golden pass ``base_outer_axis_in=LEGACY_OUTER_AXIS_IN, base_splay_deg=LEGACY_SPLAY_DEG``.
     """
     p0 = mount_point(name, base_outer_axis_in)
     dx = mount_x(name, outer_axis_in) - mount_x(name, base_outer_axis_in)
-    rot = _rot_z(mount_yaw(name, splay_deg))
+    rot = _rot_z(mount_yaw(name, splay_deg) - mount_yaw(name, base_splay_deg))
     rel = np.asarray(foot_body_xyz, dtype=np.float64) - p0
     return (rel @ rot.T) + p0 + np.array([dx, 0.0, 0.0])
 

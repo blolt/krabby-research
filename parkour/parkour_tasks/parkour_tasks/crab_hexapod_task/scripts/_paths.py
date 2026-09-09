@@ -22,5 +22,11 @@ def parkour_scripts_dir() -> Path:
     return _PARKOUR_ROOT / "scripts"
 
 
+def crab_usd() -> Path:
+    """The main training plant (A15+B geometry, plant of record since 2026-09-09)."""
+    return _REPO_ROOT / "assets" / "crab.usda"
+
+
 def crab_simple_usd() -> Path:
+    """The legacy golden plant (2026-08-20 build): heads trained before the a15b lineage."""
     return _REPO_ROOT / "assets" / "crab_simple.usda"

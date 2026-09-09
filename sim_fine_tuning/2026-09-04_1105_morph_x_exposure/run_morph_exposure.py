@@ -88,7 +88,9 @@ def promote_fracs_for_horizon(up: float, down: float, horizon_s: float, ref_s: f
 
 def plant_path(cfg: str) -> str | None:
     tag = CONFIGS[cfg]
-    return None if tag is None else str(VARIANTS / f"crab_simple__{tag}.usda")
+    if tag is None:  # "base" = legacy golden, explicit since 2026-09-09 (config default is now A15+B)
+        return str(VARIANTS.parent / "crab_simple.usda")
+    return str(VARIANTS / f"crab_simple__{tag}.usda")
 
 
 def with_plant(ev: dict, cfg: str) -> dict:

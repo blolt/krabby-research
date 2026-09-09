@@ -43,6 +43,7 @@ def main() -> int:
     parser.add_argument("--repeat", type=int, default=1, help="Runs per scenario (use 2 for a noise-floor check).")
     parser.add_argument("--seed-offset", type=int, default=0, help="Added to each repeat index for --env-seed.")
     parser.add_argument("--extra", default="", help="Extra args appended verbatim to the harness.")
+    parser.add_argument("--plant", default=None, help="Named plant passed to the harness (--plant); e.g. legacy_golden for the v1 baselines.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--continue-on-error", action="store_true")
@@ -87,6 +88,8 @@ def main() -> int:
                 # Same scenario, different seed -> the spread across repeats is the gate's
                 # resolution limit. A threshold tighter than that spread is not a gate.
                 cmd += ["--env-seed", str(1 + args.seed_offset + rep)]
+            if args.plant:
+                cmd += ["--plant", args.plant]
             if args.extra:
                 cmd += args.extra.split()
 

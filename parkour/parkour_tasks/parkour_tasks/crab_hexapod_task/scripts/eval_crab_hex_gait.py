@@ -82,6 +82,15 @@ parser.add_argument("--no-save-raw", dest="save_raw", action="store_false")
 parser.add_argument("--plot", action="store_true", default=True, help="Render gait diagrams after the run.")
 parser.add_argument("--no-plot", dest="plot", action="store_false")
 parser.add_argument(
+    "--plant",
+    type=str,
+    default=None,
+    help="Named plant (crab_hex_phases.PLANTS: A15+B|main = assets/crab.usda, legacy_golden|golden = "
+         "assets/crab_simple.usda, B/A10/A15/A20/A10+B/A20+B variants). Exported as KRABBY_PLANT before "
+         "the task package import (the USD is read at config-import time, so a manifest env block cannot "
+         "select it). Default: whatever the environment selects, else the main asset.",
+)
+parser.add_argument(
     "--allow-checkpoint-sha-mismatch",
     action="store_true",
     help="Proceed even if the checkpoint sha256 differs from the manifest's pin.",
@@ -89,6 +98,8 @@ parser.add_argument(
 cli_args.add_rsl_rl_args(parser)
 AppLauncher.add_app_launcher_args(parser)
 args_cli = parser.parse_args()
+if args_cli.plant:
+    _ENVIRON.setdefault("KRABBY_PLANT", args_cli.plant)
 
 app_launcher = AppLauncher(args_cli)
 simulation_app = app_launcher.app
@@ -111,6 +122,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import parkour_tasks  # noqa: F401,E402
+from parkour_tasks.crab_hexapod_task.config.crab_hex import crab_hex_phases as PH  # noqa: E402
 from gait_eval import metrics as M  # noqa: E402
 from gait_eval import report as R  # noqa: E402
 from gait_eval import schedule as S  # noqa: E402
@@ -325,6 +337,14 @@ def main() -> None:
     num_envs = int(unwrapped.num_envs)
 
     robot = unwrapped.scene["robot"]
+    usd_spawned = str(getattr(getattr(robot.cfg, "spawn", None), "usd_path", "<unknown>"))
+    if args_cli.plant:
+        # The plant is fixed at config-import time; make sure the requested one actually spawned.
+        want = PH.plant_usd_path(args_cli.plant)
+        spawned_name = Path(usd_spawned).name
+        if (want is None and spawned_name not in PH.MAIN_ASSET_NAMES) or (want is not None and spawned_name != Path(want).name):
+            raise SystemExit(f"--plant {args_cli.plant} requested {want or 'the main asset'} but the scene spawned {usd_spawned} "
+                             "(KRABBY_HEX_USD_PATH set in the environment wins over --plant; unset it)")
     contact_sensor = unwrapped.scene.sensors["contact_forces"]
     action_term = unwrapped.action_manager.get_term("joint_pos")
 
@@ -585,8 +605,10 @@ def main() -> None:
         "leg_link_names": list(sensor_leg_names),
         # the plant actually spawned (KRABBY_HEX_USD_PATH is read at config import time, so a
         # manifest env block cannot select it -- pass it in the process environment)
-        "usd_path": str(getattr(getattr(robot.cfg, "spawn", None), "usd_path", "<unknown>")),
-        "usd_path_requested": scenario.env_vars.get("KRABBY_HEX_USD_PATH", _ENVIRON.get("KRABBY_HEX_USD_PATH", "<golden>")),
+        "usd_path": usd_spawned,
+        "usd_path_requested": scenario.env_vars.get("KRABBY_HEX_USD_PATH", _ENVIRON.get("KRABBY_HEX_USD_PATH", "<default>")),
+        "plant": PH.plant_name_for_path(usd_spawned),
+        "plant_requested": args_cli.plant or _ENVIRON.get("KRABBY_PLANT") or "<default>",
         "action_dim": n_actions,
         "num_prop": num_prop,
         "obs_dim_actual": int(obs.shape[1]),
