@@ -29,6 +29,8 @@ from isaaclab.app import AppLauncher
 parser = argparse.ArgumentParser(description="Dump crab-hex configs inside Isaac Sim.")
 parser.add_argument("--task", action="append", required=True, help="Gym task id (repeatable).")
 parser.add_argument("--out", required=True, help="Output JSON path.")
+parser.add_argument("--set-after-import", action="append", default=[], metavar="KEY=VALUE",
+                    help="Environment variables to set AFTER the task package import but before the cfgs are built (mimics a manifest env block).")
 AppLauncher.add_app_launcher_args(parser)
 args = parser.parse_args()
 app_launcher = AppLauncher(args)
@@ -45,6 +47,9 @@ import parkour_tasks.crab_hex_forward_task  # noqa: E402,F401  (registers the ta
 
 
 def main() -> int:
+    for kv in args.set_after_import:
+        k, _, v = kv.partition("=")
+        os.environ[k] = v
     out: dict = {"_environ": {k: v for k, v in os.environ.items() if k.startswith("KRABBY_")}}
     for task in args.task:
         spec = gym.spec(task)

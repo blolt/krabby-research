@@ -312,6 +312,13 @@ def main() -> None:
 
     for key, value in scenario.env_vars.items():
         # Read inside the cfg's __post_init__, so this must happen before parse_env_cfg.
+        # NOTE(reproducibility, 2026-09-09): writing ANY environment variable here -- i.e. after
+        # Kit has started -- moves this process into a different, equally reproducible outcome
+        # class for some scenario/policy pairs (measured: the depth student on slow__A15pB gives
+        # 0.79/21 falls with an env block of any content and 0.75/25 without one; the obstacle
+        # course and the privileged teacher were insensitive). Same-seed numbers are therefore
+        # comparable only between runs with the same manifest shape; treat +-0.04 completion /
+        # +-4 falls in 100 as the harness's resolution across manifests.
         import os
 
         os.environ[key] = value

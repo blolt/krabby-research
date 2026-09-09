@@ -513,6 +513,15 @@ SCRIPTS=parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts
 
 ### 4.1b Gait metrics eval harness (Milestone 18, Task 0)
 
+**Reproducibility note (2026-09-09):** same-seed evals are bit-reproducible only for an identical
+process history. Measured with the phase-3 depth student on `slow__A15pB`: a manifest `env:` block of
+*any* content (the harness writes it into `os.environ` after Kit has started) yields 0.79 completion /
+21 falls, and no block yields 0.75 / 25 — each repeatable to the last digit, with byte-identical
+configs (`tests/integration/crab_hex_phase_cfg_dump.py --set-after-import` shows no cfg difference).
+The obstacle course and the privileged teacher were insensitive. Compare numbers only across runs
+with the same manifest shape, and treat ±0.04 completion / ±4 falls in 100 as the harness's
+resolution otherwise.
+
 **`--policy-role auto|teacher|student`** (2026-09-08): which head to run. `auto` picks the depth
 student when the task's runner is a distillation runner. `teacher` forces the privileged actor +
 estimator path even on `Isaac-Crab-Hex-Student-v0` — the diagnostic that found the phase-3 clip bug
