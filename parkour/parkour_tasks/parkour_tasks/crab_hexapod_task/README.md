@@ -73,7 +73,35 @@ You can point `KRABBY_HEX_USD_PATH` at a flattened `.usd` export for deployment;
 
 Each stage resumes the previous bundled checkpoint. Same policy network throughout. Commands: [§4](#4-training-and-playing-the-hexapod). Config files: [§3](#3-config-reference).
 
-### At a glance
+### Paradigm phases (current pipeline, 2026-09-07)
+
+The training process is the repository's three-phase paradigm, selected with **`KRABBY_PHASE`**
+(and **`KRABBY_PLANT`** for the plant). Each preset expands into the `KRABBY_*` knobs of the baked
+curriculum (`config/crab_hex/crab_hex_phases.py`, unit-tested against the recorded lineage stacks and
+config-identity-tested inside Isaac Sim, `tests/integration/test_crab_hex_phase_configs.py`); an
+explicitly exported variable still wins over the preset. Phase 1 is the *pure student* (the actor's
+history encoder distils the privileged latents through the RMA/DAgger updates); phase 2 is
+*teacher-student* on the parkour elements; phase 3 distils the depth-camera student. The policy
+network is unchanged throughout; each phase resumes the previous phase's head.
+
+| Phase | Iterations | Task / mode | Resume from | What the preset sets | Head of record (A15+B) |
+| --- | --- | --- | --- | --- | --- |
+| **1a** | 0–5k | `Flat-Walk-v0`, `KRABBY_PHASE=1a` | scratch | formation: full gait income, walking slots (`STAND_FRAC 0.2`), 40 s episodes / 10 s holds, P0-null RSI 0.2, light shallow tiles 80 % flat, frozen | — |
+| **2a** | 5–10k | `Teacher-v0` + mode `2a` | 1a | + elements @5k (yaw, edge, stumble, collision, DR push/mass/CoM), `recal2b2w` 50/50 with curriculum, promotion 0.225:0.125; ramps apex 1→0.5, airtime 0.8→0.4, stride 0.5→0.25 | — |
+| **2b** | 10–15k | `Teacher-v0` + mode `2b` | 2a | + elements @10k (clearance terms, foot-clear, heading ±1.2, goal-vel 0.75); apex / airtime / stride → ε | — |
+| **2c** | 15–20k | `Teacher-v0` + mode `2c` | 2b | clock 1.0 → 0.5 | `logs/rsl_rl/crab_hex_flat_walk/2026-09-07_04-38-50/model_19996.pt` (policy of record) |
+| **3a** | 20k → +5k | `Student-v0`, `KRABBY_PHASE=3a` | 2c | depth student distilled from the 2c teacher on the 2c MDP (same terrain band 0.20–0.70, walking slots, 40 s episodes, DR, plant) | `logs/rsl_rl/crab_hex_student/2026-09-08_05-54-01/model_24995.pt` (**phase-3 head of record**, 2026-09-09: flat 0.79, step 0.71, obstacles 0.64, hard band 0.51 — teacher-equivalent) |
+| **3b** | +5k → +10k | `Student-v0`, `KRABBY_PHASE=3b` | 3a | distillation continues on difficulty 0.70–0.90 (else identical) | run 2026-09-09 (`2026-09-09_02-06-51/model_29994.pt`): equivalent to 3a on every eval — **not baked**; the pipeline of record ends at 3a |
+
+Modes `2a/2b/2c` build the flat-walk MDP inside `Teacher-v0` (same rewards, terminations,
+actions and runner as `Flat-Walk-v0`; only the experiment directory differs:
+`logs/rsl_rl/crab_hex_teacher/`). Legacy presets `legacy_golden_1a … legacy_golden_2e` reproduce
+the golden-plant 30k schedule (20 s episodes, `recal2b2`, 0.45:0.25) for record-keeping only;
+the clock anneal past 0.5 is **not** part of the paradigm (late-window collapse on both plants).
+The bridge / 2b1 / 2b2 / `full` stages below are the **legacy** teacher path and stay selectable
+through `KRABBY_HEX_TEACHER_MODE`. Driver: `sim_fine_tuning/tools/run_phases.py` ([§4.0](#40-training-commands-curriculum)).
+
+### At a glance (legacy stages)
 
 
 | Stage         | Task / mode             | Resume from        | Terrain               | Rewards                                                         | Actions     | Success in play              |
@@ -230,6 +258,12 @@ Scene, rewards, and code pointers. Stage differences: [§2](#2-how-stages-differ
 
 Set `KRABBY_HEX_TEACHER_MODE=2b2` when loading the teacher for student rollouts.
 
+**Paradigm phases:** `KRABBY_PHASE=2a|2b|2c` exports mode `2a|2b|2c` (flat-walk MDP inside
+`Teacher-v0`); `KRABBY_PHASE=3a|3b` makes `Student-v0` mirror the phase-2c teacher MDP (teacher
+terrain generator, flat-walk terminations, `full` action space, DR on the chassis) -- also
+selectable without a preset via `KRABBY_STUDENT_MDP=1` for evaluating a phase-3 student with the
+same explicit knobs a teacher eval uses.
+
 ### RSL-RL runner factory
 
 **Committed:** `parkour/scripts/rsl_rl/runner_factory.py`  
@@ -286,6 +320,42 @@ export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_RO
 ### 4.0 Training commands (curriculum)
 
 Stage differences: [§2](#2-how-stages-differ). Bundled checkpoints: appendices C–G.
+
+**Paradigm phases (current).** One environment variable per phase; the plant selects the USD:
+
+```bash
+cd "$KRABBY_ROOT/krabby-research/parkour"
+export KRABBY_PLANT=A15+B                      # golden | B | A10 | A15 | A20 | A10+B | A15+B | A20+B
+PY=/home/nickmagus/krabby/isaac_venv/bin/python   # or "$KRABBY_ROOT/IsaacLab/isaaclab.sh -p"
+
+# Phase 1a — pure student (flat-walk task, formation)
+KRABBY_PHASE=1a $PY scripts/rsl_rl/train.py --task Isaac-Crab-Hex-Flat-Walk-v0 --headless \
+  --num_envs 256 --seed 3 --max_iterations 5000
+
+# Phase 2a / 2b / 2c — teacher-student (Teacher-v0 in the phase mode), each resuming the previous head
+KRABBY_PHASE=2a $PY scripts/rsl_rl/train.py --task Isaac-Crab-Hex-Teacher-v0 --headless \
+  --num_envs 256 --seed 3 --max_iterations 5000 --resume --checkpoint "$HEAD_1A"
+KRABBY_PHASE=2b ... --resume --checkpoint "$HEAD_2A"
+KRABBY_PHASE=2c ... --resume --checkpoint "$HEAD_2B"        # -> policy of record (20k)
+
+# Phase 3a / 3b — student distillation from the 2c head (iteration counter continues from 20k)
+KRABBY_PHASE=3a $PY scripts/rsl_rl/train.py --task Isaac-Crab-Hex-Student-v0 --headless \
+  --num_envs 192 --seed 3 --max_iterations 5000 --resume --checkpoint "$HEAD_2C"
+KRABBY_PHASE=3b ... --resume --checkpoint "$HEAD_3A"
+```
+
+The pipeline driver runs the phases in order with the campaign evals, records and pauses:
+
+```bash
+sim_fine_tuning/tools/launch_phases.sh --campaign-dir sim_fine_tuning/<campaign> --plant A15+B \
+  --phases 1a,2a,2b,2c,3a,3b --seed 3            # add --from-checkpoint <pt> --phases 3a,3b to extend a head
+sim_fine_tuning/tools/heartbeat_phases.sh <unit> sim_fine_tuning/<campaign>
+```
+
+Logs: `logs/rsl_rl/crab_hex_flat_walk/` (1a), `crab_hex_teacher/` (2a–2c), `crab_hex_student/` (3a–3b).
+Play a phase-2 head with `Isaac-Crab-Hex-Teacher-Play-v0` and the same `KRABBY_PHASE`; a
+phase-3 head with `Isaac-Crab-Hex-Student-Play-v0`. The legacy commands below are the bridge /
+2b1 / 2b2 path.
 
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
@@ -399,6 +469,12 @@ SCRIPTS=parkour_tasks/parkour_tasks/crab_hexapod_task/scripts
 ```
 
 ### 4.1b Gait metrics eval harness (Milestone 18, Task 0)
+
+**`--policy-role auto|teacher|student`** (2026-09-08): which head to run. `auto` picks the depth
+student when the task's runner is a distillation runner. `teacher` forces the privileged actor +
+estimator path even on `Isaac-Crab-Hex-Student-v0` — the diagnostic that found the phase-3 clip bug
+(is the student MDP walkable by the teacher at all?). Phase-3 students evaluate with
+`--task Isaac-Crab-Hex-Student-v0` and `KRABBY_STUDENT_MDP=1` plus the same explicit knobs a teacher eval uses.
 
 Plays a checkpoint over a **fixed** command schedule (not random resampling) and scores the gait:
 a scalar tripod-phasing score (the machine-checkable number later tasks gate on — do the two
@@ -595,7 +671,22 @@ Use `Isaac-Crab-Hex-Teacher-v0` for the exact training MDP; `*-Play-v0` for foll
 
 ### 4.4 Student distillation
 
-Uses [§3.1](#31-teacher-vs-student) student MDP. **Prerequisite:** [Appendix F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) `model_6300.pt`.
+**Paradigm phase 3 (current):** `KRABBY_PHASE=3a` then `3b` on `Isaac-Crab-Hex-Student-v0`,
+resuming the phase-2c head (commands in [§4.0](#40-training-commands-curriculum)). The student
+MDP is the 2c teacher MDP (teacher terrain generator at 0.08 m / 40 columns, flat-walk
+terminations, `full` actions, DR, walking slots, 40 s episodes, plant); 3b raises the difficulty
+band to 0.70–0.90. Distillation uses `DistillationWithExtractor` (`learn_vision`): teacher actions
+from the loaded actor (`act_inference(hist_encoding=True)`), student = `depth_actor` +
+`depth_encoder`, `num_steps_per_env 24·5`, LR 1e-3; the iteration counter continues from the
+teacher's (20k → 25k → 30k). Measured throughput ≈ 1.9 h per 1k iterations at 192 envs.
+Evaluate with the gait harness and `--task Isaac-Crab-Hex-Student-v0` plus `KRABBY_STUDENT_MDP=1`.
+**Requirement:** the student runner must clip raw policy actions like the teacher runners
+(`CrabHexStudentPPORunnerCfg.clip_actions = 1.0`, in code since 2026-09-08). Without it the vec-env
+wrapper passes unclipped outputs to the full ±4.8 action space and every rollout falls — the
+distillation losses still decrease, so check rollout survival (episode length, `crab_failure`), not
+the losses. Record: `sim_fine_tuning/2026-09-07_1330_phase_pipeline/`.
+
+The legacy 2b2-based distillation follows. Uses [§3.1](#31-teacher-vs-student) student MDP. **Prerequisite:** [Appendix F](#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) `model_6300.pt`.
 
 **Conceptual distillation loss (first version):**
 

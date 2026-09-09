@@ -23,6 +23,8 @@ anchor-vs-translate disagreement on the CamShaft prims).
 
 import argparse
 import importlib.util
+import math
+from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -52,6 +54,48 @@ LEG_PRIM_ORDER = ("FL", "FR", "RL", "RR", "ML", "MR")
 # Joint emission order inside the Joints scope (also historical).
 JOINT_LEG_ORDER = ("FL", "FR", "ML", "MR", "RL", "RR")
 LEFT = {"FL", "ML", "RL"}
+
+
+@dataclass(frozen=True)
+class MorphVariant:
+    """Leg-mount geometry variant (PLAN G leg-mount morphology campaign, 2026-09-02).
+
+    Both fields are MOUNT transforms applied to the front/rear rows only; the mid legs
+    never move. The whole leg chain (hip plate, cam rotor, femur, tibia, footpad) rotates /
+    translates rigidly with its mount, so joint-local anchors, link masses, inertias, the
+    cam mapping and the linkage are untouched.
+
+    - ``row_splay_deg``: outward yaw of the outer rows, symmetric about the transverse
+      mid-plane (row F toes toward -x, row R toes toward +x; robot stays reversible). Hard
+      cap 20 deg (user, 2026-09-02): the +-25 deg cam throw must still reach the
+      perpendicular pose for sideways walking. Implemented as a rotation of the mount
+      frame (``xformOp:orient`` on the leg prims + ``localRot0`` on the two Z-axis joints),
+      never as a ``Body_Hip`` joint default (that would park the cam sweep off-centre --
+      the 2026-08-13 perpendicular-mounts lesson).
+    - ``outer_axis_from_end_in``: distance of the outer yaw axes from the body ends along
+      the 28-in wall (measured hardware: 5.5 in). Smaller = axes closer to the corners.
+
+    Defaults reproduce the committed asset byte-for-byte.
+    """
+
+    row_splay_deg: float = 0.0
+    outer_axis_from_end_in: float = dims.OUTER_LEG_AXIS_FROM_BODY_END_IN
+
+    def __post_init__(self) -> None:
+        if not 0.0 <= self.row_splay_deg <= 20.0:
+            raise ValueError(f"row_splay_deg must be within [0, 20] deg, got {self.row_splay_deg}")
+        if not 0.0 < self.outer_axis_from_end_in < dims.BODY_LENGTH_X_IN / 2.0:
+            raise ValueError(
+                f"outer_axis_from_end_in must lie inside the half body length, got "
+                f"{self.outer_axis_from_end_in}"
+            )
+
+    @property
+    def tag(self) -> str:
+        return f"splay{int(round(self.row_splay_deg)):02d}_axis{self.outer_axis_from_end_in:g}in".replace(".", "p")
+
+
+DEFAULT_VARIANT = MorphVariant()
 
 
 def n(v: float) -> str:
@@ -222,12 +266,14 @@ def extruded_mass_props(pts_2d, thickness, mass, axis_map):
 class Leg:
     """All authored numbers for one leg, derived from the dimensions module."""
 
-    def __init__(self, name: str):
+    def __init__(self, name: str, variant: MorphVariant = DEFAULT_VARIANT):
         IN = dims.IN_TO_M
         self.name = name
+        self.variant = variant
         self.sy = -1.0 if name in LEFT else 1.0  # left legs extend toward -Y
         row = name[0]  # F / M / R
-        self.x = {"F": -dims.LEG_X_OFFSET_M, "M": 0.0, "R": dims.LEG_X_OFFSET_M}[row]
+        outer_x = (dims.BODY_LENGTH_X_IN / 2.0 - variant.outer_axis_from_end_in) * IN
+        self.x = {"F": -outer_x, "M": 0.0, "R": outer_x}[row]
 
         wall_y = dims.LEG_MOUNT_Y_M
         pivot_z = dims.FEMUR_PIVOT_Z_M
@@ -253,6 +299,32 @@ class Leg:
         )
         self.tibia_center_z = pivot_z - (tibia_len / 2.0 - tibia_above)
         self.toe_z = pivot_z - dims.TIBIA_KNEE_TO_TOE_M
+
+        # --- PLAN G mount splay: rigid rotation of the whole leg about the vertical yaw
+        # axis through (x, sy*wall_y). Outward = leading-row (R, +x) toes toward +x and
+        # trailing-row (F, -x) toes toward -x on BOTH sides: alpha = -row_sign * sy * splay.
+        # Mid legs never splay. alpha == 0 takes the untouched code path so the default
+        # asset stays byte-identical.
+        row_sign = {"F": -1.0, "M": 0.0, "R": 1.0}[row]
+        self.alpha = -row_sign * sy * math.radians(variant.row_splay_deg)
+        if self.alpha == 0.0:
+            self.orient = "(1, 0, 0, 0)"
+        else:
+            # USD quaternions are authored (w, x, y, z); rotation about +Z by alpha.
+            self.orient = f"({n(math.cos(self.alpha / 2.0))}, 0, 0, {n(math.sin(self.alpha / 2.0))})"
+
+        def place(y: float, z: float) -> tuple[float, float, float]:
+            """Prim translate for a link whose unsplayed centre is (x, y, z)."""
+            if self.alpha == 0.0:
+                return (self.x, y, z)
+            dy = y - self.yaw_y
+            return (
+                self.x - math.sin(self.alpha) * dy,
+                self.yaw_y + math.cos(self.alpha) * dy,
+                z,
+            )
+
+        self.place = place
 
         # Joint anchors. The yaw anchor on the (still unit-cube) body stays pre-scale;
         # anchors on the three MESH links are METRIC local offsets (mesh points are
@@ -353,9 +425,9 @@ def leg_block(leg: Leg) -> str:
             bool physics:kinematicEnabled = 0
             bool physics:rigidBodyEnabled = 1
             uniform token subdivisionScheme = "none"
-            quatd xformOp:orient = (1, 0, 0, 0)
+            quatd xformOp:orient = {leg.orient}
             double3 xformOp:scale = (1, 1, 1)
-            double3 xformOp:translate = {v3(leg.x, leg.femur_center_y, leg.pivot_z)}
+            double3 xformOp:translate = {v3(*leg.place(leg.femur_center_y, leg.pivot_z))}
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }}
 
@@ -375,9 +447,9 @@ def leg_block(leg: Leg) -> str:
             bool physics:kinematicEnabled = 0
             bool physics:rigidBodyEnabled = 1
             uniform token subdivisionScheme = "none"
-            quatd xformOp:orient = (1, 0, 0, 0)
+            quatd xformOp:orient = {leg.orient}
             double3 xformOp:scale = (1, 1, 1)
-            double3 xformOp:translate = {v3(leg.x, leg.knee_y, leg.tibia_center_z)}
+            double3 xformOp:translate = {v3(*leg.place(leg.knee_y, leg.tibia_center_z))}
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }}
 
@@ -395,9 +467,9 @@ def leg_block(leg: Leg) -> str:
             bool physics:kinematicEnabled = 0
             bool physics:rigidBodyEnabled = 1
             double size = 1
-            quatd xformOp:orient = (1, 0, 0, 0)
+            quatd xformOp:orient = {leg.orient}
             double3 xformOp:scale = (0.06, 0.06, 0.04)
-            double3 xformOp:translate = {v3(leg.x, leg.knee_y, leg.toe_z)}
+            double3 xformOp:translate = {v3(*leg.place(leg.knee_y, leg.toe_z))}
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }}
 
@@ -417,9 +489,9 @@ def leg_block(leg: Leg) -> str:
             bool physics:kinematicEnabled = 0
             bool physics:rigidBodyEnabled = 1
             uniform token subdivisionScheme = "none"
-            quatd xformOp:orient = (1, 0, 0, 0)
+            quatd xformOp:orient = {leg.orient}
             double3 xformOp:scale = (1, 1, 1)
-            double3 xformOp:translate = {v3(leg.x, leg.hip_center_y, leg.hip_center_z)}
+            double3 xformOp:translate = {v3(*leg.place(leg.hip_center_y, leg.hip_center_z))}
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }}
 
@@ -434,9 +506,9 @@ def leg_block(leg: Leg) -> str:
             bool physics:kinematicEnabled = 0
             bool physics:rigidBodyEnabled = 1
             double size = 1
-            quatd xformOp:orient = (1, 0, 0, 0)
+            quatd xformOp:orient = {leg.orient}
             double3 xformOp:scale = (0.02, 0.02, 0.02)
-            double3 xformOp:translate = {v3(leg.x, leg.yaw_y, leg.hip_center_z)}
+            double3 xformOp:translate = {v3(*leg.place(leg.yaw_y, leg.hip_center_z))}
             uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:orient", "xformOp:scale"]
         }}
     }}
@@ -459,7 +531,7 @@ def joint_blocks(leg: Leg) -> str:
             bool physics:collisionEnabled = 1
             point3f physics:localPos0 = {v3(*leg.yaw_pos0)}
             point3f physics:localPos1 = {v3(0, leg.yaw_pos1_y, 0)}
-            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot0 = {leg.orient}
             quatf physics:localRot1 = (1, 0, 0, 0)
             float physics:lowerLimit = {n(-yaw_lim)}
             float physics:upperLimit = {n(yaw_lim)}
@@ -478,7 +550,7 @@ def joint_blocks(leg: Leg) -> str:
             float physics:breakTorque = 3.4028235e38
             point3f physics:localPos0 = {v3(*leg.yaw_pos0)}
             point3f physics:localPos1 = (0, 0, 0)
-            quatf physics:localRot0 = (1, 0, 0, 0)
+            quatf physics:localRot0 = {leg.orient}
             quatf physics:localRot1 = (1, 0, 0, 0)
         }}
 
@@ -911,8 +983,8 @@ def chassis_block() -> str:
 '''
 
 
-def generate() -> str:
-    legs = {name: Leg(name) for name in LEG_PRIM_ORDER}
+def generate(variant: MorphVariant = DEFAULT_VARIANT) -> str:
+    legs = {name: Leg(name, variant) for name in LEG_PRIM_ORDER}
     parts = [HEADER]
     parts.append(f'''
 def Xform "krabby" (
@@ -948,11 +1020,29 @@ def main() -> None:
         default=REPO_ROOT / "assets" / "crab_simple.usda",
         help="output path (default: assets/crab_simple.usda)",
     )
+    parser.add_argument(
+        "--splay-deg",
+        type=float,
+        default=0.0,
+        help="PLAN G: outward yaw splay of the front/rear leg mounts, 0-20 deg (default 0)",
+    )
+    parser.add_argument(
+        "--outer-axis-in",
+        type=float,
+        default=dims.OUTER_LEG_AXIS_FROM_BODY_END_IN,
+        help="PLAN G: outer yaw-axis distance from the body ends in inches (measured 5.5)",
+    )
     args = parser.parse_args()
-    text = generate()
+    variant = MorphVariant(row_splay_deg=args.splay_deg, outer_axis_from_end_in=args.outer_axis_in)
+    if variant != DEFAULT_VARIANT and args.out == REPO_ROOT / "assets" / "crab_simple.usda":
+        parser.error("a morphology variant must be written with --out (the default asset is byte-pinned)")
+    text = generate(variant)
     args.out.write_text(text)
     total = dims.TOTAL_MASS_KG
-    print(f"wrote {args.out} ({len(text.splitlines())} lines); total robot mass {total:.2f} kg")
+    print(
+        f"wrote {args.out} ({len(text.splitlines())} lines); total robot mass {total:.2f} kg; "
+        f"variant {variant.tag}"
+    )
 
 
 if __name__ == "__main__":

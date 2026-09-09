@@ -22,6 +22,7 @@ Launch from ``krabby-research/parkour`` via ``isaaclab.sh -p`` -- see README sec
 
 from __future__ import annotations
 
+from os import environ as _ENVIRON  # module-level: main() has a later local `import os`
 import argparse
 import hashlib
 import importlib.util
@@ -66,6 +67,14 @@ parser.add_argument(
     help="Send zero actions instead of loading a policy (pipeline smoke test; expects duty~1, tripod 0, slip~0).",
 )
 parser.add_argument("--freeze-friction", action="store_true", help="Disable friction randomization for low-variance A/B.")
+parser.add_argument(
+    "--policy-role",
+    choices=["auto", "teacher", "student"],
+    default="auto",
+    help="Which head to run: 'auto' picks student (depth actor + encoder) when the task's runner is a "
+         "distillation runner, else teacher. 'teacher' forces the privileged actor + estimator path even on "
+         "a student task (diagnostic: is the student MDP walkable by the teacher?).",
+)
 parser.add_argument("--disable_fabric", action="store_true", default=False)
 parser.add_argument("--output-root", type=str, default=None, help="Default: parkour/logs/rsl_rl/gait_eval/v1.")
 parser.add_argument("--save-raw", action="store_true", default=True, help="Write per-episode NPZ arrays.")
@@ -332,6 +341,9 @@ def main() -> None:
     sensor_foot_ids, sensor_foot_names = contact_sensor.find_bodies(
         list(CRAB_HEX_FOOTPAD_BODY_NAMES), preserve_order=True
     )
+    # PLAN G (2026-09-02): leg-link net contact forces make leg-leg / leg-body interference
+    # visible offline (reward_collision prices hip/femur only; tibias were invisible).
+    sensor_leg_ids, sensor_leg_names = contact_sensor.find_bodies([".*_Hip", ".*_Femur", ".*_Tibia"])
 
     policy = None
     depth_encoder = None
@@ -365,6 +377,9 @@ def main() -> None:
         num_scan = int(estimator_paras["num_scan"])
         num_priv_explicit = int(estimator_paras["num_priv_explicit"])
         is_student = agent_cfg.algorithm.class_name == "DistillationWithExtractor"
+        if args_cli.policy_role != "auto":
+            is_student = args_cli.policy_role == "student"
+            print(f"[INFO] policy role forced to {args_cli.policy_role}", flush=True)
         if is_student:
             policy = runner.get_inference_depth_policy(device=device)
             depth_encoder = runner.get_depth_encoder_inference_policy(device=device)
@@ -414,6 +429,11 @@ def main() -> None:
         "applied_torque": torch.zeros(T, num_envs, n_joints, device=device),
         "done": torch.zeros(T, num_envs, dtype=torch.bool, device=device),
         "crab_failure": torch.zeros(T, num_envs, dtype=torch.bool, device=device),
+        # PLAN G additions: exact whole-body CoM (with run_meta body masses), FK cross-checks,
+        # and leg-link contact visibility for the morphology campaign's offline metrics.
+        "joint_pos": torch.zeros(T, num_envs, n_joints, device=device),
+        "body_pos_w": torch.zeros(T, num_envs, int(robot.num_bodies), 3, device=device),
+        "leg_contact_force": torch.zeros(T, num_envs, len(sensor_leg_ids), device=device),
     }
 
     alive = torch.ones(num_envs, dtype=torch.bool, device=device)
@@ -495,6 +515,9 @@ def main() -> None:
             buf["root_ang_vel_b"][t] = robot.data.root_ang_vel_b
             buf["joint_vel"][t] = robot.data.joint_vel
             buf["applied_torque"][t] = robot.data.applied_torque
+            buf["joint_pos"][t] = robot.data.joint_pos
+            buf["body_pos_w"][t] = robot.data.body_pos_w
+            buf["leg_contact_force"][t] = contact_sensor.data.net_forces_w_history[:, 0, sensor_leg_ids].norm(dim=-1)
 
             # The command about to be reflected in the *next* obs is whatever vel_command_b holds
             # right before this step() call (this step's base command plus any yaw override above).
@@ -555,6 +578,15 @@ def main() -> None:
         "sensor_foot_ids": [int(i) for i in sensor_foot_ids],
         "action_joint_names": list(getattr(action_term, "_joint_names", [])),
         "robot_num_joints": n_joints,
+        # PLAN G: exact-CoM / FK / leg-contact metadata for the raw buffers added 2026-09-02.
+        "joint_names": list(robot.joint_names),
+        "body_names": list(robot.body_names),
+        "body_masses_kg": [float(m) for m in robot.root_physx_view.get_masses()[0].cpu()],
+        "leg_link_names": list(sensor_leg_names),
+        # the plant actually spawned (KRABBY_HEX_USD_PATH is read at config import time, so a
+        # manifest env block cannot select it -- pass it in the process environment)
+        "usd_path": str(getattr(getattr(robot.cfg, "spawn", None), "usd_path", "<unknown>")),
+        "usd_path_requested": scenario.env_vars.get("KRABBY_HEX_USD_PATH", _ENVIRON.get("KRABBY_HEX_USD_PATH", "<golden>")),
         "action_dim": n_actions,
         "num_prop": num_prop,
         "obs_dim_actual": int(obs.shape[1]),

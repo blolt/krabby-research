@@ -721,3 +721,229 @@ def shaft_spin_metrics(
         "reversals_per_s_median": float(np.median(reversals) / max(duration_s, 1e-9)),
         "net_revolutions": [float(v) for v in net_revolutions],
     }
+
+
+# --------------------------------------------------------------------------------------
+# support polygon / static stability margin and fall direction (PLAN G leg-mount
+# morphology, 2026-09-02). Pure numpy; consumed by the eval report and the offline
+# kinematic screen.
+# --------------------------------------------------------------------------------------
+def _convex_hull_xy(points: np.ndarray) -> np.ndarray:
+    """Andrew monotone chain. ``points`` (N, 2) -> hull vertices CCW (M, 2), M >= 3, else (N, 2)."""
+    pts = np.unique(np.asarray(points, dtype=np.float64), axis=0)
+    if len(pts) < 3:
+        return pts
+    pts = pts[np.lexsort((pts[:, 1], pts[:, 0]))]
+
+    def cross(o, a, b):
+        return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+
+    lower: list = []
+    for p in pts:
+        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+            lower.pop()
+        lower.append(p)
+    upper: list = []
+    for p in pts[::-1]:
+        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+            upper.pop()
+        upper.append(p)
+    return np.asarray(lower[:-1] + upper[:-1])
+
+
+def _signed_min_edge_margin(hull: np.ndarray, c: np.ndarray) -> float:
+    """Signed distance from point ``c`` to the nearest hull edge (positive inside, CCW hull)."""
+    if len(hull) < 3:
+        return float("nan")
+    best = float("inf")
+    inside = True
+    for i in range(len(hull)):
+        a, b = hull[i], hull[(i + 1) % len(hull)]
+        e = b - a
+        ln = float(np.hypot(*e))
+        if ln < 1e-12:
+            continue
+        # left-of-edge is inside for a CCW hull
+        s = (e[0] * (c[1] - a[1]) - e[1] * (c[0] - a[0])) / ln
+        if s < 0:
+            inside = False
+        # unsigned distance to the segment
+        t = float(np.clip(np.dot(c - a, e) / (ln * ln), 0.0, 1.0))
+        dseg = float(np.hypot(*(c - (a + t * e))))
+        best = min(best, dseg)
+    return best if inside else -best
+
+
+def _forward_ray_margin(hull: np.ndarray, c: np.ndarray) -> float:
+    """Signed +x extent of the hull along the line y = c_y, measured from c_x.
+
+    Positive when the CoM projection has polygon ahead of it; negative when the projection
+    is ahead of the polygon (pure-pitch tipping quantity). NaN when the line misses the hull
+    entirely (projection laterally outside).
+    """
+    if len(hull) < 3:
+        return float("nan")
+    xs = []
+    for i in range(len(hull)):
+        a, b = hull[i], hull[(i + 1) % len(hull)]
+        y0, y1 = a[1] - c[1], b[1] - c[1]
+        if y0 == y1:
+            if y0 == 0.0:
+                xs.extend([a[0], b[0]])
+            continue
+        if (y0 <= 0.0 < y1) or (y1 <= 0.0 < y0):
+            t = y0 / (y0 - y1)
+            xs.append(a[0] + t * (b[0] - a[0]))
+    if not xs:
+        return float("nan")
+    return float(max(xs) - c[0])
+
+
+def support_polygon_metrics(
+    foot_pos_w: np.ndarray,
+    foot_force_norm: np.ndarray,
+    root_pos_w: np.ndarray,
+    root_quat_w: np.ndarray,
+    *,
+    dt: float,
+    crab_failure: np.ndarray | None = None,
+    walking_mask: np.ndarray | None = None,
+    com_pos_w: np.ndarray | None = None,
+    support_threshold_n: float = 50.0,
+    prefall_s: float = 1.0,
+    exclude_last_s: float = 0.1,
+    return_series: bool = False,
+) -> dict:
+    """Static-stability margins of the loaded-foot support polygon, in the heading frame.
+
+    Per frame: the loaded set ``L = {i : force >= support_threshold_n}``; feet and the CoM
+    projected into the heading frame (yaw-only rotation about the root, +x' = forward);
+    ``fwd_ray_margin_m`` (primary, pure-pitch tipping quantity), ``min_edge_margin_m``
+    (classic static stability margin), ``tip_angle_fwd_deg = atan2(fwd_ray_margin, h)``,
+    ``lead_contact_tip_deg = atan2(max x' of L - c_x', h)`` (the historical definition),
+    ``fore_aft_span_m`` and ``com_offset_x_m`` (CoM ahead of the loaded-foot centroid).
+    ``h`` = CoM height above the mean loaded-foot z. The CoM is ``com_pos_w`` when given,
+    else the root position (a proxy; the plant's measured longitudinal CoM offset is
+    ~0 mm, so this errs only in height).
+
+    Aggregates are p10/p50/p90 over ``walking_mask`` frames (all frames if None) and over
+    the ``prefall_s`` window before each ``crab_failure`` (excluding the final
+    ``exclude_last_s``), plus the fraction of frames with negative forward margin and the
+    fraction with fewer than three loaded feet (``frac_underdetermined``).
+    """
+    foot_pos_w = np.asarray(foot_pos_w, dtype=np.float64)
+    force = np.asarray(foot_force_norm, dtype=np.float64)
+    root = np.asarray(root_pos_w, dtype=np.float64)
+    T = foot_pos_w.shape[0]
+    com = root if com_pos_w is None else np.asarray(com_pos_w, dtype=np.float64)
+    yaw = yaw_from_quat_wxyz(root_quat_w)
+    c, s = np.cos(-yaw), np.sin(-yaw)
+
+    def to_heading(vec_xy):  # (T, K, 2) world-relative -> heading frame
+        x = c[:, None] * vec_xy[..., 0] - s[:, None] * vec_xy[..., 1]
+        y = s[:, None] * vec_xy[..., 0] + c[:, None] * vec_xy[..., 1]
+        return np.stack([x, y], axis=-1)
+
+    feet_h = to_heading(foot_pos_w[..., :2] - root[:, None, :2])
+    com_h = to_heading((com[:, :2] - root[:, :2])[:, None, :])[:, 0, :]
+
+    fwd = np.full(T, np.nan)
+    edge = np.full(T, np.nan)
+    lead = np.full(T, np.nan)
+    span = np.full(T, np.nan)
+    com_off = np.full(T, np.nan)
+    height = np.full(T, np.nan)
+    n_loaded = np.zeros(T, dtype=np.int64)
+    for t in range(T):
+        L = force[t] >= support_threshold_n
+        n_loaded[t] = int(L.sum())
+        if n_loaded[t] == 0:
+            continue
+        pts = feet_h[t, L]
+        height[t] = com[t, 2] - foot_pos_w[t, L, 2].mean()
+        span[t] = pts[:, 0].max() - pts[:, 0].min()
+        com_off[t] = com_h[t, 0] - pts[:, 0].mean()
+        lead[t] = pts[:, 0].max() - com_h[t, 0]
+        if n_loaded[t] >= 3:
+            hull = _convex_hull_xy(pts)
+            fwd[t] = _forward_ray_margin(hull, com_h[t])
+            edge[t] = _signed_min_edge_margin(hull, com_h[t])
+    with np.errstate(invalid="ignore"):
+        tip_fwd = np.degrees(np.arctan2(fwd, height))
+        tip_lead = np.degrees(np.arctan2(lead, height))
+
+    def _agg(mask: np.ndarray) -> dict:
+        def pct(a):
+            v = a[mask & np.isfinite(a)]
+            if v.size == 0:
+                return {"p10": None, "p50": None, "p90": None, "n": 0}
+            return {"p10": float(np.percentile(v, 10)), "p50": float(np.median(v)),
+                    "p90": float(np.percentile(v, 90)), "n": int(v.size)}
+        n_frames = int(mask.sum())
+        return {
+            "tip_angle_fwd_deg": pct(tip_fwd),
+            "lead_contact_tip_deg": pct(tip_lead),
+            "fwd_ray_margin_m": pct(fwd),
+            "min_edge_margin_m": pct(edge),
+            "fore_aft_span_m": pct(span),
+            "com_offset_x_m": pct(com_off),
+            "frac_neg_margin": (float(np.mean(fwd[mask & np.isfinite(fwd)] < 0.0))
+                                if np.any(mask & np.isfinite(fwd)) else None),
+            "frac_underdetermined": (float(np.mean(n_loaded[mask] < 3)) if n_frames else None),
+            "n_frames": n_frames,
+        }
+
+    walking = np.ones(T, dtype=bool) if walking_mask is None else np.asarray(walking_mask, dtype=bool)
+    prefall = np.zeros(T, dtype=bool)
+    if crab_failure is not None:
+        fails = np.flatnonzero(np.asarray(crab_failure, dtype=bool))
+        if fails.size:
+            t_fail = int(fails[0])
+            lo = max(0, t_fail - int(round(prefall_s / dt)))
+            hi = max(lo, t_fail - int(round(exclude_last_s / dt)))
+            prefall[lo:hi] = True
+    out = {"walking": _agg(walking), "prefall": _agg(prefall), "support_threshold_n": support_threshold_n}
+    if return_series:
+        out["series"] = {"tip_angle_fwd_deg": tip_fwd, "lead_contact_tip_deg": tip_lead,
+                         "fwd_ray_margin_m": fwd, "min_edge_margin_m": edge, "n_loaded": n_loaded,
+                         "height_m": height, "prefall_mask": prefall}
+    return out
+
+
+def fall_direction_metrics(
+    root_quat_w: np.ndarray,
+    crab_failure: np.ndarray,
+    *,
+    dt: float,
+    root_ang_vel_b: np.ndarray | None = None,
+    class_threshold_rad: float = 0.35,
+    rate_window_s: float = 0.5,
+) -> dict:
+    """Classify a termination by attitude at the failure step.
+
+    ``pitch_fwd`` (nose-down, pitch >= +threshold and |pitch| >= |roll|), ``pitch_back``,
+    ``roll``, or ``none`` (no crab_failure in the trace). Positive pitch = nose-down, matching
+    ``penalty_base_pitch_forward_linear``. Also reports time-to-fall and the peak pitch rate
+    over the last ``rate_window_s`` when ``root_ang_vel_b`` is given.
+    """
+    fails = np.flatnonzero(np.asarray(crab_failure, dtype=bool))
+    if fails.size == 0:
+        return {"fall_class": "none", "t_fail_s": None, "pitch_at_fail": None,
+                "roll_at_fail": None, "max_pitch_rate": None}
+    t = int(fails[0])
+    roll, pitch = roll_pitch_from_quat_wxyz(np.asarray(root_quat_w)[t])
+    roll, pitch = float(roll), float(pitch)
+    if abs(pitch) >= class_threshold_rad and abs(pitch) >= abs(roll):
+        cls = "pitch_fwd" if pitch > 0 else "pitch_back"
+    elif abs(roll) >= class_threshold_rad:
+        cls = "roll"
+    else:
+        cls = "other"
+    rate = None
+    if root_ang_vel_b is not None:
+        w = np.asarray(root_ang_vel_b, dtype=np.float64)
+        lo = max(0, t - int(round(rate_window_s / dt)))
+        seg = w[lo:t + 1, 1]
+        rate = float(np.abs(seg).max()) if seg.size else None
+    return {"fall_class": cls, "t_fail_s": t * dt, "pitch_at_fail": pitch,
+            "roll_at_fail": roll, "max_pitch_rate": rate}

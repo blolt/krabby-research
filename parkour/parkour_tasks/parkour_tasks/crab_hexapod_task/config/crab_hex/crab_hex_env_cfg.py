@@ -114,7 +114,17 @@ def _crab_hex_teacher_mode() -> str:
         return "full1"
     if raw in ("full2", "full_2", "full-2", "fullramp2", "full-ramp-2"):
         return "full2"
+    if raw in PHASE_TEACHER_MODES:      # paradigm phases 2a / 2b / 2c (2026-09-07)
+        return raw
     return "full"
+
+
+PHASE_TEACHER_MODES = ("2a", "2b", "2c")
+
+
+def _crab_hex_phase_mode_active() -> bool:
+    """Phase-2 teacher mode: the flat-walk MDP + elements (train and play must match)."""
+    return _crab_hex_teacher_mode() in PHASE_TEACHER_MODES
 
 
 def _crab_hex_bridge_like_mdp_active() -> bool:
@@ -388,6 +398,24 @@ def _apply_crab_hex_recal_2b2_parkour_geometry(tg) -> None:
         )
 
 
+def _apply_crab_hex_recal_2b2w_parkour_geometry(tg) -> None:
+    """PLAN H B0a (2026-09-03): recal2b2 with the obstacle corridors WIDENED to fit the
+    robot. The recal2b2 half-widths (gap 0.85-1.15, hurdle 0.4-0.8, step 0.5-1.0, stones
+    0.5 m) are all below the crab's 1.19 m half-stance, so the outer feet ride the 0.06-0.14 m
+    side trench from x ~ 2.5 m on -- the terrain z under the feet at the moment of fall and
+    why light ~= hard (0.26 vs 0.27). (1.40, 1.70) clears the stance with margin (tile 4.0 m
+    wide, bound 1.85). The corridor's lateral offset per segment is narrowed from +-0.4 to
+    +-0.2 m (stones: 0.08 m) because the crab is blind to it: the corridor must cover
+    half-stance + |offset|, and at least one side trench (>= 0.22 m) always remains.
+    ``recal2b2`` stays for reproducing old runs.
+    """
+    from parkour_tasks.crab_hexapod_task.mdp import exposure_knobs as _xk
+
+    _apply_crab_hex_recal_2b2_parkour_geometry(tg)
+    _xk.apply_corridor_widths(tg.sub_terrains, _xk.RECAL2B2W_HALF_VALID_WIDTH, _xk.RECAL2B2W_STONE_WIDTH,
+                              y_range=_xk.RECAL2B2W_Y_RANGE, stone_y_range=_xk.RECAL2B2W_STONE_Y_RANGE)
+
+
 @configclass
 class CrabHexTeacherEnvCfg(UnitreeGo2TeacherParkourEnvCfg):
     viewer = CRAB_HEX_VIEWER
@@ -418,8 +446,22 @@ class CrabHexTeacherEnvCfg(UnitreeGo2TeacherParkourEnvCfg):
         if self.events.randomize_rigid_body_com is not None:
             self.events.randomize_rigid_body_com.params["asset_cfg"] = base_body_cfg
 
-        mode = _crab_hex_teacher_mode()
-        if mode == "bridge":
+        self._crab_hex_apply_teacher_mode(_crab_hex_teacher_mode())
+
+    def _crab_hex_apply_teacher_mode(self, mode: str) -> None:
+        """Mode-specific MDP (rewards / terrain / actions). ``CrabHexFlatWalkEnvCfg`` calls this
+        with ``"full"`` regardless of ``KRABBY_HEX_TEACHER_MODE`` (a ``KRABBY_PHASE`` preset exports
+        a phase-2 mode; the flat-walk task must not apply the phase branch AND its own knobs)."""
+        if mode in PHASE_TEACHER_MODES:
+            # Paradigm phase 2 (teacher-student): the flat-walk MDP with the phase's elements,
+            # built from the same knobs the flat-walk task uses (see apply_flat_walk_knobs).
+            # Mirrors ``CrabHexFlatWalkEnvCfg`` exactly: its class-level rewards/terminations, the
+            # ``full`` action restore its parent chain applies (mode unset -> "full"), then the knobs.
+            self.rewards = CrabHexFlatWalkRewardsCfg()
+            self.terminations = CrabHexFlatWalkTerminationsCfg()
+            _apply_crab_hex_full_actions(self)
+            apply_flat_walk_knobs(self)
+        elif mode == "bridge":
             _apply_crab_hex_stage_2b_bridge_lite_env(self)
             self.rewards = CrabHexTeacherBridgeRewardsCfg()
             _apply_crab_hex_stage_2b_phase1_terrain(self)
@@ -452,6 +494,192 @@ class CrabHexTeacherEnvCfg(UnitreeGo2TeacherParkourEnvCfg):
             _apply_crab_hex_full_actions(self)
 
 
+def apply_flat_walk_knobs(cfg, *, include_reward_anneal: bool = True) -> None:
+    """The flat-walk MDP knobs (``KRABBY_*`` -> cfg), shared by every training phase.
+
+    Extracted verbatim from ``CrabHexFlatWalkEnvCfg.__post_init__`` (paradigm restore, 2026-09-07)
+    so that phase-2 teacher modes (``KRABBY_HEX_TEACHER_MODE=2a|2b|2c``) and the phase-3 student
+    MDP build the identical environment from the same knobs. ``include_reward_anneal=False`` skips
+    the ``KRABBY_PHASEOUT`` reward-weight curriculum (distillation has no RL reward).
+    """
+    # Straight flat-walk: fixed world heading 0; P-control corrects slow yaw drift in play/train.
+    # NOTE(gait-formation Phase 0, 2026-08-20): command range overridable per-arm as
+    # "lo:hi" (e.g. KRABBY_LIN_VEL_X="0.0:0.35" for a stand-first survival arm).
+    # NOTE(gait-formation Phase A, 2026-08-21): command resampling override "lo:hi"
+    # seconds. The eval holds commands 10 s but training resampled every 6 s -- C5/C9
+    # both plateaued at ~0.3 eval completion while passing training gates; policies
+    # never trained against a sustained hold.
+    _rs = os.environ.get("KRABBY_RESAMPLE_S")
+    if _rs is not None:
+        _rlo, _rhi = (float(x) for x in _rs.split(":"))
+        cfg.commands.base_velocity.resampling_time_range = (_rlo, _rhi)
+    _lvx = os.environ.get("KRABBY_LIN_VEL_X")
+    if _lvx is not None:
+        _lo, _hi = (float(x) for x in _lvx.split(":"))
+        cfg.commands.base_velocity.ranges.lin_vel_x = (_lo, _hi)
+    else:
+        cfg.commands.base_velocity.ranges.lin_vel_x = (0.30, 0.65)
+    cfg.commands.base_velocity.ranges.heading = (0.0, 0.0)
+    # NOTE(gait-formation-v2 Phase 1): RSI arm — seed a fraction of resets from the
+    # Phase-0 scripted-gait reference bank (see crab_hex_rsi.py). Presence-based.
+    _rsi = os.environ.get("KRABBY_RSI_FRAC")
+    if _rsi is not None and float(_rsi) > 0.0:
+        from isaaclab.managers import EventTermCfg as _EventTerm
+
+        from parkour_tasks.crab_hexapod_task.mdp import crab_hex_rsi as _rsi_mod
+
+        _bank_default = (
+            "/home/nickmagus/krabby/krabby-research/sim_fine_tuning/"
+            "2026-08-22_1200_gait_formation_v2/rsi_bank_setAB.npz"
+        )
+        cfg.events.rsi_reference_reset = _EventTerm(
+            func=_rsi_mod.reset_from_reference_states,
+            mode="reset",
+            params={
+                "bank_path": os.environ.get("KRABBY_RSI_BANK", _bank_default),
+                "fraction": float(_rsi),
+                # PLAN H B4: place RSI resets where reset_root_state places (unset = old
+                # tile-centre placement, bit-identical).
+                "fix_spawn": os.environ.get("KRABBY_RSI_SPAWN_FIX", "").strip().lower()
+                in ("1", "true", "yes", "on"),
+            },
+        )
+    cfg.commands.base_velocity.heading_control_stiffness = 1.5
+    # NOTE(gait-formation Phase 0): unidirectional cam clamp (structural
+    # continuous-spin lever, lit-review "clamp + cadence-linked income" recipe).
+    # KRABBY_CAM_CLIP_LO sets the LOWER raw-action bound on the six cam velocity
+    # channels only (upper stays +1.0): e.g. 0.1 -> commanded shaft speed in
+    # [0.1*pi, pi], oscillation not expressible. Unset = symmetric (-1, 1).
+    _cam_lo = os.environ.get("KRABBY_CAM_CLIP_LO")
+    if _cam_lo is not None:
+        clip = dict(cfg.actions.joint_pos.clip)
+        clip[".*_Body_CamShaft_RevoluteJoint"] = (float(_cam_lo), 1.0)
+        cfg.actions.joint_pos.clip = clip
+    # NOTE(PLAN F gated lineage, 2026-08-26): DR events default OFF (as always for
+    # flat-walk) but each is now individually armable for the P6 elements.
+    _dr_push = os.environ.get("KRABBY_DR_PUSH")
+    if _dr_push is not None and cfg.events.push_by_setting_velocity is not None:
+        _pv = float(_dr_push)
+        cfg.events.push_by_setting_velocity.params["velocity_range"] = {
+            "x": (-_pv, _pv), "y": (-_pv, _pv)
+        }
+    else:
+        cfg.events.push_by_setting_velocity = None
+    _dr_mass = os.environ.get("KRABBY_DR_MASS")
+    if _dr_mass is not None and cfg.events.randomize_rigid_body_mass is not None:
+        _mlo, _mhi = (float(x) for x in _dr_mass.split(":"))
+        cfg.events.randomize_rigid_body_mass.params["mass_distribution_params"] = (_mlo, _mhi)
+    else:
+        cfg.events.randomize_rigid_body_mass = None
+    _dr_com = os.environ.get("KRABBY_DR_COM")
+    if _dr_com is not None and cfg.events.randomize_rigid_body_com is not None:
+        _cv = float(_dr_com)
+        cfg.events.randomize_rigid_body_com.params["com_range"] = {
+            "x": (-_cv, _cv), "y": (-_cv, _cv), "z": (-_cv, _cv)
+        }
+    else:
+        cfg.events.randomize_rigid_body_com = None
+    # PLAN F: turning school — heading command band ("lo:hi", rad). Default stays (0,0).
+    _hd = os.environ.get("KRABBY_HEADING")
+    if _hd is not None:
+        _hlo, _hhi = (float(x) for x in _hd.split(":"))
+        cfg.commands.base_velocity.ranges.heading = (_hlo, _hhi)
+    _hcs = os.environ.get("KRABBY_HEADING_STIFFNESS")
+    if _hcs is not None:  # pre-authorized turning-school fallback (1.5 -> 0.75)
+        cfg.commands.base_velocity.heading_control_stiffness = float(_hcs)
+    # PLAN F: episode length switch (P2 onward trains at 40 s).
+    _eps = os.environ.get("KRABBY_EPISODE_S")
+    if _eps is not None:
+        cfg.episode_length_s = float(_eps)
+    # PLAN F: termination knobs (flat defaults 0.5 rad / 500 N stay unless set).
+    _ta = os.environ.get("KRABBY_TERM_ANGLE")
+    if _ta is not None:
+        cfg.terminations.crab_failure.params["limit_angle"] = float(_ta)
+    _tc = os.environ.get("KRABBY_TERM_CONTACT_N")
+    if _tc is not None:
+        cfg.terminations.crab_failure.params["contact_force_threshold"] = float(_tc)
+    # PLAN F: terrain-level promotion fractions recalibrated for the plant's ~0.5
+    # tracking ratio (stock 0.8/0.4 can never promote here) — "up:down".
+    _tp = os.environ.get("KRABBY_TERRAIN_PROMOTE")
+    if _tp is not None:
+        _up, _down = (float(x) for x in _tp.split(":"))
+        cfg.parkours.base_parkour.move_up_frac = _up
+        cfg.parkours.base_parkour.move_down_frac = _down
+    tg = getattr(cfg.scene.terrain, "terrain_generator", None) if cfg.scene.terrain else None
+    if tg is not None:
+        tg.curriculum = False
+        tg.difficulty_range = (0.1, 0.25)
+        for key, sub_terrain in tg.sub_terrains.items():
+            if key == "parkour_flat":
+                sub_terrain.proportion = 1.0
+            else:
+                sub_terrain.proportion = 0.0
+    # NOTE(phased-flat Phase C 2026-08-18): ``KRABBY_FLAT_TERRAIN_MODE=light`` blends
+    # easy obstacles into flat-walk so lifting is learned while the gait is still
+    # plastic (the carry-up lineages showed obstacles-after-consolidation plateaus).
+    # Same terrain recipe family as the bridge stage but gentler: frozen levels,
+    # shallow parkour geometry, defaults 80% flat / difficulty 0.05-0.2. Knobs:
+    # ``KRABBY_FLAT_TERRAIN_FLAT_FRAC`` and ``KRABBY_FLAT_TERRAIN_DIFF`` ("lo:hi").
+    _flat_mode = os.environ.get("KRABBY_FLAT_TERRAIN_MODE", "").strip().lower()
+    if _flat_mode in ("light", "1", "true", "yes") and tg is not None:
+        cfg.parkours.base_parkour.freeze_terrain_levels = True
+        _frac = float(os.environ.get("KRABBY_FLAT_TERRAIN_FLAT_FRAC", "0.8"))
+        _lo, _hi = (
+            float(x) for x in os.environ.get("KRABBY_FLAT_TERRAIN_DIFF", "0.05:0.2").split(":")
+        )
+        _apply_crab_hex_easy_mixed_terrain(tg, flat_proportion=_frac, difficulty_range=(_lo, _hi))
+        # PLAN F: geometry preset — "shallow" (bridge-era default) or "recal2b2" (the
+        # plant-recalibrated end-state geometry).
+        _geom = os.environ.get("KRABBY_FLAT_TERRAIN_GEOM", "shallow").strip().lower()
+        if _geom == "recal2b2":
+            _apply_crab_hex_recal_2b2_parkour_geometry(tg)
+        elif _geom == "recal2b2w":  # PLAN H B0a: corridors widened to the plant
+            _apply_crab_hex_recal_2b2w_parkour_geometry(tg)
+        else:
+            _apply_crab_hex_bridge_shallow_parkour_geometry(tg)
+        # PLAN F: terrain-level curriculum enable (applied AFTER the mixed-terrain
+        # helper, which forces curriculum False).
+        if os.environ.get("KRABBY_FLAT_TERRAIN_CURRICULUM", "").strip() in ("1", "true", "yes"):
+            cfg.parkours.base_parkour.freeze_terrain_levels = False
+            tg.curriculum = True
+    # PLAN H (2026-09-03) obstacle-exposure knobs. All unset = bit-identical. Parsing,
+    # bounds and the corridor helpers live in mdp/exposure_knobs.py (unit-tested).
+    #   KRABBY_CORRIDOR_HALF_WIDTH=lo:hi / KRABBY_STONE_WIDTH=w  -- applied AFTER any preset
+    #   KRABBY_STAND_FRAC=p        -- B1 Bernoulli standing slots (command term)
+    #   KRABBY_SPAWN_OFFSET=m      -- B2 platform spawn offset (default 3.0 -> tile-local 1.0 m)
+    #   KRABBY_SPAWN_SPREAD=lo:hi[:frac] -- B3 spawn along the course (tile-local m)
+    from parkour_tasks.crab_hexapod_task.mdp import exposure_knobs as _xk
+
+    _half, _stone = _xk.corridor_overrides_from_env(os.environ)
+    if tg is not None and (_half is not None or _stone is not None):
+        _xk.apply_corridor_widths(tg.sub_terrains, _half, _stone)
+    _sf = os.environ.get("KRABBY_STAND_FRAC")
+    if _sf:
+        cfg.commands.base_velocity.stand_frac = _xk.parse_stand_frac(_sf)
+    _so = os.environ.get("KRABBY_SPAWN_OFFSET")
+    if _so:
+        cfg.events.reset_root_state.params["offset"] = _xk.parse_spawn_offset(_so)
+    _ss = os.environ.get("KRABBY_SPAWN_SPREAD")
+    if _ss:
+        _slo, _shi, _sfrac = _xk.parse_spawn_spread(_ss)
+        cfg.events.reset_root_state.params["spread"] = (_slo, _shi)
+        cfg.events.reset_root_state.params["spread_frac"] = _sfrac
+    # NOTE(PLAN G gait-income phase-out, 2026-08-31): in-run cosine anneal of reward
+    # term weights via the (already-constructed) CurriculumManager. Armed only by
+    # KRABBY_PHASEOUT="term:w0:w1:t0:t1[,...]" (t in env steps, relative to process
+    # start); unset leaves cfg.curriculum = None — bit-identical to before.
+    # Targets are epsilon-clamped (>=1e-3): weight-exactly-0.0 terms are skipped by
+    # ParkourRewardManager and their Episode_Reward telemetry (the campaign's gait
+    # gate metric) would flatline.
+    _phaseout = os.environ.get("KRABBY_PHASEOUT") if include_reward_anneal else None
+    if _phaseout:
+        from parkour_tasks.crab_hexapod_task.mdp.curriculums import (
+            phaseout_curriculum_cfg_from_env,
+        )
+
+        cfg.curriculum = phaseout_curriculum_cfg_from_env(_phaseout)
+
+
 @configclass
 class CrabHexFlatWalkEnvCfg(CrabHexTeacherEnvCfg):
     """Stage 1 **gait** (``Isaac-Crab-Hex-Flat-Walk-v0``): no ``KRABBY_HEX_TEACHER_MODE``.
@@ -467,155 +695,19 @@ class CrabHexFlatWalkEnvCfg(CrabHexTeacherEnvCfg):
     terminations: CrabHexFlatWalkTerminationsCfg = CrabHexFlatWalkTerminationsCfg()
 
     def __post_init__(self):
-        super().__post_init__()
-        # Straight flat-walk: fixed world heading 0; P-control corrects slow yaw drift in play/train.
-        # NOTE(gait-formation Phase 0, 2026-08-20): command range overridable per-arm as
-        # "lo:hi" (e.g. KRABBY_LIN_VEL_X="0.0:0.35" for a stand-first survival arm).
-        # NOTE(gait-formation Phase A, 2026-08-21): command resampling override "lo:hi"
-        # seconds. The eval holds commands 10 s but training resampled every 6 s -- C5/C9
-        # both plateaued at ~0.3 eval completion while passing training gates; policies
-        # never trained against a sustained hold.
-        _rs = os.environ.get("KRABBY_RESAMPLE_S")
-        if _rs is not None:
-            _rlo, _rhi = (float(x) for x in _rs.split(":"))
-            self.commands.base_velocity.resampling_time_range = (_rlo, _rhi)
-        _lvx = os.environ.get("KRABBY_LIN_VEL_X")
-        if _lvx is not None:
-            _lo, _hi = (float(x) for x in _lvx.split(":"))
-            self.commands.base_velocity.ranges.lin_vel_x = (_lo, _hi)
-        else:
-            self.commands.base_velocity.ranges.lin_vel_x = (0.30, 0.65)
-        self.commands.base_velocity.ranges.heading = (0.0, 0.0)
-        # NOTE(gait-formation-v2 Phase 1): RSI arm — seed a fraction of resets from the
-        # Phase-0 scripted-gait reference bank (see crab_hex_rsi.py). Presence-based.
-        _rsi = os.environ.get("KRABBY_RSI_FRAC")
-        if _rsi is not None and float(_rsi) > 0.0:
-            from isaaclab.managers import EventTermCfg as _EventTerm
-
-            from parkour_tasks.crab_hexapod_task.mdp import crab_hex_rsi as _rsi_mod
-
-            _bank_default = (
-                "/home/nickmagus/krabby/krabby-research/sim_fine_tuning/"
-                "2026-08-22_1200_gait_formation_v2/rsi_bank_setAB.npz"
-            )
-            self.events.rsi_reference_reset = _EventTerm(
-                func=_rsi_mod.reset_from_reference_states,
-                mode="reset",
-                params={
-                    "bank_path": os.environ.get("KRABBY_RSI_BANK", _bank_default),
-                    "fraction": float(_rsi),
-                },
-            )
-        self.commands.base_velocity.heading_control_stiffness = 1.5
-        # NOTE(gait-formation Phase 0): unidirectional cam clamp (structural
-        # continuous-spin lever, lit-review "clamp + cadence-linked income" recipe).
-        # KRABBY_CAM_CLIP_LO sets the LOWER raw-action bound on the six cam velocity
-        # channels only (upper stays +1.0): e.g. 0.1 -> commanded shaft speed in
-        # [0.1*pi, pi], oscillation not expressible. Unset = symmetric (-1, 1).
-        _cam_lo = os.environ.get("KRABBY_CAM_CLIP_LO")
-        if _cam_lo is not None:
-            clip = dict(self.actions.joint_pos.clip)
-            clip[".*_Body_CamShaft_RevoluteJoint"] = (float(_cam_lo), 1.0)
-            self.actions.joint_pos.clip = clip
-        # NOTE(PLAN F gated lineage, 2026-08-26): DR events default OFF (as always for
-        # flat-walk) but each is now individually armable for the P6 elements.
-        _dr_push = os.environ.get("KRABBY_DR_PUSH")
-        if _dr_push is not None and self.events.push_by_setting_velocity is not None:
-            _pv = float(_dr_push)
-            self.events.push_by_setting_velocity.params["velocity_range"] = {
-                "x": (-_pv, _pv), "y": (-_pv, _pv)
-            }
-        else:
-            self.events.push_by_setting_velocity = None
-        _dr_mass = os.environ.get("KRABBY_DR_MASS")
-        if _dr_mass is not None and self.events.randomize_rigid_body_mass is not None:
-            _mlo, _mhi = (float(x) for x in _dr_mass.split(":"))
-            self.events.randomize_rigid_body_mass.params["mass_distribution_params"] = (_mlo, _mhi)
-        else:
-            self.events.randomize_rigid_body_mass = None
-        _dr_com = os.environ.get("KRABBY_DR_COM")
-        if _dr_com is not None and self.events.randomize_rigid_body_com is not None:
-            _cv = float(_dr_com)
-            self.events.randomize_rigid_body_com.params["com_range"] = {
-                "x": (-_cv, _cv), "y": (-_cv, _cv), "z": (-_cv, _cv)
-            }
-        else:
-            self.events.randomize_rigid_body_com = None
-        # PLAN F: turning school — heading command band ("lo:hi", rad). Default stays (0,0).
-        _hd = os.environ.get("KRABBY_HEADING")
-        if _hd is not None:
-            _hlo, _hhi = (float(x) for x in _hd.split(":"))
-            self.commands.base_velocity.ranges.heading = (_hlo, _hhi)
-        _hcs = os.environ.get("KRABBY_HEADING_STIFFNESS")
-        if _hcs is not None:  # pre-authorized turning-school fallback (1.5 -> 0.75)
-            self.commands.base_velocity.heading_control_stiffness = float(_hcs)
-        # PLAN F: episode length switch (P2 onward trains at 40 s).
-        _eps = os.environ.get("KRABBY_EPISODE_S")
-        if _eps is not None:
-            self.episode_length_s = float(_eps)
-        # PLAN F: termination knobs (flat defaults 0.5 rad / 500 N stay unless set).
-        _ta = os.environ.get("KRABBY_TERM_ANGLE")
-        if _ta is not None:
-            self.terminations.crab_failure.params["limit_angle"] = float(_ta)
-        _tc = os.environ.get("KRABBY_TERM_CONTACT_N")
-        if _tc is not None:
-            self.terminations.crab_failure.params["contact_force_threshold"] = float(_tc)
-        # PLAN F: terrain-level promotion fractions recalibrated for the plant's ~0.5
-        # tracking ratio (stock 0.8/0.4 can never promote here) — "up:down".
-        _tp = os.environ.get("KRABBY_TERRAIN_PROMOTE")
-        if _tp is not None:
-            _up, _down = (float(x) for x in _tp.split(":"))
-            self.parkours.base_parkour.move_up_frac = _up
-            self.parkours.base_parkour.move_down_frac = _down
-        tg = getattr(self.scene.terrain, "terrain_generator", None) if self.scene.terrain else None
-        if tg is not None:
-            tg.curriculum = False
-            tg.difficulty_range = (0.1, 0.25)
-            for key, sub_terrain in tg.sub_terrains.items():
-                if key == "parkour_flat":
-                    sub_terrain.proportion = 1.0
-                else:
-                    sub_terrain.proportion = 0.0
-        # NOTE(phased-flat Phase C 2026-08-18): ``KRABBY_FLAT_TERRAIN_MODE=light`` blends
-        # easy obstacles into flat-walk so lifting is learned while the gait is still
-        # plastic (the carry-up lineages showed obstacles-after-consolidation plateaus).
-        # Same terrain recipe family as the bridge stage but gentler: frozen levels,
-        # shallow parkour geometry, defaults 80% flat / difficulty 0.05-0.2. Knobs:
-        # ``KRABBY_FLAT_TERRAIN_FLAT_FRAC`` and ``KRABBY_FLAT_TERRAIN_DIFF`` ("lo:hi").
-        _flat_mode = os.environ.get("KRABBY_FLAT_TERRAIN_MODE", "").strip().lower()
-        if _flat_mode in ("light", "1", "true", "yes") and tg is not None:
-            self.parkours.base_parkour.freeze_terrain_levels = True
-            _frac = float(os.environ.get("KRABBY_FLAT_TERRAIN_FLAT_FRAC", "0.8"))
-            _lo, _hi = (
-                float(x) for x in os.environ.get("KRABBY_FLAT_TERRAIN_DIFF", "0.05:0.2").split(":")
-            )
-            _apply_crab_hex_easy_mixed_terrain(tg, flat_proportion=_frac, difficulty_range=(_lo, _hi))
-            # PLAN F: geometry preset — "shallow" (bridge-era default) or "recal2b2" (the
-            # plant-recalibrated end-state geometry).
-            _geom = os.environ.get("KRABBY_FLAT_TERRAIN_GEOM", "shallow").strip().lower()
-            if _geom == "recal2b2":
-                _apply_crab_hex_recal_2b2_parkour_geometry(tg)
-            else:
-                _apply_crab_hex_bridge_shallow_parkour_geometry(tg)
-            # PLAN F: terrain-level curriculum enable (applied AFTER the mixed-terrain
-            # helper, which forces curriculum False).
-            if os.environ.get("KRABBY_FLAT_TERRAIN_CURRICULUM", "").strip() in ("1", "true", "yes"):
-                self.parkours.base_parkour.freeze_terrain_levels = False
-                tg.curriculum = True
-        # NOTE(PLAN G gait-income phase-out, 2026-08-31): in-run cosine anneal of reward
-        # term weights via the (already-constructed) CurriculumManager. Armed only by
-        # KRABBY_PHASEOUT="term:w0:w1:t0:t1[,...]" (t in env steps, relative to process
-        # start); unset leaves self.curriculum = None — bit-identical to before.
-        # Targets are epsilon-clamped (>=1e-3): weight-exactly-0.0 terms are skipped by
-        # ParkourRewardManager and their Episode_Reward telemetry (the campaign's gait
-        # gate metric) would flatline.
-        _phaseout = os.environ.get("KRABBY_PHASEOUT")
-        if _phaseout:
-            from parkour_tasks.crab_hexapod_task.mdp.curriculums import (
-                phaseout_curriculum_cfg_from_env,
-            )
-
-            self.curriculum = phaseout_curriculum_cfg_from_env(_phaseout)
+        # The teacher parent's post-init with the mode pinned to "full" (see
+        # ``_crab_hex_apply_teacher_mode``), then the flat-walk knobs -- the chain every
+        # flat-walk lineage trained through, independent of KRABBY_HEX_TEACHER_MODE.
+        super(CrabHexTeacherEnvCfg, self).__post_init__()
+        self.sim.physx.enable_external_forces_every_iteration = True
+        self.commands.base_velocity.ranges.lin_vel_x = (0.45, 0.85)
+        base_body_cfg = SceneEntityCfg("robot", body_names="body")
+        for ev in (self.events.base_external_force_torque, self.events.randomize_rigid_body_mass,
+                   self.events.randomize_rigid_body_com):
+            if ev is not None:
+                ev.params["asset_cfg"] = base_body_cfg
+        self._crab_hex_apply_teacher_mode("full")
+        apply_flat_walk_knobs(self)
 
 
 @configclass
@@ -650,8 +742,8 @@ class CrabHexTeacherEnvCfgPLAY(CrabHexTeacherEnvCfg):
         self.commands.base_velocity.debug_vis = True
         if self.scene.terrain is not None:
             self.scene.terrain.max_init_terrain_level = None
-        # Bridge / stage-2b train sets terrain in ``CrabHexTeacherEnvCfg``; play must match train.
-        if _crab_hex_bridge_like_mdp_active():
+        # Bridge / stage-2b / phase-2 train sets terrain in ``CrabHexTeacherEnvCfg``; play must match train.
+        if _crab_hex_bridge_like_mdp_active() or _crab_hex_phase_mode_active():
             return
         tg = getattr(self.scene.terrain, "terrain_generator", None) if self.scene.terrain else None
         if tg is not None:
@@ -692,8 +784,26 @@ class CrabHexStudentEnvCfg(CrabHexStudentParkourEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
-        _apply_crab_hex_student_2b2_teacher_mdp(self)
+        from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_phases import is_student_phase
+
         base_body_cfg = SceneEntityCfg("robot", body_names="body")
+        if is_student_phase():
+            # Paradigm phase 3: the student's MDP is the phase-2c teacher MDP -- the teacher's
+            # terrain generator (0.08 m full-resolution tiles, 40 columns; the student scene's
+            # simplified 0.1 m / 20-column mesh would change the obstacle geometry the teacher
+            # was trained on), the flat-walk terminations, the ``full`` action space the 2c teacher
+            # acts in, push / mass / CoM DR on the chassis body, and the same knobs (terrain band,
+            # walking slots, horizon, DR, RSI, plant). No reward anneal (distillation has no reward).
+            self.scene.terrain = CrabHexTeacherSceneCfg().terrain
+            self.sim.physx.enable_external_forces_every_iteration = True
+            self.terminations = CrabHexFlatWalkTerminationsCfg()
+            _apply_crab_hex_full_actions(self)
+            for ev in (self.events.randomize_rigid_body_mass, self.events.randomize_rigid_body_com):
+                if ev is not None:
+                    ev.params["asset_cfg"] = base_body_cfg
+            apply_flat_walk_knobs(self, include_reward_anneal=False)
+        else:
+            _apply_crab_hex_student_2b2_teacher_mdp(self)
         if self.events.base_external_force_torque is not None:
             self.events.base_external_force_torque.params["asset_cfg"] = base_body_cfg
 

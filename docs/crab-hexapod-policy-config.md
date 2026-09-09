@@ -62,6 +62,11 @@ This document describes **crab hexapod** policy, scene, and training configurati
 | `PYTHONPATH` | Must include **`parkour/parkour_tasks`** (directory containing the `parkour_tasks` package) for imports when using `isaaclab.sh -p`. |
 | `KRABBY_HEX_USD_PATH` | Absolute path to the hexapod stage (`crab_hex.usd` or **`crab_hex.usda`**). **Use the same path for GUI and headless runs** (`echo "$KRABBY_HEX_USD_PATH"` before launch). Prefer pointing at **`assets/crab_hex.usda`** while iterating so PhysX sees edits without re-export; for deployment, use a binary `.usd` exported from that usda (Omniverse: open usda → Export, or your pipeline’s `usdcat`/`usdconvert`). A stale `.usd` that predates friction fixes can trigger PhysX joint friction errors. |
 | `RUN_CRAB_HEX_RUNTIME_SMOKE` | Set to `1` to enable Isaac env rollout tests in pytest. |
+| `KRABBY_PHASE` | **Training-phase preset** (`1a`, `2a`, `2b`, `2c`, `3a`, `3b`; `legacy_golden_1a…2e`). Expands into the `KRABBY_*` knobs of the baked curriculum with *setdefault* semantics (an explicitly exported variable wins), including `KRABBY_HEX_TEACHER_MODE` for phase 2. Defined in `config/crab_hex/crab_hex_phases.py`; applied on import of the crab-hex config package. |
+| `KRABBY_PLANT` | Plant (morphology) preset: `golden`, `B`, `A10`, `A15`, `A20`, `A10+B`, `A15+B`, `A20+B` → sets `KRABBY_HEX_USD_PATH` to the generated variant. |
+| `KRABBY_STUDENT_MDP` | `1` makes `Isaac-Crab-Hex-Student-v0` use the phase-3 structure (2c teacher terrain generator, flat-walk terminations, `full` actions, DR on the chassis) without a phase preset — for evaluating a phase-3 student with explicit knobs. |
+| `KRABBY_HEX_TEACHER_MODE` | Teacher MDP mode: `2a`/`2b`/`2c` (paradigm phase 2 = flat-walk MDP + elements) or the legacy `bridge`/`2b1`/`2b2`/`full1`/`full2`/`full`. The flat-walk task ignores it. |
+| other `KRABBY_*` | Expert overrides of individual knobs (element weights, terrain presets, DR, RSI, exposure, `KRABBY_PHASEOUT` ramps). Prefer `KRABBY_PHASE`; see `crab_hex_phases.py` for the recorded stacks. |
 
 ## Commands
 
@@ -75,6 +80,13 @@ export KRABBY_HEX_USD_PATH="/absolute/path/to/krabby-research/assets/crab_hex.us
 cd /absolute/path/to/krabby-research
 /path/to/IsaacLab/isaaclab.sh -p -m pytest tests/integration/test_crab_hexapod_policy_config.py -v
 RUN_CRAB_HEX_RUNTIME_SMOKE=1 /path/to/IsaacLab/isaaclab.sh -p -m pytest tests/integration/test_crab_hexapod_policy_config.py -v
+
+# Paradigm phases (current): one preset per phase, plant by name
+KRABBY_PHASE=1a KRABBY_PLANT=A15+B python scripts/rsl_rl/train.py --task Isaac-Crab-Hex-Flat-Walk-v0 --headless --num_envs 256 --seed 3 --max_iterations 5000
+KRABBY_PHASE=2a KRABBY_PLANT=A15+B python scripts/rsl_rl/train.py --task Isaac-Crab-Hex-Teacher-v0 --headless --num_envs 256 --seed 3 --max_iterations 5000 --resume --checkpoint <1a head>
+KRABBY_PHASE=3a KRABBY_PLANT=A15+B python scripts/rsl_rl/train.py --task Isaac-Crab-Hex-Student-v0 --headless --num_envs 192 --seed 3 --max_iterations 5000 --resume --checkpoint <2c head>
+# Config identity of the presets (6 headless boots, no sim stepping)
+RUN_CRAB_HEX_CFG_IDENTITY=1 python -m pytest tests/integration/test_crab_hex_phase_configs.py -v
 
 # Short teacher training
 cd /absolute/path/to/krabby-research/parkour

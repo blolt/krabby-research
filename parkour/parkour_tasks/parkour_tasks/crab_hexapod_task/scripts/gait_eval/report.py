@@ -150,6 +150,27 @@ def score_episode(
         slip_speed_threshold=slip_thresh,
     )
     out["orientation"] = M.orientation_metrics(raw["root_quat_w"][ep, env_idx, :])
+    # PLAN G (2026-09-02): fall direction + support-polygon margins (heading frame, root as the
+    # CoM proxy here; exact CoM needs run_meta body masses + the body_pos_w buffer offline).
+    if "crab_failure" in raw:
+        out["fall_direction"] = M.fall_direction_metrics(
+            raw["root_quat_w"][ep, env_idx, :],
+            raw["crab_failure"][ep, env_idx],
+            dt=dt,
+            root_ang_vel_b=raw["root_ang_vel_b"][ep, env_idx] if "root_ang_vel_b" in raw else None,
+        )
+        walking = compiled.steady_mask[ep, env_idx] & (
+            np.abs(raw["cmd_applied"][ep, env_idx, 0]) >= lin_vel_clip
+        )
+        out["support_polygon"] = M.support_polygon_metrics(
+            raw["foot_pos_w"][ep, env_idx],
+            raw["foot_force_norm"][ep, env_idx],
+            raw["root_pos_w"][ep, env_idx],
+            raw["root_quat_w"][ep, env_idx, :],
+            dt=dt,
+            crab_failure=raw["crab_failure"][ep, env_idx],
+            walking_mask=walking,
+        )
     out["actions"] = M.action_metrics(
         raw["actions"][ep, env_idx],
         joint_groups=action_groups,
@@ -264,9 +285,41 @@ def aggregate(episodes: list[dict]) -> dict:
             if tr["vx"].get("ratio") is not None:
                 slot["ratio"].append(tr["vx"]["ratio"])
 
+    # PLAN G: fall-direction classes and support-polygon margins (pooled percentiles of the
+    # per-episode p50s; the offline campaign scripts pool frames directly from raw npz).
+    fall_classes: dict[str, int] = {}
+    for e in episodes:
+        fd = e.get("fall_direction")
+        if fd:
+            fall_classes[fd["fall_class"]] = fall_classes.get(fd["fall_class"], 0) + 1
+    polygon: dict[str, dict] = {}
+    for window in ("walking", "prefall"):
+        for key in ("tip_angle_fwd_deg", "lead_contact_tip_deg", "fwd_ray_margin_m"):
+            vals = [
+                e["support_polygon"][window][key]["p50"]
+                for e in episodes
+                if e.get("support_polygon") and e["support_polygon"][window][key]["p50"] is not None
+            ]
+            polygon[f"{window}_{key}"] = _stats(vals)
+        negs = [
+            e["support_polygon"][window]["frac_neg_margin"]
+            for e in episodes
+            if e.get("support_polygon") and e["support_polygon"][window]["frac_neg_margin"] is not None
+        ]
+        polygon[f"{window}_frac_neg_margin"] = _stats(negs)
+
+    orientation = {
+        key: _stats([e["orientation"][key] for e in episodes
+                     if e.get("orientation") and e["orientation"].get(key) is not None])
+        for key in ("roll_rms", "pitch_rms", "roll_max_abs", "pitch_max_abs")
+    }
+
     n_eps = len(episodes)
     return {
         "n_episodes": n_eps,
+        "fall_classes": fall_classes,
+        "orientation": orientation,
+        "support_polygon": polygon,
         "n_unscored_episodes": n_eps - len(scores),
         "tripod_score": _stats(scores),
         "tripod_score_by_hold": {k: _stats(v) for k, v in per_hold.items()},

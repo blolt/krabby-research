@@ -95,6 +95,8 @@ def main() -> None:
     contact = uenv.scene.sensors["contact_forces"]
     foot_ids, _ = contact.find_bodies(FOOT_NAMES, preserve_order=True)
     foot_body_ids, _ = robot.find_bodies(FOOT_NAMES, preserve_order=True)
+    # PLAN G (2026-09-02): leg-link contact + all-env recording for the morphology probe matrix.
+    leg_ids, leg_names = contact.find_bodies([".*_Hip", ".*_Femur", ".*_Tibia"])
     dt = uenv.step_dt
     print(f"[probe2] cams={cam_cols} knees={knee_cols} w={args_cli.w}", flush=True)
 
@@ -127,7 +129,9 @@ def main() -> None:
                 act[:, c] = dw * args_cli.w
             rec = {k: [] for k in ("root_lin_vel_b", "root_pos_w", "root_quat_w", "cam_pos",
                                    "joint_pos", "joint_vel", "foot_force_N", "done",
-                                   "foot_pos_w", "foot_lin_vel_w")}
+                                   "foot_pos_w", "foot_lin_vel_w",
+                                   "done_all", "root_lin_vel_b_all", "root_pos_w_all", "root_quat_w_all",
+                                   "foot_force_N_all", "foot_pos_w_all", "leg_contact_N_all")}
             for t in range(args_cli.hold_steps):
                 cam_angles = robot.data.joint_pos[0, cam_joint_ids]
                 for j, leg in enumerate(cam_leg_of_joint):
@@ -149,11 +153,19 @@ def main() -> None:
                 rec["foot_pos_w"].append(d.body_pos_w[0, foot_body_ids].cpu().numpy().copy())
                 rec["foot_lin_vel_w"].append(d.body_lin_vel_w[0, foot_body_ids].cpu().numpy().copy())
                 rec["done"].append(bool(terminated[0] or truncated[0]))
+                rec["done_all"].append((terminated | truncated).cpu().numpy().copy())
+                rec["root_lin_vel_b_all"].append(d.root_lin_vel_b.cpu().numpy().copy())
+                rec["root_pos_w_all"].append(d.root_pos_w.cpu().numpy().copy())
+                rec["root_quat_w_all"].append(d.root_quat_w.cpu().numpy().copy())
+                rec["foot_force_N_all"].append(contact.data.net_forces_w[:, foot_ids].norm(dim=-1).cpu().numpy().copy())
+                rec["foot_pos_w_all"].append(d.body_pos_w[:, foot_body_ids].cpu().numpy().copy())
+                rec["leg_contact_N_all"].append(contact.data.net_forces_w[:, leg_ids].norm(dim=-1).cpu().numpy().copy())
             arrays = {k: np.asarray(v) for k, v in rec.items()}
             arrays["dt"] = np.asarray(dt)
             arrays["omega_rad_s"] = np.asarray(dw * args_cli.w * math.pi)
             arrays["phase_center"] = np.asarray(phase_center)
             arrays["knee_sign"] = np.asarray(knee_sign)
+            arrays["leg_link_names"] = np.asarray(leg_names)
             np.savez_compressed(Path(args_cli.out_dir) / f"probe2_{tag}.npz", **arrays)
             vx = arrays["root_lin_vel_b"][:, 0]
             done = arrays["done"]

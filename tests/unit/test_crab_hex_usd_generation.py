@@ -134,3 +134,56 @@ def test_mesh_ply_mass_consistent_with_outline_area():
         assert 0.6 * est_kg < poly_kg < 1.15 * est_kg, (
             f"{name}: polygon ply mass {poly_kg:.3f} kg vs volume estimate {est_kg:.3f} kg"
         )
+
+
+# ---------------------------------------------------------------------------
+# PLAN G leg-mount morphology variants (2026-09-02)
+# ---------------------------------------------------------------------------
+def test_default_variant_is_byte_identical():
+    assert generator.generate(generator.MorphVariant()) == generator.generate()
+
+
+def test_committed_variants_match_their_regeneration():
+    vdir = REPO_ROOT / "assets" / "variants"
+    files = sorted(vdir.glob("crab_simple__splay*_axis*.usda"))
+    assert files, "no committed variants found"
+    for f in files:
+        tag = f.stem.split("__", 1)[1]
+        splay = float(tag.split("_")[0].replace("splay", ""))
+        axis = float(tag.split("_axis")[1].replace("in", "").replace("p", "."))
+        v = generator.MorphVariant(row_splay_deg=splay, outer_axis_from_end_in=axis)
+        assert f.read_text() == generator.generate(v), f"{f.name} drifted from its generator"
+
+
+def test_splay_variant_touches_only_outer_leg_mount_lines():
+    import difflib
+
+    golden = generator.generate().splitlines()
+    splayed = generator.generate(generator.MorphVariant(row_splay_deg=20.0)).splitlines()
+    added = [l for l in difflib.unified_diff(golden, splayed, lineterm="", n=0)
+             if l.startswith("+") and not l.startswith("+++")]
+    kinds = {"orient": 0, "translate": 0, "localRot0": 0, "scale": 0}
+    for l in added:
+        for k in kinds:
+            if k in l:
+                kinds[k] += 1
+                break
+        else:
+            raise AssertionError(f"unexpected changed line in splay variant: {l.strip()}")
+    # 4 outer legs x 5 prims orient; x 4 translated prims (the cam rotor sits ON the axis);
+    # x 2 Z-axis joints localRot0; 'scale' lines are diff re-anchoring of unchanged text.
+    assert kinds["orient"] == 20 and kinds["translate"] == 16 and kinds["localRot0"] == 8
+
+
+def test_variant_masses_unchanged():
+    text = generator.generate(generator.MorphVariant(row_splay_deg=20.0, outer_axis_from_end_in=2.5))
+    masses = _masses_by_prim(text)
+    total = sum(masses.values())
+    assert total == pytest.approx(230.06, abs=0.05)
+
+
+def test_variant_cap_and_range():
+    with pytest.raises(ValueError):
+        generator.MorphVariant(row_splay_deg=25.0)
+    with pytest.raises(ValueError):
+        generator.MorphVariant(outer_axis_from_end_in=0.0)

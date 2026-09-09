@@ -1,8 +1,14 @@
 """Gym registrations for crab hex policy training tasks."""
 
-import gymnasium as gym
+# Paradigm phases (2026-09-07): KRABBY_PHASE / KRABBY_PLANT expand into the KRABBY_* knobs BEFORE
+# any config module reads them (the scene cfg reads the USD path at import time).
+from .crab_hex_phases import activate_phase as _activate_phase
 
-from . import agents
+_activate_phase()
+
+import gymnasium as gym  # noqa: E402
+
+from . import agents  # noqa: E402
 from .crab_hex_env_cfg import (
     CrabHexFlatWalkEnvCfg,
     CrabHexFlatWalkEnvCfgPLAY,

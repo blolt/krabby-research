@@ -14,6 +14,14 @@ cam angles. The event stages the clock on the action term
 action-manager reset in Isaac Lab's ``_reset_idx``).
 
 Arm via ``KRABBY_RSI_FRAC`` (fraction of resets seeded, e.g. 0.15).
+
+PLAN H B4 (2026-09-03, ``KRABBY_RSI_SPAWN_FIX=1`` -> ``fix_spawn=True``): the original
+placement added only the tile origin to the bank's (0, 0) xy, i.e. RSI resets spawned at
+the TILE CENTRE (7 m downrange, on whatever obstacle sits there) with a flat-harvested z.
+With ``fix_spawn`` they are placed where ``reset_root_state`` places every other reset
+(origin - (size_y + offset, 0)), so the bank z is correct. Unarmed = bit-identical.
+Every RSI spawn is reported to the parkour term (``note_spawn``, kind RSI) for the
+exposure telemetry's non-RSI / RSI split.
 """
 from __future__ import annotations
 
@@ -47,6 +55,7 @@ def reset_from_reference_states(
     env_ids: torch.Tensor,
     bank_path: str,
     fraction: float = 0.15,
+    fix_spawn: bool = False,
 ) -> None:
     """Seed a Bernoulli subset of the resetting envs from the reference bank."""
     bank = _load_bank(bank_path, str(env.device))
@@ -65,7 +74,13 @@ def reset_from_reference_states(
     lin_w = quat_apply(bank["root_quat_w"][rows], bank["root_lin_vel_b"][rows])
     root_state[:, 7:10] = lin_w
     root_state[:, 10:13] = 0.0  # ang vel not recorded in the probe; ~0 in steady walking
-    root_state[:, :2] += env.scene.env_origins[ids, :2]
+    if fix_spawn:
+        tg = env.scene.terrain.cfg.terrain_generator
+        offset = float(env.event_manager.get_term_cfg("reset_root_state").params.get("offset", 3.0))
+        root_state[:, 0] += env.scene.env_origins[ids, 0] - (tg.size[1] + offset)
+        root_state[:, 1] += env.scene.env_origins[ids, 1]
+    else:
+        root_state[:, :2] += env.scene.env_origins[ids, :2]
     robot.write_root_pose_to_sim(root_state[:, :7], env_ids=ids)
     robot.write_root_velocity_to_sim(root_state[:, 7:], env_ids=ids)
     robot.write_joint_state_to_sim(
@@ -75,3 +90,8 @@ def reset_from_reference_states(
     # it (and randomizes the non-staged envs as usual).
     action_term = env.action_manager.get_term("joint_pos")
     action_term.rsi_clock_staged[ids] = bank["clock_phase"][rows]
+    # PLAN H B0: flag these resets as RSI-seeded for the exposure telemetry split.
+    from parkour_isaaclab.envs.mdp.events import note_spawn_to_parkour
+    from parkour_isaaclab.envs.mdp.parkours.exposure_stats import SPAWN_RSI
+
+    note_spawn_to_parkour(env, ids, root_state[:, 0], SPAWN_RSI)
