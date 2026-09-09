@@ -1,4 +1,4 @@
-# Copyright (c) 2025, Krabby / crab_hexapod_task contributors.
+# Copyright (c) 2025, Krabby / crab_hex_forward_task contributors.
 # SPDX-License-Identifier: BSD-3-Clause
 """Hexapod contact sensor: aggregate chassis + all leg link cubes for the crab USD.
 

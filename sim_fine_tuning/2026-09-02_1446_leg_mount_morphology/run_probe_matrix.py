@@ -24,7 +24,7 @@ PROBE = REPO / "sim_fine_tuning/2026-08-22_1200_gait_formation_v2/scripted_gait_
 VARIANTS = REPO / "assets/variants"
 OUT = HERE / "probe"
 RESULTS = HERE / "RESULTS.md"
-sys.path.insert(0, str(PARKOUR / "parkour_tasks/parkour_tasks/crab_hexapod_task/scripts"))
+sys.path.insert(0, str(PARKOUR / "parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts"))
 from gait_eval import metrics as M  # noqa: E402
 
 CONFIGS = [("base", None), ("B", "splay00_axis2p5in"), ("A10", "splay10_axis5p5in"),

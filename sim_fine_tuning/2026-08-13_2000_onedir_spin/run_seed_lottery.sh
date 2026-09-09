@@ -7,7 +7,7 @@ set -u
 CAMP=/home/nickmagus/krabby/krabby-research/sim_fine_tuning/2026-08-13_2000_onedir_spin
 PY=/home/nickmagus/krabby/isaac_venv/bin/python
 TRAIN=/home/nickmagus/krabby/krabby-research/parkour/scripts/rsl_rl/train.py
-EVAL=/home/nickmagus/krabby/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/scripts/eval_crab_hex_gait.py
+EVAL=/home/nickmagus/krabby/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/eval_crab_hex_gait.py
 SUMMARY=$CAMP/lottery_summary.md
 echo "# Seed-basin lottery — started $(date '+%F %T')" >> $SUMMARY
 echo "| seed | reward@5k | 1-dir ratio | completion | slip | tripod | verdict |" >> $SUMMARY

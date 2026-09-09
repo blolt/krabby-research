@@ -238,7 +238,7 @@ sim_fine_tuning/**/gait_eval/**/raw/
 sim_fine_tuning/**/*.log
 
 # Crab hex local-only scripts (RSL runner, diagnostics; not committed)
-parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/tempscripts/
+parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/tempscripts/
 
 # macOS Finder artifact
 .DS_Store

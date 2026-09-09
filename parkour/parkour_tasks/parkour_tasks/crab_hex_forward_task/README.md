@@ -1,4 +1,4 @@
-# Crab hexapod task (`crab_hexapod_task`)
+# Crab hexapod task (`crab_hex_forward_task`)
 
 This package adds a **Krabby hexapod** parkour task on top of Isaac Lab’s extreme parkour stack.  
 The goal of this README is that anyone can clone the repo, create a Python env similar to yours, and **train + play** the hexapod policy.
@@ -280,7 +280,7 @@ same explicit knobs a teacher eval uses.
 
 Go2 uses stock `OnPolicyRunnerWithExtractor` / `ActorCriticRMA` via the same factory.
 
-**Local only (gitignored):** `crab_hexapod_task/tempscripts/` — optional diagnostics (`audit_crab_joint_drives.py`, `verify_crab_simple_usda.py`, `diagnose_obs_action_alignment.py`, `diagnose_forward_rollout.py`).
+**Local only (gitignored):** `crab_hex_forward_task/tempscripts/` — optional diagnostics (`audit_crab_joint_drives.py`, `verify_crab_simple_usda.py`, `diagnose_obs_action_alignment.py`, `diagnose_forward_rollout.py`).
 
 **Crab routing (`make_on_policy_runner`)** — uses `OnPolicyRunnerCrabHex` when any of:
 
@@ -292,7 +292,7 @@ Go2 uses stock `OnPolicyRunnerWithExtractor` / `ActorCriticRMA` via the same fac
 | `estimator.num_prop == 75`                     | `CrabHexParkourObservations` (Go2: **53**) |
 
 
-**Related (committed):** `config/crab_hex/agents/crab_hex_rl_cfg.py`, `crab_hexapod_task/mdp/observations.py`, `modules/on_policy_runner_with_extractor.py`.
+**Related (committed):** `config/crab_hex/agents/crab_hex_rl_cfg.py`, `crab_hex_forward_task/mdp/observations.py`, `modules/on_policy_runner_with_extractor.py`.
 
 ---
 
@@ -359,7 +359,7 @@ phase-3 head with `Isaac-Crab-Hex-Student-Play-v0`. The legacy commands below ar
 
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
-RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
+RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 ```
 
@@ -385,7 +385,7 @@ export KRABBY_ROOT=/home/sanjay/Projects/krabby
 export KRABBY_HEX_TEACHER_MODE=bridge
 conda activate env_isaaclab
 
-FLAT_CKPT="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs/2026-05-23_10-15-21/model_6000.pt"
+FLAT_CKPT="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs/2026-05-23_10-15-21/model_6000.pt"
 
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p "$KRABBY_ROOT/krabby-research/parkour/scripts/rsl_rl/train.py" \
@@ -402,7 +402,7 @@ PPO: **100** iters, LR `3e-5` → `**6099`**. Provenance: [Appendix D](#appendix
 ```bash
 export KRABBY_HEX_TEACHER_MODE=2b1
 conda activate env_isaaclab
-BRIDGE_CKPT="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs/2026-05-25_22-26-06/model_6099.pt"
+BRIDGE_CKPT="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs/2026-05-25_22-26-06/model_6099.pt"
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p scripts/rsl_rl/train.py \
   --task Isaac-Crab-Hex-Teacher-v0 --headless --num_envs 256 --seed 1 \
@@ -413,7 +413,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 
 ```bash
 export KRABBY_HEX_TEACHER_MODE=2b2
-CKPT2B1="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs/2026-05-25_23-57-58/model_6198.pt"
+CKPT2B1="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs/2026-05-25_23-57-58/model_6198.pt"
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p scripts/rsl_rl/train.py \
   --task Isaac-Crab-Hex-Teacher-v0 --headless --num_envs 256 --seed 1 \
@@ -461,7 +461,7 @@ Optional checks in `[scripts/](scripts/)`. Run from `krabby-research/parkour` vi
 
 ```bash
 cd "$KRABBY_ROOT/krabby-research/parkour"
-SCRIPTS=parkour_tasks/parkour_tasks/crab_hexapod_task/scripts
+SCRIPTS=parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts
 
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p "$SCRIPTS/verify_crab_contact_physics.py" --headless
 
@@ -493,7 +493,7 @@ the human debug view. Trains nothing, adds no rewards — pure measurement.
 
 ```bash
 cd "$KRABBY_ROOT/krabby-research/parkour"
-SCRIPTS=parkour_tasks/parkour_tasks/crab_hexapod_task/scripts
+SCRIPTS=parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts
 
 # one scenario from the manifest
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p "$SCRIPTS/eval_crab_hex_gait.py" --headless --scenario teacher_2b2_forward
@@ -638,7 +638,7 @@ Use the one-liners below. Set `KRABBY_HEX_USD_PATH`, `KRABBY_HEX_SPAWN_Z=1.085`,
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
-RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
+RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
 export KRABBY_HEX_SPAWN_Z=1.085
@@ -704,7 +704,7 @@ distill:
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 export KRABBY_HEX_SPAWN_Z=1.085
-TEACHER_CKPT="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs/2026-05-26_21-46-37/model_6300.pt"
+TEACHER_CKPT="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs/2026-05-26_21-46-37/model_6300.pt"
 
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p "$KRABBY_ROOT/krabby-research/parkour/scripts/rsl_rl/train.py" \
@@ -724,7 +724,7 @@ Student logs: `krabby-research/parkour/logs/rsl_rl/crab_hex_student/<TIMESTAMP>/
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
-RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
+RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
 export KRABBY_HEX_SPAWN_Z=1.085
@@ -757,14 +757,14 @@ Connect a gamepad to the machine running Isaac Sim (USB or Bluetooth). Pairing o
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
-RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
+RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
 export KRABBY_HEX_SPAWN_Z=1.085
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
 cd "$KRABBY_ROOT/krabby-research/parkour"
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p \
-  parkour_tasks/parkour_tasks/crab_hexapod_task/scripts/demo_crab_hex_student.py \
+  parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/demo_crab_hex_student.py \
   --task Isaac-Crab-Hex-Student-Play-v0 \
   --num_envs 1 \
   --real-time \
@@ -859,7 +859,7 @@ This commit captures the best flat-walk baseline found during the 2026-05-19 tun
 The checked-in baseline artifacts are stored under:
 
 ```text
-parkour_tasks/parkour_tasks/crab_hexapod_task/runs/2026-05-19_12-06-10/
+parkour_tasks/parkour_tasks/crab_hex_forward_task/runs/2026-05-19_12-06-10/
 ```
 
 It contains:
@@ -899,7 +899,7 @@ Metrics @ `4000`: `track_lin_vel_xy_exp` ~**0.87**; `crab_failure` < **1%**.
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
-RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
+RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs"
 export KRABBY_HEX_USD_PATH="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_SPAWN_Z=1.085
 export PYTHONPATH="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks:$KRABBY_ROOT/krabby-research/parkour:${PYTHONPATH:-}"
@@ -923,7 +923,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
-RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
+RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
 export KRABBY_HEX_SPAWN_Z=1.085
@@ -949,7 +949,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
-RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
+RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
 export KRABBY_HEX_SPAWN_Z=1.085
@@ -977,7 +977,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
-RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
+RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
 export KRABBY_HEX_SPAWN_Z=1.085
@@ -1007,7 +1007,7 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 ```bash
 export KRABBY_ROOT=/home/sanjay/Projects/krabby
 conda activate env_isaaclab
-RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/runs"
+RUNS_DIR="$KRABBY_ROOT/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/runs"
 USD="$RUNS_DIR/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda"
 export KRABBY_HEX_USD_PATH="$USD"
 export KRABBY_HEX_SPAWN_Z=1.085

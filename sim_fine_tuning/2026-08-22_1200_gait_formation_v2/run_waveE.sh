@@ -4,7 +4,7 @@ set -u
 cd "$(dirname "$0")/../../parkour"
 PY=/home/nickmagus/krabby/isaac_venv/bin/python
 D=../sim_fine_tuning/2026-08-22_1200_gait_formation_v2
-M=parkour_tasks/parkour_tasks/crab_hexapod_task/eval/scenarios_v2.yaml
+M=parkour_tasks/parkour_tasks/crab_hex_forward_task/eval/scenarios_v2.yaml
 export OMNI_KIT_ACCEPT_EULA=yes TERM=xterm
 
 BASE="KRABBY_LIN_VEL_X=0.0:0.35 KRABBY_TRACK_L1_W=-1.0 KRABBY_TRACK_SIGMA2=0.1 KRABBY_CLOCK_W=1.0"
@@ -27,7 +27,7 @@ for arm in "${ORDER[@]}"; do
   CKPT=$(ls logs/rsl_rl/crab_hex_flat_walk/$RUN/ | grep -E "^model_[0-9]+\.pt$" | sort -t_ -k2 -n | tail -1)
   echo "${arm}_RUN=$RUN CKPT=$CKPT"
   env $BASE $delta timeout 1500 $PY \
-    parkour_tasks/parkour_tasks/crab_hexapod_task/scripts/eval_crab_hex_gait.py \
+    parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/eval_crab_hex_gait.py \
     --headless --manifest $M --scenario flat_walk_slow_v2 \
     --checkpoint "logs/rsl_rl/crab_hex_flat_walk/$RUN/$CKPT" --no-plot \
     --output-root logs/rsl_rl/gait_eval/gait_formation_v2 > "$D/${arm}_eval.log" 2>&1

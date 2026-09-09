@@ -36,7 +36,7 @@ from isaaclab.app import AppLauncher
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _TASK_DIR = _SCRIPT_DIR.parent
-# scripts -> crab_hexapod_task -> parkour_tasks -> parkour_tasks -> parkour
+# scripts -> crab_hex_forward_task -> parkour_tasks -> parkour_tasks -> parkour
 _PARKOUR_ROOT = _SCRIPT_DIR.parents[3]
 _DEFAULT_MANIFEST = _TASK_DIR / "eval" / "scenarios_v1.yaml"
 
@@ -122,7 +122,7 @@ if str(_SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPT_DIR))
 
 import parkour_tasks  # noqa: F401,E402
-from parkour_tasks.crab_hexapod_task.config.crab_hex import crab_hex_phases as PH  # noqa: E402
+from parkour_tasks.crab_hex_forward_task.config.crab_hex import crab_hex_phases as PH  # noqa: E402
 from gait_eval import metrics as M  # noqa: E402
 from gait_eval import report as R  # noqa: E402
 from gait_eval import schedule as S  # noqa: E402
@@ -133,7 +133,7 @@ from isaaclab_tasks.utils import parse_env_cfg  # noqa: E402
 from parkour_isaaclab.envs.mdp.parkour_commands.uniform_parkour_command import (  # noqa: E402
     UniformParkourCommand,
 )
-from parkour_tasks.crab_hexapod_task.mdp.crab_contact_sensors import (  # noqa: E402
+from parkour_tasks.crab_hex_forward_task.mdp.crab_contact_sensors import (  # noqa: E402
     CRAB_HEX_FOOTPAD_BODY_NAMES,
 )
 from scripts.rsl_rl.runner_factory import agent_cfg_to_train_dict, make_on_policy_runner  # noqa: E402

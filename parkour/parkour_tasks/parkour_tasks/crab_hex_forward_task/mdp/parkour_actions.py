@@ -14,8 +14,8 @@ from isaaclab.utils import configclass
 from parkour_isaaclab.envs.mdp.parkour_actions import DelayedJointPositionActionCfg
 from parkour_isaaclab.envs.mdp.parkour_actions.joint_actions import DelayedJointPositionAction
 
-from parkour_tasks.crab_hexapod_task.mdp import crab_hex_linkage as linkage
-from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import cam_shaft_to_hip
+from parkour_tasks.crab_hex_forward_task.mdp import crab_hex_linkage as linkage
+from parkour_tasks.crab_hex_forward_task.mdp.crab_hex_cam_mapping import cam_shaft_to_hip
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedEnv

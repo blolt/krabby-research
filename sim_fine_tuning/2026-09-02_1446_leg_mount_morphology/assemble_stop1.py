@@ -15,7 +15,7 @@ import numpy as np
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
-TASK = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hexapod_task"
+TASK = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task"
 sys.path.insert(0, str(TASK / "scripts"))
 sys.path.insert(0, str(TASK / "mdp"))
 from gait_eval import metrics as M  # noqa: E402

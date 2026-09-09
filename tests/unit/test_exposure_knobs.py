@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-MDP_DIR = Path(__file__).resolve().parents[2] / "parkour" / "parkour_tasks" / "parkour_tasks" / "crab_hexapod_task" / "mdp"
+MDP_DIR = Path(__file__).resolve().parents[2] / "parkour" / "parkour_tasks" / "parkour_tasks" / "crab_hex_forward_task" / "mdp"
 if str(MDP_DIR) not in sys.path:
     sys.path.insert(0, str(MDP_DIR))
 

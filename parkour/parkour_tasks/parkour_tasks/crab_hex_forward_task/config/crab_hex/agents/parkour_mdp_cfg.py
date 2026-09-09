@@ -10,17 +10,17 @@ from isaaclab.utils import configclass
 from isaaclab_tasks.manager_based.locomotion.velocity.mdp.rewards import feet_slide
 
 from parkour_isaaclab.envs.mdp import rewards as mdp_rewards
-from parkour_tasks.crab_hexapod_task.mdp import crab_hex_clock_reward as clock_reward
+from parkour_tasks.crab_hex_forward_task.mdp import crab_hex_clock_reward as clock_reward
 from parkour_isaaclab.envs.mdp import terminations as parkour_terminations
-from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_mdp_terminations import (
+from parkour_tasks.crab_hex_forward_task.config.crab_hex.crab_hex_mdp_terminations import (
     terminate_crab_hex_failure,
 )
 from parkour_isaaclab.envs.mdp import observations as mdp_observations
-from parkour_tasks.crab_hexapod_task.mdp.observations import (
+from parkour_tasks.crab_hex_forward_task.mdp.observations import (
     CrabHexObservationDeltaYawOk,
     CrabHexParkourObservations,
 )
-from parkour_tasks.crab_hexapod_task.mdp.parkour_actions import CrabHexDelayedJointPositionActionCfg
+from parkour_tasks.crab_hex_forward_task.mdp.parkour_actions import CrabHexDelayedJointPositionActionCfg
 from parkour_tasks.extreme_parkour_task.config.go2.parkour_mdp_cfg import (
     ActionsCfg,
     CommandsCfg,

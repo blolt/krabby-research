@@ -8,7 +8,7 @@ Gamepad input uses ``krabby-research/controller`` (pygame SDL2), not Isaac Carb 
 Velocity commands are injected in ``UniformParkourCommand.compute`` so the env cannot
 resample random commands over teleop.
 
-Launch from ``krabby-research/parkour`` (see crab_hexapod_task README §4.4 gamepad).
+Launch from ``krabby-research/parkour`` (see crab_hex_forward_task README §4.4 gamepad).
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from isaaclab.app import AppLauncher
 
 _TASK_DIR = Path(__file__).resolve().parent.parent
 _SCRIPT_DIR = Path(__file__).resolve().parent
-# scripts → crab_hexapod_task → parkour_tasks → parkour_tasks → parkour
+# scripts → crab_hex_forward_task → parkour_tasks → parkour_tasks → parkour
 _PARKOUR_ROOT = _SCRIPT_DIR.parents[3]
 _DEFAULT_CHECKPOINT = _TASK_DIR / "runs" / "2026-05-26_22-57-01" / "model_9800.pt"
 # Load cli_args without putting ``parkour/scripts`` on sys.path (shadows pip ``rsl_rl``).

@@ -30,7 +30,7 @@ MDP_DIR = (
     / "parkour"
     / "parkour_tasks"
     / "parkour_tasks"
-    / "crab_hexapod_task"
+    / "crab_hex_forward_task"
     / "mdp"
 )
 if str(MDP_DIR) not in sys.path:

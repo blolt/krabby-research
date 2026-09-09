@@ -7,8 +7,8 @@ from isaaclab.sensors import ContactSensor
 from isaaclab.assets import Articulation
 from isaaclab.utils.math  import euler_xyz_from_quat, wrap_to_pi, quat_apply
 from parkour_isaaclab.envs.mdp.parkours import ParkourEvent
-from parkour_tasks.crab_hexapod_task.mdp.crab_hex_stride_reward import stride_length_reward_step
-from parkour_tasks.crab_hexapod_task.mdp.crab_hex_clock_reward import (
+from parkour_tasks.crab_hex_forward_task.mdp.crab_hex_stride_reward import stride_length_reward_step
+from parkour_tasks.crab_hex_forward_task.mdp.crab_hex_clock_reward import (
     APEX_SIGMA_M as CLOCK_APEX_SIGMA_M,
     APEX_TARGET_M as CLOCK_APEX_TARGET_M,
     FOOT_ORDER as CLOCK_FOOT_ORDER,
@@ -17,7 +17,7 @@ from parkour_tasks.crab_hexapod_task.mdp.crab_hex_clock_reward import (
     clock_schedule_income,
     clock_swing_apex_income,
 )
-from parkour_tasks.crab_hexapod_task.mdp.crab_hex_tripod_reward import (
+from parkour_tasks.crab_hex_forward_task.mdp.crab_hex_tripod_reward import (
     RESET_T_SINCE,
     S_T_SINCE,
     STATE_DIM,
@@ -1049,7 +1049,7 @@ class PenaltyCamContactSchedule(ManagerTermBase):
         g_thresh: float = 0.55,
         contact_force_threshold: float = 1.0,
     ) -> torch.Tensor:
-        from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import cam_shaft_to_hip
+        from parkour_tasks.crab_hex_forward_task.mdp.crab_hex_cam_mapping import cam_shaft_to_hip
 
         asset: Articulation = env.scene[asset_cfg.name]
         sensor: ContactSensor = env.scene.sensors[sensor_cfg.name]
@@ -1079,7 +1079,7 @@ class RewardClockContactSchedule(ManagerTermBase):
         self._foot_body_ids, _ = asset.find_bodies(foot_names, preserve_order=True)
         sensor = env.scene.sensors[cfg.params["sensor_cfg"].name]
         self._foot_sensor_ids, _ = sensor.find_bodies(foot_names, preserve_order=True)
-        from parkour_tasks.crab_hexapod_task.mdp import crab_hex_dimensions as _dims
+        from parkour_tasks.crab_hex_forward_task.mdp import crab_hex_dimensions as _dims
 
         self._cmd_stop = _dims.CLOCK_CMD_STOP_M_S
 
@@ -1120,7 +1120,7 @@ class RewardClockSwingApex(ManagerTermBase):
         asset: Articulation = env.scene[cfg.params["asset_cfg"].name]
         foot_names = [f"{leg}_Footpad" for leg in CLOCK_FOOT_ORDER]
         self._foot_body_ids, _ = asset.find_bodies(foot_names, preserve_order=True)
-        from parkour_tasks.crab_hexapod_task.mdp import crab_hex_dimensions as _dims
+        from parkour_tasks.crab_hex_forward_task.mdp import crab_hex_dimensions as _dims
 
         self._cmd_stop = _dims.CLOCK_CMD_STOP_M_S
 

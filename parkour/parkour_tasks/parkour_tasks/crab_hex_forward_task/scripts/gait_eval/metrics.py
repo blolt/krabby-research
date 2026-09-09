@@ -12,7 +12,7 @@ to be meaningful) are handled explicitly rather than left to numpy's NaN semanti
 reaches a gate is worse than a refusal to score.
 
 Foot order is fixed by ``CRAB_HEX_FOOTPAD_BODY_NAMES`` in
-``crab_hexapod_task/mdp/crab_contact_sensors.py``; :data:`FOOT_ORDER` mirrors it here so this
+``crab_hex_forward_task/mdp/crab_contact_sensors.py``; :data:`FOOT_ORDER` mirrors it here so this
 module stays dependency-free, and the harness asserts the two agree at startup.
 """
 

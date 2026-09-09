@@ -17,7 +17,7 @@ SCRIPTS_DIR = (
     / "parkour"
     / "parkour_tasks"
     / "parkour_tasks"
-    / "crab_hexapod_task"
+    / "crab_hex_forward_task"
     / "scripts"
 )
 if str(SCRIPTS_DIR) not in sys.path:

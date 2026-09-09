@@ -29,8 +29,8 @@ from pathlib import Path
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[2]
-MDP = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/mdp"
-SCRIPTS = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/scripts"
+MDP = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/mdp"
+SCRIPTS = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts"
 for p in (MDP, SCRIPTS):
     if str(p) not in sys.path:
         sys.path.insert(0, str(p))

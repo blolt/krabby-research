@@ -4,7 +4,7 @@ from isaaclab.envs import ViewerCfg
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils import configclass
 
-from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg import (
+from parkour_tasks.crab_hex_forward_task.config.crab_hex.agents.parkour_mdp_cfg import (
     CommandsCfg,
     CrabHexFlatWalkActionsCfg,
     CrabHexFlatWalkRewardsCfg,
@@ -20,8 +20,8 @@ from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg impo
     _crab_action_clip,
     _crab_action_scale,
 )
-from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_scene_cfg import CrabHexTeacherSceneCfg
-from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_student_cfg import (
+from parkour_tasks.crab_hex_forward_task.config.crab_hex.crab_hex_scene_cfg import CrabHexTeacherSceneCfg
+from parkour_tasks.crab_hex_forward_task.config.crab_hex.crab_hex_student_cfg import (
     CrabHexStudentParkourEnvCfg,
 )
 from parkour_tasks.extreme_parkour_task.config.go2.parkour_teacher_cfg import (
@@ -409,7 +409,7 @@ def _apply_crab_hex_recal_2b2w_parkour_geometry(tg) -> None:
     half-stance + |offset|, and at least one side trench (>= 0.22 m) always remains.
     ``recal2b2`` stays for reproducing old runs.
     """
-    from parkour_tasks.crab_hexapod_task.mdp import exposure_knobs as _xk
+    from parkour_tasks.crab_hex_forward_task.mdp import exposure_knobs as _xk
 
     _apply_crab_hex_recal_2b2_parkour_geometry(tg)
     _xk.apply_corridor_widths(tg.sub_terrains, _xk.RECAL2B2W_HALF_VALID_WIDTH, _xk.RECAL2B2W_STONE_WIDTH,
@@ -526,7 +526,7 @@ def apply_flat_walk_knobs(cfg, *, include_reward_anneal: bool = True) -> None:
     if _rsi is not None and float(_rsi) > 0.0:
         from isaaclab.managers import EventTermCfg as _EventTerm
 
-        from parkour_tasks.crab_hexapod_task.mdp import crab_hex_rsi as _rsi_mod
+        from parkour_tasks.crab_hex_forward_task.mdp import crab_hex_rsi as _rsi_mod
 
         _bank_default = (
             "/home/nickmagus/krabby/krabby-research/sim_fine_tuning/"
@@ -648,7 +648,7 @@ def apply_flat_walk_knobs(cfg, *, include_reward_anneal: bool = True) -> None:
     #   KRABBY_STAND_FRAC=p        -- B1 Bernoulli standing slots (command term)
     #   KRABBY_SPAWN_OFFSET=m      -- B2 platform spawn offset (default 3.0 -> tile-local 1.0 m)
     #   KRABBY_SPAWN_SPREAD=lo:hi[:frac] -- B3 spawn along the course (tile-local m)
-    from parkour_tasks.crab_hexapod_task.mdp import exposure_knobs as _xk
+    from parkour_tasks.crab_hex_forward_task.mdp import exposure_knobs as _xk
 
     _half, _stone = _xk.corridor_overrides_from_env(os.environ)
     if tg is not None and (_half is not None or _stone is not None):
@@ -673,7 +673,7 @@ def apply_flat_walk_knobs(cfg, *, include_reward_anneal: bool = True) -> None:
     # gate metric) would flatline.
     _phaseout = os.environ.get("KRABBY_PHASEOUT") if include_reward_anneal else None
     if _phaseout:
-        from parkour_tasks.crab_hexapod_task.mdp.curriculums import (
+        from parkour_tasks.crab_hex_forward_task.mdp.curriculums import (
             phaseout_curriculum_cfg_from_env,
         )
 
@@ -784,7 +784,7 @@ class CrabHexStudentEnvCfg(CrabHexStudentParkourEnvCfg):
 
     def __post_init__(self):
         super().__post_init__()
-        from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_phases import is_student_phase
+        from parkour_tasks.crab_hex_forward_task.config.crab_hex.crab_hex_phases import is_student_phase
 
         base_body_cfg = SceneEntityCfg("robot", body_names="body")
         if is_student_phase():

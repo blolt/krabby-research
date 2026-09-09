@@ -13,11 +13,11 @@ This document describes **crab hexapod** policy, scene, and training configurati
 
 | Area | Path |
 |------|------|
-| Scene (teacher / student) | `parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/config/crab_hex/crab_hex_scene_cfg.py` |
-| Environment | `parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/config/crab_hex/crab_hex_env_cfg.py` |
-| MDP (obs, actions, rewards) | `parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/config/crab_hex/agents/parkour_mdp_cfg.py` |
-| PPO / runner | `parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/config/crab_hex/agents/rsl_rl_ppo_cfg.py` |
-| Gym registration | `parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/config/crab_hex/__init__.py` |
+| Scene (teacher / student) | `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/config/crab_hex/crab_hex_scene_cfg.py` |
+| Environment | `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/config/crab_hex/crab_hex_env_cfg.py` |
+| MDP (obs, actions, rewards) | `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/config/crab_hex/agents/parkour_mdp_cfg.py` |
+| PPO / runner | `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/config/crab_hex/agents/rsl_rl_ppo_cfg.py` |
+| Gym registration | `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/config/crab_hex/__init__.py` |
 | Integration tests | `tests/integration/test_crab_hexapod_policy_config.py` |
 
 ## Observation and action

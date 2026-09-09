@@ -16,7 +16,7 @@ from parkour_isaaclab.envs.mdp.observations import ExtremeParkourObservations
 from parkour_isaaclab.envs.mdp.parkours import ParkourEvent
 from parkour_isaaclab.utils.nonfinite_logging import warn_if_nonfinite
 
-from parkour_tasks.crab_hexapod_task.mdp import crab_hex_linkage as linkage
+from parkour_tasks.crab_hex_forward_task.mdp import crab_hex_linkage as linkage
 
 # Extra proprio dims vs ``ExtremeParkourObservations``: body-frame planar linear velocity
 # (2) + the gait clock's sin/cos (2, gait-formation-v2 Phase 1).

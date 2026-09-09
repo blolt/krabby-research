@@ -11,8 +11,8 @@
 #
 # Run:
 #   cd krabby-research/parkour
-#   <python> parkour_tasks/parkour_tasks/crab_hexapod_task/scripts/eval_crab_hex_gait.py \
-#     --headless --manifest parkour_tasks/parkour_tasks/crab_hexapod_task/eval/scenarios_v2.yaml \
+#   <python> parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/eval_crab_hex_gait.py \
+#     --headless --manifest parkour_tasks/parkour_tasks/crab_hex_forward_task/eval/scenarios_v2.yaml \
 #     --scenario flat_walk_forward_v2 --checkpoint <model.pt>
 
 manifest_version: 2

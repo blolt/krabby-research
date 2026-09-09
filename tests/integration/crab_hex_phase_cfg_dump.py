@@ -41,7 +41,7 @@ if str(PARKOUR_TASKS_SRC) not in sys.path:
 import gymnasium as gym  # noqa: E402
 from isaaclab.utils.dict import class_to_dict  # noqa: E402
 
-import parkour_tasks.crab_hexapod_task  # noqa: E402,F401  (registers the tasks; runs activate_phase)
+import parkour_tasks.crab_hex_forward_task  # noqa: E402,F401  (registers the tasks; runs activate_phase)
 
 
 def main() -> int:

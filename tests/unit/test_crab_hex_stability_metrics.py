@@ -14,7 +14,7 @@ import pytest
 
 SCRIPTS_DIR = (
     Path(__file__).resolve().parents[2]
-    / "parkour" / "parkour_tasks" / "parkour_tasks" / "crab_hexapod_task" / "scripts"
+    / "parkour" / "parkour_tasks" / "parkour_tasks" / "crab_hex_forward_task" / "scripts"
 )
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))

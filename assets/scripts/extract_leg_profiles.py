@@ -6,7 +6,7 @@ files), samples the Hip6 / Femur6 / Tibia6 ``Body`` outlines (cubic beziers subs
 elliptical arcs sampled by ANGLE via the W3C endpoint->center conversion -- chord
 shortcuts clip ~1.6 in off rounded end caps), maps each outline into its sim LINK frame,
 decimates with Douglas-Peucker, and writes
-``parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/mdp/crab_hex_leg_profiles.py``.
+``parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/mdp/crab_hex_leg_profiles.py``.
 
 Link frames (inches; the USD generator converts to meters):
 - femur:  (a, b) = (along part toward the outboard/knee hinge, across width);
@@ -34,7 +34,7 @@ OUT_PATH = (
     / "parkour"
     / "parkour_tasks"
     / "parkour_tasks"
-    / "crab_hexapod_task"
+    / "crab_hex_forward_task"
     / "mdp"
     / "crab_hex_leg_profiles.py"
 )

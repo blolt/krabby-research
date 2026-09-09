@@ -3,7 +3,7 @@
 from isaaclab.utils import configclass
 
 from parkour_isaaclab.envs import ParkourManagerBasedRLEnvCfg
-from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg import (
+from parkour_tasks.crab_hex_forward_task.config.crab_hex.agents.parkour_mdp_cfg import (
     CommandsCfg,
     CrabHexStudentActionsCfg,
     CrabHexStudentObservationsCfg,
@@ -12,7 +12,7 @@ from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg impo
     EventCfg,
     ParkourEventsCfg,
 )
-from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_scene_cfg import (
+from parkour_tasks.crab_hex_forward_task.config.crab_hex.crab_hex_scene_cfg import (
     CrabHexStudentSceneCfg,
 )
 

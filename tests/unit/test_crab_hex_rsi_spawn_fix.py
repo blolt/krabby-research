@@ -14,7 +14,7 @@ import pytest
 import torch
 
 REPO = Path(__file__).resolve().parents[2]
-MDP_DIR = REPO / "parkour" / "parkour_tasks" / "parkour_tasks" / "crab_hexapod_task" / "mdp"
+MDP_DIR = REPO / "parkour" / "parkour_tasks" / "parkour_tasks" / "crab_hex_forward_task" / "mdp"
 if str(MDP_DIR) not in sys.path:
     sys.path.insert(0, str(MDP_DIR))
 

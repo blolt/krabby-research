@@ -70,8 +70,8 @@ def main() -> None:
     foot_ids, _ = contact_sensor.find_bodies(FOOT_NAMES, preserve_order=True)
 
     # Recompute the proxy with the same primitives the obs class uses.
-    from parkour_tasks.crab_hexapod_task.mdp import crab_hex_linkage as linkage
-    from parkour_tasks.crab_hexapod_task.mdp.observations import (
+    from parkour_tasks.crab_hex_forward_task.mdp import crab_hex_linkage as linkage
+    from parkour_tasks.crab_hex_forward_task.mdp.observations import (
         _CURRENT_SENSE_GATE_FRACTION,
         _CURRENT_SENSE_MAX,
         _CURRENT_SENSE_NO_LOAD,

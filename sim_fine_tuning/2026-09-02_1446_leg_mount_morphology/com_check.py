@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/scripts"))
+sys.path.insert(0, str(REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts"))
 from gait_eval import metrics as M  # noqa: E402
 
 

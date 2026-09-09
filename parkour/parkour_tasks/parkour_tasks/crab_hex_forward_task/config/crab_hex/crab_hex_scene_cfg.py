@@ -7,8 +7,8 @@ from isaaclab.assets import ArticulationCfg
 from isaaclab.utils import configclass
 
 from parkour_isaaclab.actuators.parkour_actuator_cfg import ParkourDCMotorCfg
-from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import hip_to_cam_shaft_default
-from parkour_tasks.crab_hexapod_task.mdp.crab_hex_linkage import (
+from parkour_tasks.crab_hex_forward_task.mdp.crab_hex_cam_mapping import hip_to_cam_shaft_default
+from parkour_tasks.crab_hex_forward_task.mdp.crab_hex_linkage import (
     hip_default_rad,
     knee_default_left_rad,
     knee_default_right_rad,
@@ -18,7 +18,7 @@ from parkour_tasks.crab_hexapod_task.mdp.crab_hex_linkage import (
 _HIP_DEFAULT_RAD = hip_default_rad()
 _KNEE_DEFAULT_LEFT_RAD = knee_default_left_rad()
 _KNEE_DEFAULT_RIGHT_RAD = knee_default_right_rad()
-from parkour_tasks.crab_hexapod_task.sensors import ParkourHexContactSensorCfg
+from parkour_tasks.crab_hex_forward_task.sensors import ParkourHexContactSensorCfg
 from parkour_tasks.default_cfg import CAMERA_CFG
 from parkour_tasks.extreme_parkour_task.config.go2.parkour_student_cfg import ParkourStudentSceneCfg
 from parkour_tasks.extreme_parkour_task.config.go2.parkour_teacher_cfg import ParkourTeacherSceneCfg

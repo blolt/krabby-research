@@ -49,7 +49,7 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab_tasks.utils import parse_env_cfg
 
 import parkour_tasks  # noqa: F401
-from parkour_tasks.crab_hexapod_task.mdp.crab_contact_sensors import CRAB_HEX_FOOTPAD_BODY_NAMES
+from parkour_tasks.crab_hex_forward_task.mdp.crab_contact_sensors import CRAB_HEX_FOOTPAD_BODY_NAMES
 
 
 def _resolve_footpad_cfg(env) -> SceneEntityCfg:

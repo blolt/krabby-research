@@ -2,13 +2,13 @@ import os
 
 from isaaclab.utils import configclass
 
-from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.crab_hex_rl_cfg import (
+from parkour_tasks.crab_hex_forward_task.config.crab_hex.agents.crab_hex_rl_cfg import (
     CrabHexParkourRslRlActorCfg,
     CrabHexParkourRslRlDepthEncoderCfg,
     CrabHexParkourRslRlEstimatorCfg,
     CrabHexParkourRslRlStateHistEncoderCfg,
 )
-from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.crab_hex_rl_cfg import (
+from parkour_tasks.crab_hex_forward_task.config.crab_hex.agents.crab_hex_rl_cfg import (
     CrabHexParkourRslRlOnPolicyRunnerCfg,
     CrabHexParkourRslRlPpoActorCriticCfg,
 )
@@ -60,7 +60,7 @@ class CrabHexTeacherPPORunnerCfg(CrabHexParkourRslRlOnPolicyRunnerCfg, UnitreeGo
     )
 
     def __post_init__(self):
-        from parkour_tasks.crab_hexapod_task.config.crab_hex.crab_hex_env_cfg import (
+        from parkour_tasks.crab_hex_forward_task.config.crab_hex.crab_hex_env_cfg import (
             _crab_hex_teacher_mode,
         )
 
@@ -139,7 +139,7 @@ def _apply_flat_walk_symmetry(runner_cfg) -> None:
             use_data_augmentation=False,
             use_mirror_loss=True,
             data_augmentation_func=(
-                "parkour_tasks.crab_hexapod_task.mdp.crab_hex_mirror:crab_hex_symmetry_augmentation"
+                "parkour_tasks.crab_hex_forward_task.mdp.crab_hex_mirror:crab_hex_symmetry_augmentation"
             ),
             mirror_loss_coeff=_sym_coef,
         )

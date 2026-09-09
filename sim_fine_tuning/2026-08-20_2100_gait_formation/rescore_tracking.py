@@ -17,7 +17,7 @@ import numpy as np
 
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 _SCRIPTS = os.path.join(_REPO, "parkour", "parkour_tasks", "parkour_tasks",
-                        "crab_hexapod_task", "scripts")
+                        "crab_hex_forward_task", "scripts")
 sys.path.insert(0, _SCRIPTS)
 
 from gait_eval import metrics as M  # noqa: E402
@@ -25,7 +25,7 @@ from gait_eval import report as R  # noqa: E402
 from gait_eval import schedule as S  # noqa: E402
 
 MANIFEST = os.path.join(_REPO, "parkour", "parkour_tasks", "parkour_tasks",
-                        "crab_hexapod_task", "eval", "scenarios_v2.yaml")
+                        "crab_hex_forward_task", "eval", "scenarios_v2.yaml")
 
 RAW_KEYS = (
     "actions", "applied_torque", "cmd_applied", "foot_ang_vel_w", "foot_force_norm",

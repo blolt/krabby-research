@@ -7,7 +7,7 @@ CAMP=/home/nickmagus/krabby/krabby-research/sim_fine_tuning/2026-08-17_1500_phas
 BASE=/home/nickmagus/krabby/krabby-research/sim_fine_tuning/2026-08-15_1530_task1_velocity/screen_C2_airtime/logs/rsl_rl/crab_hex_flat_walk/2026-08-15_18-01-57/model_2999.pt
 PY=/home/nickmagus/krabby/isaac_venv/bin/python
 TRAIN=/home/nickmagus/krabby/krabby-research/parkour/scripts/rsl_rl/train.py
-EVAL=/home/nickmagus/krabby/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/scripts/eval_crab_hex_gait.py
+EVAL=/home/nickmagus/krabby/krabby-research/parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/eval_crab_hex_gait.py
 EVALROOT=/home/nickmagus/krabby/krabby-research/parkour/logs/rsl_rl/gait_eval/v1/flat_walk_forward/seed001
 RESULTS=$CAMP/results_combo.tsv
 echo -e "arm\tratio\ttripod\tcompletion\treward\tfailure\treversal_income\trev_per_s" > $RESULTS

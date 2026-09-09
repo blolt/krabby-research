@@ -98,7 +98,7 @@ import torch
 import parkour_tasks  # noqa: F401
 from isaaclab_tasks.utils import parse_env_cfg
 
-from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import cam_shaft_to_hip
+from parkour_tasks.crab_hex_forward_task.mdp.crab_hex_cam_mapping import cam_shaft_to_hip
 
 
 def main() -> None:
@@ -175,8 +175,8 @@ def main() -> None:
 
     # --- 2. Spin the CamShaft continuously (velocity actions) and check hip tracking
     #        pointwise through >= args_cli.revolutions full revolutions each direction ---
-    from parkour_tasks.crab_hexapod_task.config.crab_hex.agents.parkour_mdp_cfg import CAM_VEL_SCALE
-    from parkour_tasks.crab_hexapod_task.mdp.crab_hex_cam_mapping import THETA_HIP_MAX
+    from parkour_tasks.crab_hex_forward_task.config.crab_hex.agents.parkour_mdp_cfg import CAM_VEL_SCALE
+    from parkour_tasks.crab_hex_forward_task.mdp.crab_hex_cam_mapping import THETA_HIP_MAX
 
     # Body_Hip hard limit, read LIVE from the articulation (was a stale 32-deg constant
     # that let a hard-stop contact pass silently after the 2026-08-20 limit change to 28).

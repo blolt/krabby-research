@@ -31,7 +31,7 @@ _DIMS_PATH = (
     / "parkour"
     / "parkour_tasks"
     / "parkour_tasks"
-    / "crab_hexapod_task"
+    / "crab_hex_forward_task"
     / "mdp"
     / "crab_hex_dimensions.py"
 )

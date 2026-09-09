@@ -8,7 +8,7 @@ legacy golden ``assets/crab_simple.usda``."""
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-OUT = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/eval/scenarios_morph.yaml"
+OUT = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/eval/scenarios_morph.yaml"
 VARIANTS = REPO / "assets/variants"
 # (config name, USDA path or None for the config default = A15+B main asset)
 CONFIGS = [("base", VARIANTS.parent / "crab_simple.usda"), ("B", VARIANTS / "crab_simple__splay00_axis2p5in.usda"),

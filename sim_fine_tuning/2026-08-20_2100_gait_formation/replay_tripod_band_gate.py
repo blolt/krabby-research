@@ -24,7 +24,7 @@ import torch
 
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 sys.path.insert(0, os.path.join(_REPO, "parkour", "parkour_tasks", "parkour_tasks",
-                                "crab_hexapod_task", "mdp"))
+                                "crab_hex_forward_task", "mdp"))
 from crab_hex_tripod_reward import (  # noqa: E402
     RESET_T_SINCE,
     S_T_SINCE,

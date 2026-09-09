@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
-# scripts → crab_hexapod_task → parkour_tasks → parkour_tasks → parkour → krabby-research
+# scripts → crab_hex_forward_task → parkour_tasks → parkour_tasks → parkour → krabby-research
 _REPO_ROOT = _SCRIPT_DIR.parents[4]
 _PARKOUR_ROOT = _REPO_ROOT / "parkour"
 

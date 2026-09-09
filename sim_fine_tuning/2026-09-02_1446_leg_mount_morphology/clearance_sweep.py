@@ -27,7 +27,7 @@ from pathlib import Path
 import numpy as np
 
 REPO = Path(__file__).resolve().parents[2]
-MDP = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hexapod_task/mdp"
+MDP = REPO / "parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/mdp"
 if str(MDP) not in sys.path:
     sys.path.insert(0, str(MDP))
 import crab_hex_foot_fk as fk  # noqa: E402
