@@ -6,7 +6,8 @@ next). Gym ids (`Isaac-Crab-Hex-Flat-Walk-v0`, `-Teacher-v0`, `-Student-v0` and 
 variants) and the RSL-RL experiment directories (`parkour/logs/rsl_rl/crab_hex_flat_walk|crab_hex_teacher|crab_hex_student`)
 are unchanged by the rename. The plant (robot model, generator, variants, spawn) is described in
 [docs/crab-hexapod-plant.md](../../../../docs/crab-hexapod-plant.md); campaign records live under
-[`experiments/`](#experiments).
+[`experiments/`](#experiments); the head that ships and the stage heads it was trained through live under
+[`policy/`](policy/README.md) ([Policy of record](#policy-of-record)).
 The goal of this README is that anyone can clone the repo, create a Python env similar to yours, and **train + play** the hexapod policy.
 
 The examples below assume:
@@ -122,8 +123,8 @@ network is unchanged throughout; each phase resumes the previous phase's head.
 | **1a** | 0–5k | `Flat-Walk-v0`, `KRABBY_PHASE=1a` | scratch | formation: full gait income, walking slots (`STAND_FRAC 0.2`), 40 s episodes / 10 s holds, P0-null RSI 0.2, light shallow tiles 80 % flat, frozen | — |
 | **2a** | 5–10k | `Teacher-v0` + mode `2a` | 1a | + elements @5k (yaw, edge, stumble, collision, DR push/mass/CoM), `recal2b2w` 50/50 with curriculum, promotion 0.225:0.125; ramps apex 1→0.5, airtime 0.8→0.4, stride 0.5→0.25 | — |
 | **2b** | 10–15k | `Teacher-v0` + mode `2b` | 2a | + elements @10k (clearance terms, foot-clear, heading ±1.2, goal-vel 0.75); apex / airtime / stride → ε | — |
-| **2c** | 15–20k | `Teacher-v0` + mode `2c` | 2b | clock 1.0 → 0.5 | `logs/rsl_rl/crab_hex_flat_walk/2026-09-07_04-38-50/model_19996.pt` (policy of record) |
-| **3a** | 20k → +5k | `Student-v0`, `KRABBY_PHASE=3a` | 2c | depth student distilled from the 2c teacher on the 2c MDP (same terrain band 0.20–0.70, walking slots, 40 s episodes, DR, plant) | `logs/rsl_rl/crab_hex_student/2026-09-08_05-54-01/model_24995.pt` (**phase-3 head of record**, 2026-09-09: flat 0.79, step 0.71, obstacles 0.64, hard band 0.51 — teacher-equivalent) |
+| **2c** | 15–20k | `Teacher-v0` + mode `2c` | 2b | clock 1.0 → 0.5 | [`policy/2c_teacher/model_19996.pt`](policy/2c_teacher/) (from `logs/rsl_rl/crab_hex_flat_walk/2026-09-07_04-38-50/`) |
+| **3a** | 20k → +5k | `Student-v0`, `KRABBY_PHASE=3a` | 2c | depth student distilled from the 2c teacher on the 2c MDP (same terrain band 0.20–0.70, walking slots, 40 s episodes, DR, plant) | [`policy/3a_student/model_24995.pt`](policy/3a_student/) (from `logs/rsl_rl/crab_hex_student/2026-09-08_05-54-01/`) (**phase-3 head of record**, 2026-09-09: flat 0.79, step 0.71, obstacles 0.64, hard band 0.51 — teacher-equivalent) |
 | **3b** | +5k → +10k | `Student-v0`, `KRABBY_PHASE=3b` | 3a | distillation continues on difficulty 0.70–0.90 (else identical) | run 2026-09-09 (`2026-09-09_02-06-51/model_29994.pt`): equivalent to 3a on every eval — **not baked**; the pipeline of record ends at 3a |
 
 The heads of record above were trained with `KRABBY_PLANT=A15+B` pointing at the variant file
@@ -555,7 +556,7 @@ python3 "$SCRIPTS/run_gait_eval_suite.py" --plant legacy_golden
 
 # an A15+B head (2c teacher or 3a student): no plant flag; pick the head with --policy-role
 "$KRABBY_ROOT/IsaacLab/isaaclab.sh" -p "$SCRIPTS/eval_crab_hex_gait.py" --headless --policy-role student \
-  --task Isaac-Crab-Hex-Student-v0 --checkpoint logs/rsl_rl/crab_hex_student/2026-09-08_05-54-01/model_24995.pt ...
+  --task Isaac-Crab-Hex-Student-v0 --checkpoint parkour_tasks/parkour_tasks/crab_hex_forward_task/policy/3a_student/model_24995.pt ...
 ```
 
 The May-2026 bundled checkpoints under `experiments/old-runs/` have no plant name; they play against the USD
@@ -859,6 +860,17 @@ cd "$KRABBY_ROOT/krabby-research/parkour"
 **Controls:** left stick **Y** = forward speed **(0.45–0.85 m/s)**; right stick **X** = heading (parkour turns the robot). Input uses `**krabby-research/controller`** (pygame SDL2 Pro Controller mapping), not Isaac’s Carb gamepad. Install once: `pip install -e "$KRABBY_ROOT/krabby-research/controller"`. Verify pad: `python -m controller.input --list`. For **manual joint teleop** without the policy, use `krabby-uno-sim --hex` ([isaacsim_demo_runbook.md](../../../../controller/scripts/isaac/isaacsim_demo_runbook.md)).
 
 ---
+
+## Policy of record
+
+[`policy/`](policy/README.md) holds the head that **ships** for this task and the stage heads it was trained
+through, one subfolder per stage in training order: `1a_formation/` → `2a_elements/` → `2b_clearance/` →
+`2c_teacher/` (the privileged teacher, A15+B reference of record) → `3a_student/` (the depth student, the
+current head). [`policy/manifest.yaml`](policy/manifest.yaml) declares each stage's source run, sha256,
+producing campaign and evals; `experiments/tools/bundle_policy.py --sync` copies and sha-verifies the files
+and generates the README, `--check` (run by `tests/unit/test_policy_of_record.py`) guards them. The folder
+changes only on a bake decision (the user's): a new head is added to the manifest and synced; the campaign
+that produced it keeps its own copy under `experiments/<campaign>/head/`.
 
 ## Experiments
 
