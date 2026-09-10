@@ -6,12 +6,15 @@ a fraction of env resets start FROM states sampled along the target gait instead
 default stand, so schedule/phase-conditioned income is live from iteration 0 and the
 policy's problem shifts from "find the gait" (exploration) to "keep it" (retention).
 
-The bank is built offline from the Phase-0 scripted-gait walking stretch (setAB tripod, a
-dynamically-generated reference, not mocap): full joint state, root
-height/orientation/velocity, and the gait-clock phase consistent with the reference's own
-cam angles. The event stages the clock on the action term
-(``rsi_clock_staged``); the action term's reset consumes it (events run BEFORE
-action-manager reset in Isaac Lab's ``_reset_idx``).
+A bank is built offline by ``experiments/2026-08-22_1200_gait_formation_v2/harvest_rsi_bank.py``
+from rollouts of a checkpoint on the flat-walk play task, keeping upright walking frames: full
+joint state, root height/orientation/velocity, and the gait-clock phase consistent with the
+reference's own cam angles. The bank of record, ``rsi_bank_P0_null.npz`` (2051 frames), was
+harvested from the PLAN F gated-lineage P0_null rung checkpoint
+(``crab_hex_flat_walk/2026-08-26_21-41-53/model_26899.pt``); ``rsi_bank_setAB.npz`` is the
+Phase-0 scripted-gait bank (setAB tripod, a dynamically-generated reference, not mocap). The
+event stages the clock on the action term (``rsi_clock_staged``); the action term's reset
+consumes it (events run BEFORE action-manager reset in Isaac Lab's ``_reset_idx``).
 
 Arm via ``KRABBY_RSI_FRAC`` (fraction of resets seeded, e.g. 0.15).
 

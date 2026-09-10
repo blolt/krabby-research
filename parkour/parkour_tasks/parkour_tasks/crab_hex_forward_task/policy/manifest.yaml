@@ -11,8 +11,9 @@ assets:
   file: rsi_bank_P0_null.npz
   source: parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-26_2200_gated_lineage/rsi_bank_P0_null.npz
   sha256: 31a53e658a43e6cd9bde631d49406a6dc255b3f0931bac9f18e60a6f0a4e3e2d
-  what: RSI reference-state bank (full joint state, root height/orientation/velocity, gait-clock phase per frame)
-    harvested on the legacy golden plant from the Phase-0 null-RSI scripted-gait run
+  what: RSI reference-state bank (full joint state, root height/orientation/velocity, gait-clock phase per frame),
+    2051 frames harvested on the legacy golden plant by experiments/2026-08-22_1200_gait_formation_v2/harvest_rsi_bank.py
+    from rollouts of the PLAN F gated-lineage P0_null rung checkpoint (crab_hex_flat_walk/2026-08-26_21-41-53/model_26899.pt)
   used_by: every preset (1a, 2a, 2b, 2c, 3a, 3b) via KRABBY_RSI_FRAC=0.2 -- 20 % of resets start from a bank frame;
     the presets still read it from its experiments/ source path (config/crab_hex/crab_hex_phases.py FORMATION)
   notes: harvested on the golden plant, i.e. the bank's foot placements are rotated relative to the A15+B plant

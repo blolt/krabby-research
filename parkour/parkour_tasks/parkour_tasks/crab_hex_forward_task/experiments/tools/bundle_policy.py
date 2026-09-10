@@ -31,6 +31,9 @@ PKG = HERE.parents[1]                     # crab_hex_forward_task/
 REPO = PKG.parents[3]
 POLICY = PKG / "policy"
 MANIFEST = POLICY / "manifest.yaml"
+SUMMARY = POLICY / "POLICY_SUMMARY.md"           # hand-written prose + generated blocks (policy_summary.py)
+PINS = POLICY / "mdp_pins.yaml"                   # Isaac-only numbers, extracted by --pin-mdp
+GENERATED_DOCS = ("README.md", "POLICY_SUMMARY.md")
 EVAL_KEYS = (("slow", "flat canary"), ("step", "step onset"), ("obst", "obstacles 0.20-0.70"))
 
 
@@ -40,6 +43,24 @@ def sha256_of(path: Path) -> str:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _summary():
+    """The block renderer / pins extractor module (sibling file), loaded by path."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("policy_summary", HERE / "policy_summary.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["policy_summary"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def expected_files(m: dict) -> set[str]:
+    """Every file that may live under policy/, relative to policy/ (the layout test pins this set)."""
+    files = {f"{s['dir']}/{s['file']}" for s in m["stages"]}
+    files |= {f"{a['dir']}/{a['file']}" for a in m.get("assets", [])}
+    files |= {"manifest.yaml", PINS.name, *GENERATED_DOCS}
+    return files
 
 
 def load_manifest() -> dict:
@@ -96,6 +117,10 @@ def check(m: dict) -> list[str]:
         got = sha256_of(p)
         if got != a["sha256"]:
             problems.append(f"{p.relative_to(REPO)}: sha256 {got[:12]} != manifest {a['sha256'][:12]}")
+    readme = POLICY / "README.md"
+    if not readme.exists() or readme.read_text() != readme_text(m):
+        problems.append(f"{readme.relative_to(REPO)}: stale (bundle_policy.py --sync)")
+    problems += _summary().check_summary(m)
     return problems
 
 
@@ -130,6 +155,13 @@ def sync(m: dict, *, force: bool) -> list[Path]:
     readme.write_text(readme_text(m))
     print(f"wrote   {readme.relative_to(REPO)}")
     produced += [readme, MANIFEST]
+    ps = _summary()
+    if SUMMARY.exists() and PINS.exists():
+        SUMMARY.write_text(ps.update_summary(SUMMARY.read_text(), ps.render_blocks(m, ps.load_pins())))
+        print(f"wrote   {SUMMARY.relative_to(REPO)} (generated blocks)")
+        produced += [SUMMARY, PINS]
+    else:
+        print(f"skip    {SUMMARY.relative_to(REPO)}: needs {PINS.name} (bundle_policy.py --pin-mdp <dump dir>) and the hand-written document")
     subprocess.run(["git", "add", "--", *[str(p) for p in produced]], cwd=REPO, check=True)
     return produced
 
@@ -160,6 +192,10 @@ def readme_text(m: dict) -> str:
         "[Shared assets](#shared-assets).",
         "",
         f"**Current head:** [`{cur['dir']}/{cur['file']}`]({cur['dir']}/{cur['file']}) -- {cur.get('what', '')}",
+        "",
+        "**What it was trained on:** [`POLICY_SUMMARY.md`](POLICY_SUMMARY.md) -- per-phase goals, active rewards /",
+        "terrain / other configuration, and the reward, terrain and knob catalogues (prose hand-written, tables",
+        "generated from the presets, this manifest and [`mdp_pins.yaml`](mdp_pins.yaml)).",
         "",
         "| # | Stage | Preset | Iterations | Task | Resumes | File | sha256 | " + " | ".join(t for _, t in EVAL_KEYS) + " |",
         "|---|---|---|---|---|---|---|---|" + "---|" * len(EVAL_KEYS),
@@ -225,6 +261,10 @@ def readme_text(m: dict) -> str:
         "run `--sync`, commit. Old heads stay under their campaign's `head/`.",
         "- New shared asset (e.g. a re-harvested RSI bank): add an `assets:` entry (dir, file, source, sha256, what, "
         "used_by), run `--sync`, commit.",
+        "- After any MDP / reward / terrain / runner change: regenerate the Isaac config dumps "
+        "(`KRABBY_CFG_DUMP_DIR=<dir> RUN_CRAB_HEX_CFG_IDENTITY=1 pytest tests/integration/test_crab_hex_phase_configs.py`), "
+        "run `bundle_policy.py --pin-mdp <dir>` (rewrites `mdp_pins.yaml`), then `--sync` (rewrites the generated blocks of "
+        "`POLICY_SUMMARY.md`); update its prose by hand.",
         "",
     ]
     return "\n".join(L)
@@ -234,10 +274,18 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     g = ap.add_mutually_exclusive_group(required=True)
     g.add_argument("--sync", action="store_true", help="copy missing stage files, verify, write README, git add")
-    g.add_argument("--check", action="store_true", help="verify every stage file + sha; exit 1 on problems")
+    g.add_argument("--check", action="store_true", help="verify every stage file + sha, README and POLICY_SUMMARY.md blocks; exit 1 on problems")
+    g.add_argument("--pin-mdp", metavar="DUMP_DIR", help="extract policy/mdp_pins.yaml from cfg_<phase>.json Isaac config dumps in DUMP_DIR")
     ap.add_argument("--force", action="store_true", help="with --sync: recopy every stage file from its source")
     a = ap.parse_args()
     m = load_manifest()
+    if a.pin_mdp:
+        ps = _summary()
+        dumps = ps.read_dump_dir(Path(a.pin_mdp), [s["phase"] for s in m["stages"]])
+        pins = ps.pins_from_dumps(dumps, m)
+        ps.write_pins(pins)
+        print(f"wrote   {PINS.relative_to(REPO)} ({len(pins)} phases: {', '.join(pins)}); now run --sync")
+        return 0
     if a.check:
         problems = check(m)
         for p in problems:

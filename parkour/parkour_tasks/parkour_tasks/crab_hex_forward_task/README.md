@@ -919,7 +919,11 @@ through, one subfolder per stage in training order: `1a_formation/` → `2a_elem
 `2c_teacher/` (the privileged teacher, A15+B reference of record) → `3a_student/` (the depth student, the
 current head). [`policy/manifest.yaml`](policy/manifest.yaml) declares each stage's source run, sha256,
 producing campaign and evals; `experiments/tools/bundle_policy.py --sync` copies and sha-verifies the files
-and generates the README, `--check` (run by `tests/unit/test_policy_of_record.py`) guards them. The folder
+and generates the README, `--check` (run by `tests/unit/test_policy_of_record.py`) guards them.
+[`policy/POLICY_SUMMARY.md`](policy/POLICY_SUMMARY.md) explains what each stage was trained on -- the goal of each
+phase, its active rewards, terrain and other configuration, and catalogues of every reward term, terrain preset
+and knob; its tables are generated from the presets, the manifest and [`policy/mdp_pins.yaml`](policy/mdp_pins.yaml)
+(the Isaac config numbers, extracted with `bundle_policy.py --pin-mdp` and validated by the config-identity test). The folder
 changes only on a bake decision (the user's): a new head is added to the manifest and synced; the campaign
 that produced it keeps its own copy under `experiments/<campaign>/head/`.
 

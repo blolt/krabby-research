@@ -12,6 +12,10 @@ Shared training assets the lineage depends on (the RSI reference bank) are bundl
 
 **Current head:** [`3a_student/model_24995.pt`](3a_student/model_24995.pt) -- depth student distilled from the 2c teacher on the 2c MDP (terrain band 0.20-0.70, walking slots, 40 s episodes, DR, plant); the head that SHIPS
 
+**What it was trained on:** [`POLICY_SUMMARY.md`](POLICY_SUMMARY.md) -- per-phase goals, active rewards /
+terrain / other configuration, and the reward, terrain and knob catalogues (prose hand-written, tables
+generated from the presets, this manifest and [`mdp_pins.yaml`](mdp_pins.yaml)).
+
 | # | Stage | Preset | Iterations | Task | Resumes | File | sha256 | flat canary | step onset | obstacles 0.20-0.70 |
 |---|---|---|---|---|---|---|---|---|---|---|
 | 1 | [`1a_formation/`](1a_formation/) | `1a` | 0k -> 5k | `Isaac-Crab-Hex-Flat-Walk-v0` | scratch | `model_4999.pt` | `7027db8e6336` | 0.86 / 14 falls / tripod 0.54 | 0.69 / 31 falls / tripod 0.51 | 0.68 / 32 falls / tripod 0.52 |
@@ -67,7 +71,7 @@ Evals: completion / falls out of 100 episodes / tripod score, from the producing
 
 ## Shared assets
 
-### [`rsi/rsi_bank_P0_null.npz`](rsi/rsi_bank_P0_null.npz) -- RSI reference-state bank (full joint state, root height/orientation/velocity, gait-clock phase per frame) harvested on the legacy golden plant from the Phase-0 null-RSI scripted-gait run
+### [`rsi/rsi_bank_P0_null.npz`](rsi/rsi_bank_P0_null.npz) -- RSI reference-state bank (full joint state, root height/orientation/velocity, gait-clock phase per frame), 2051 frames harvested on the legacy golden plant by experiments/2026-08-22_1200_gait_formation_v2/harvest_rsi_bank.py from rollouts of the PLAN F gated-lineage P0_null rung checkpoint (crab_hex_flat_walk/2026-08-26_21-41-53/model_26899.pt)
 
 - **Used by:** every preset (1a, 2a, 2b, 2c, 3a, 3b) via KRABBY_RSI_FRAC=0.2 -- 20 % of resets start from a bank frame; the presets still read it from its experiments/ source path (config/crab_hex/crab_hex_phases.py FORMATION)
 - **Source (tracked):** `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-26_2200_gated_lineage/rsi_bank_P0_null.npz`
@@ -102,3 +106,4 @@ as in the task README §4.0 / §4.4; the presets encode each stage's MDP.
 - `python3 parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/tools/bundle_policy.py --check` (from `parkour/` like the commands above; the tool is cwd-independent) -- every stage file present with its manifest sha (run by `tests/unit/test_policy_of_record.py`).
 - New bake: add/replace the stage entry in `manifest.yaml` (source run, sha256, campaign, evals), set `current`, run `--sync`, commit. Old heads stay under their campaign's `head/`.
 - New shared asset (e.g. a re-harvested RSI bank): add an `assets:` entry (dir, file, source, sha256, what, used_by), run `--sync`, commit.
+- After any MDP / reward / terrain / runner change: regenerate the Isaac config dumps (`KRABBY_CFG_DUMP_DIR=<dir> RUN_CRAB_HEX_CFG_IDENTITY=1 pytest tests/integration/test_crab_hex_phase_configs.py`), run `bundle_policy.py --pin-mdp <dir>` (rewrites `mdp_pins.yaml`), then `--sync` (rewrites the generated blocks of `POLICY_SUMMARY.md`); update its prose by hand.

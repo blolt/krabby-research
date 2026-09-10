@@ -303,3 +303,19 @@ def test_play_variants_keep_the_train_mdp(dumps):
 
 if __name__ == "__main__":  # ad-hoc: python test_crab_hex_phase_configs.py <dump dir>
     sys.exit(pytest.main(["-v", __file__] + sys.argv[1:]))
+
+
+def test_mdp_pins_match_dumps(dumps):
+    """policy/mdp_pins.yaml (the summary's Isaac-only numbers) equals a fresh extraction from the dumps."""
+    import importlib.util
+
+    tool = PARKOUR / "parkour_tasks" / "parkour_tasks" / "crab_hex_forward_task" / "experiments" / "tools" / "policy_summary.py"
+    spec = importlib.util.spec_from_file_location("policy_summary", tool)
+    ps = importlib.util.module_from_spec(spec)
+    sys.modules["policy_summary"] = ps
+    spec.loader.exec_module(ps)
+    manifest = ps.load_manifest()
+    expect = ps.pins_from_dumps({k: v for k, v in dumps.items() if k in {s["phase"] for s in manifest["stages"]}}, manifest)
+    diffs = diff_paths(normalize(ps.load_pins()), normalize(expect))
+    assert not diffs, "mdp_pins.yaml is stale (bundle_policy.py --pin-mdp <dump dir>):\n" + fmt_diffs(diffs)
+
