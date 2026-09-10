@@ -7,8 +7,12 @@ PyPI package name is `krabby-launcher` (the `krabby` name was already taken); th
 ## Install
 
 ```bash
-pip install krabby-launcher
+pip install 'krabby-launcher>=0.1.16'
 ```
+
+`enroll` and `agent` first shipped in **`krabby-launcher` 0.1.16** (PyPI tag
+`krabby-v0.1.16`). Older wheels lack those subcommands — use `>=0.1.16` or
+`pip install ./krabby` from a clone.
 
 ## Usage
 
@@ -53,7 +57,7 @@ as a systemd service (`krabby-agent.service`, separate from
 `krabby-locomotion.service`).
 
 ```bash
-# Prefer: pip install ./krabby from a clone (includes enroll/agent + boto3)
+# Needs krabby-launcher >= 0.1.16 (first release with enroll/agent)
 export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=<region>  # krabby-enroll keys
 sudo -E env PATH="$PATH" krabby enroll --thing-name <thing-name>
 ```

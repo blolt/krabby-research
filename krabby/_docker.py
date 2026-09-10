@@ -134,8 +134,8 @@ def _gamepad_launch_script(server_robot: str) -> str:
     return (
         'MCU_PORT="${KRABBY_MCU_PORT:-/dev/ttyACM0}"; '
         'if [ ! -e "$MCU_PORT" ]; then '
-        'echo "error: MCU device not found at $MCU_PORT — connect the Krabby HAL board '
-        '(or set KRABBY_MCU_PORT)." >&2; exit 1; fi; '
+        'echo "warning: MCU device not found at $MCU_PORT — starting without MCU '
+        '(mcu_present=false; set KRABBY_MCU_PORT if the board is elsewhere)." >&2; fi; '
         'krabby-hal-server-jetson --control-source gamepad' + server_robot + ' '
         '--observation-bind "tcp://*:6001" --command-bind "tcp://*:6002" & '
         'server_pid=$!; '

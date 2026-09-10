@@ -18,6 +18,9 @@
 # Windows: winget install GnuWin32.Make, then add GnuWin32\bin to PATH.
 
 ARDUINO_CLI ?= arduino-cli
+CMAKE       ?= cmake
+CTEST       ?= ctest
+PYTEST      ?= pytest
 FQBN        ?= arduino:avr:mega
 PIN_REV     ?= 3
 SKETCH      := $(CURDIR)/arduino
@@ -30,6 +33,12 @@ AVRDUDE     ?= avrdude
 SSH         ?= ssh
 SCP         ?= scp
 BUILD_DIR   := $(CURDIR)/build
+REPO_ROOT   := $(abspath $(CURDIR)/..)
+NATIVE_TEST_SOURCE := $(REPO_ROOT)/tests/native/firmware
+NATIVE_TEST_BUILD  := $(REPO_ROOT)/build/native-firmware-tests
+NATIVE_COVERAGE_BUILD := $(REPO_ROOT)/build/native-firmware-coverage
+GCOVR       ?= gcovr
+GCOV        ?= gcov
 HEX         := $(BUILD_DIR)/arduino.ino.hex
 REMOTE_HEX  ?= /tmp/krabby-firmware.hex
 
@@ -66,14 +75,60 @@ endif
 $(info Using PORT=$(PORT))
 endif
 
-.PHONY: arduino-core compile-firmware upload-firmware flash-remote
+.PHONY: arduino-core fetch-libs compile-firmware upload-firmware flash-remote test-native test-native-coverage test-firmware
 
+test-native:
+	$(CMAKE) -S "$(NATIVE_TEST_SOURCE)" -B "$(NATIVE_TEST_BUILD)"
+	$(CMAKE) --build "$(NATIVE_TEST_BUILD)"
+	$(CTEST) --test-dir "$(NATIVE_TEST_BUILD)" --output-on-failure
+
+# Ratchet, not a target: thresholds are the measured floor, so coverage can only
+# be raised deliberately. The filter must name real files -- a filter matching
+# nothing reports 0% and fails, it does not pass vacuously.
+test-native-coverage: test-native
+	$(CMAKE) -S "$(NATIVE_TEST_SOURCE)" -B "$(NATIVE_COVERAGE_BUILD)" \
+		-DKRABBY_NATIVE_COVERAGE=ON \
+		-DFETCHCONTENT_SOURCE_DIR_UNITY="$(NATIVE_TEST_BUILD)/_deps/unity-src"
+	$(CMAKE) --build "$(NATIVE_COVERAGE_BUILD)"
+	$(CTEST) --test-dir "$(NATIVE_COVERAGE_BUILD)" --output-on-failure
+	$(CMAKE) -E chdir "$(REPO_ROOT)" $(GCOVR) --root . "$(NATIVE_COVERAGE_BUILD)" \
+		--gcov-executable "$(GCOV)" \
+		--filter 'firmware/arduino/src/imu/.*\.h$$' \
+		--exclude-unreachable-branches --exclude-throw-branches \
+		--txt --print-summary --fail-under-line 100 --fail-under-branch 85
+
+test-firmware: test-native
+	cd "$(REPO_ROOT)" && $(PYTEST) -q tests/unit/firmware
+
+# Pinned to the core version the bench-verified hex was built with; bump
+# deliberately, together with the CI cache key in publish-firmware.yml.
 arduino-core:
-	$(ARDUINO_CLI) core install arduino:avr
+	$(ARDUINO_CLI) core install arduino:avr@1.8.8
 
-# Single compile recipe: always export the binaries to BUILD_DIR so every upload
-# path (local upload-firmware, remote flash-remote) flashes the same artifact.
-compile-firmware: arduino-core
+# The SparkFun LSM6DSO library is not in the Arduino Library Manager index, so
+# it installs from git. Pinned to a commit, not a tag: a commit hash covers the
+# whole tree, so a re-tag or force-push upstream fails the fetch instead of
+# silently changing the build. --git-url requires enable_unsafe_install, set
+# per-command via the environment so no global arduino-cli config changes.
+# The install directory is named from the library's own library.properties, not
+# the repo; note the neighbouring SparkFun_Qwiic_6Dof_-_LSM6DS0 (zero) is a
+# different part. The stamp records the installed pin so a warm sketchbook skips
+# the clone, while a bump to LSM6DSO_LIB_REF re-fetches.
+LSM6DSO_LIB_URL := https://github.com/sparkfun/SparkFun_Qwiic_6DoF_LSM6DSO_Arduino_Library.git
+LSM6DSO_LIB_REF := 4addc5ffd7cb71a0481aee259ab85c232aa92afe
+LSM6DSO_LIB_DIR := SparkFun_Qwiic_6Dof_-_LSM6DSO
+
+fetch-libs:
+	@installed="$$($(ARDUINO_CLI) config get directories.user)/libraries/$(LSM6DSO_LIB_DIR)"; \
+	if [ "$$(cat "$$installed/.krabby-pin" 2>/dev/null)" = "$(LSM6DSO_LIB_REF)" ]; then \
+		echo "$(LSM6DSO_LIB_DIR) already at $(LSM6DSO_LIB_REF); skipping fetch"; \
+	else \
+		ARDUINO_LIBRARY_ENABLE_UNSAFE_INSTALL=true $(ARDUINO_CLI) lib install \
+			--git-url "$(LSM6DSO_LIB_URL)#$(LSM6DSO_LIB_REF)" && \
+		echo "$(LSM6DSO_LIB_REF)" > "$$installed/.krabby-pin"; \
+	fi
+
+compile-firmware: arduino-core fetch-libs
 	$(ARDUINO_CLI) compile --fqbn $(FQBN) $(BUILD_PROPS) --output-dir "$(BUILD_DIR)" $(SKETCH)
 
 upload-firmware: compile-firmware

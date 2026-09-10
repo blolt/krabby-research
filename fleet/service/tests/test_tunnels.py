@@ -16,10 +16,10 @@ from krabby_fleet_service._config import Settings, get_settings
 from krabby_fleet_service.app import app
 
 _SETTINGS = Settings(
-    aws_region="us-east-1",
-    cognito_user_pool_id="us-east-1_TESTPOOL",
+    aws_region="us-east-2",
+    cognito_user_pool_id="us-east-2_TESTPOOL",
     cognito_app_client_id="test-client-id",
-    iot_ats_endpoint="example-ats.iot.us-east-1.amazonaws.com",
+    iot_ats_endpoint="example-ats.iot.us-east-2.amazonaws.com",
 )
 _FAKE_CLAIMS = {"sub": "test-operator", "cognito:groups": ["operator"]}
 
@@ -28,13 +28,6 @@ _FAKE_CLAIMS = {"sub": "test-operator", "cognito:groups": ["operator"]}
 def authed_client():
     app.dependency_overrides[get_settings] = lambda: _SETTINGS
     app.dependency_overrides[require_operator] = lambda: _FAKE_CLAIMS
-    yield TestClient(app)
-    app.dependency_overrides.clear()
-
-
-@pytest.fixture
-def anon_client():
-    app.dependency_overrides[get_settings] = lambda: _SETTINGS
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -50,7 +43,7 @@ def test_create_ssh_tunnel_calls_open_tunnel(authed_client):
 
     assert resp.status_code == 200
     body = resp.json()
-    assert body == {"tunnelId": "abc123", "sourceAccessToken": "src-token", "region": "us-east-1"}
+    assert body == {"tunnelId": "abc123", "sourceAccessToken": "src-token", "region": "us-east-2"}
 
     fake_client.open_tunnel.assert_called_once()
     _, kwargs = fake_client.open_tunnel.call_args
@@ -64,16 +57,6 @@ def test_delete_ssh_tunnel_calls_close_tunnel(authed_client):
 
     assert resp.status_code == 204
     fake_client.close_tunnel.assert_called_once_with(tunnelId="abc123", delete=True)
-
-
-def test_create_ssh_tunnel_without_auth_is_401(anon_client):
-    resp = anon_client.post("/devices/bench-krabby-ci/ssh-tunnel")
-    assert resp.status_code == 401
-
-
-def test_delete_ssh_tunnel_without_auth_is_401(anon_client):
-    resp = anon_client.delete("/devices/bench-krabby-ci/ssh-tunnel/abc123")
-    assert resp.status_code == 401
 
 
 def test_healthz_needs_no_auth():

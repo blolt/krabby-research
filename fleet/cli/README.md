@@ -1,15 +1,41 @@
 # krabby-fleet
 
-Operator CLI for the Krabby fleet.
+Operator CLI for the Krabby fleet. Run it on an **operator machine** (laptop /
+workstation), not on the Orin — the Orin uses `krabby` / `krabby-agent` instead.
+
+## Install
+
+From the `krabby-research` repo root (venv recommended):
+
+```bash
+pip install -e ./fleet/config -e ./fleet/cli
+```
+
+For editable / test installs:
+
+```bash
+pip install -e "./fleet/config" -e "./fleet/cli[dev]"
+```
+
+Confirm: `krabby-fleet --help`. Non-secret fleet settings come from committed
+[`../config/fleet.toml`](../config/fleet.toml) (see [`../config/README.md`](../config/README.md)).
+For `krabby-fleet ssh`, also install `localproxy` and `ssh` on the same machine
+([`../SSH-TUNNEL.md`](../SSH-TUNNEL.md)).
 
 ## Config
 
-`~/.config/krabby-fleet/config.toml`:
+**Default:** shared [`fleet/config/fleet.toml`](../config/fleet.toml) in the repo
+(loaded automatically after `pip install -e fleet/config`).
+
+**Override:** copy the same TOML shape to `~/.config/krabby-fleet/config.toml`,
+or set `KRABBY_FLEET_CONFIG=/path/to/fleet.toml`.
+
+Legacy operator-only layout (still supported when using an explicit path):
 
 ```toml
 [fleet]
 service_url = "https://{fleet-domain}/api"
-# optional: portal_url = "https://{fleet-domain}"  # default = service_url without /api
+# optional: portal_url = "https://{fleet-domain}"
 
 [cognito]
 user_pool_id = "{cognito-user-pool-id}"
@@ -78,9 +104,8 @@ Requires `aws-iot-securetunneling-localproxy` (the `localproxy` binary) on
 ## Tests
 
 ```bash
-cd fleet/cli
-pip install -e ".[dev]"
-pytest tests/
+pip install -e "./fleet/cli[dev]"   # from krabby-research root
+pytest fleet/cli/tests/
 ```
 
 No real Cognito, AWS, or fleet-service access needed -- `test_auth.py`

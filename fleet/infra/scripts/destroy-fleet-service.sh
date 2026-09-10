@@ -2,9 +2,10 @@
 # Destroy FleetServiceStack via CDK. Requires an activated fleet/infra venv
 # (see ./scripts/setup-venv.sh). Puts project-local Node + cdk CLI on PATH.
 #
-# Requires the same -c domainName=... -c hostedZoneName=... arguments as
-# deploy-fleet-service.sh -- CDK has to construct the stack to destroy it,
-# and those are required constructor values (see fleet/infra/fleet-service.md).
+# Requires the same -c context as deploy-fleet-service.sh (domainName,
+# hostedZoneName, githubOwner, githubRepo, githubBranch,
+# githubOidcProviderArn, cdkBootstrapQualifier) -- CDK has to construct the
+# stack to destroy it (see fleet/infra/fleet-service.md).
 #
 # Does NOT pass --force -- cdk will prompt for confirmation. Pass --force
 # yourself for non-interactive/CI use: ./scripts/destroy-fleet-service.sh --force

@@ -1,8 +1,10 @@
 #pragma once
+
 #include <Arduino.h>
 #include <EEPROM.h>
 #include "command.h"
 #include "hall_hw.h"
+#include "src/telemetry.h"
 
 // Linear actuator controller (w/ potentiometer feedback)
 class LinearActuator
@@ -85,7 +87,7 @@ public:
     }
 
     // Returns normalized position [0.0,1.0], where 0.0 = minStop, 1.0 = maxStop
-    float getPos()
+    float getPos() const
     {
         float range = maxStop - minStop;
         if (range == 0)
@@ -93,7 +95,7 @@ public:
         return ((int)avgPot - minStop) / range;
     }
 
-    int getRawPos() { return (int)avgPot; } // Returns smoothed RAW value
+    int getRawPos() const { return (int)avgPot; } // Returns smoothed RAW value
 
     // Set position target (T command only). Only this sets hasTarget = true.
     void setTarget(float val)
@@ -189,29 +191,30 @@ public:
         return false;
     }
 
-    // JT wire format: "<role>; <name> <pos> <pot> <current> <enL> <enR> <pwmL> <pwmR> <hallEdges>;"
-    // e.g. 'FRONT; FLHY 0.123 0 12 1 1 0 120 0; FRHY 0.234 0 13 1 1 0 130 0; ...'
+    // Joint segment: "<name> <pos> <pot> <current> <enL> <enR> <pwmL> <pwmR> <hallEdges>".
+    // The manager owns separators between segments; the loop owns role prefix,
+    // optional sensor segments, and the one line ending.
     // Keep in sync with firmware/interfaces/joint_telemetry.py
     // Keeping it super simple to avoid any string parsing and external library overhead
     void printTelemetry(Print& out) const
     {
         out.print(name);
-        out.print(' ');
+        out.print(TELEMETRY_FIELD_SEPARATOR);
         out.print(getPos(), 3);
-        out.print(' ');
+        out.print(TELEMETRY_FIELD_SEPARATOR);
         out.print((int)avgPot);
-        out.print(' ');
+        out.print(TELEMETRY_FIELD_SEPARATOR);
         out.print((int)avgIS);
-        out.print(' ');
+        out.print(TELEMETRY_FIELD_SEPARATOR);
         int en = digitalRead(pinEn);
         out.print(en);
-        out.print(' ');
+        out.print(TELEMETRY_FIELD_SEPARATOR);
         out.print(en);
-        out.print(' ');
+        out.print(TELEMETRY_FIELD_SEPARATOR);
         out.print(currentPwm < 0 ? abs(currentPwm) : 0);
-        out.print(' ');
+        out.print(TELEMETRY_FIELD_SEPARATOR);
         out.print(currentPwm > 0 ? currentPwm : 0);
-        out.print(' ');
+        out.print(TELEMETRY_FIELD_SEPARATOR);
         if (hallSlot >= 0 && hallSlot < 6)
             out.print(hallHwGetEdgeCount((uint8_t)hallSlot));
         else
@@ -313,14 +316,15 @@ public:
         }
     }
 
+    // Prints the joint segments only — no line ending. The caller terminates the
+    // line so the leader can append sensor segments before the newline.
     void printTelemetry(Print& out) const
     {
         for (size_t i = 0; i < count; i++)
         {
-            if (i) out.print(';'); // Only print semicolons between joints, not at the end
+            if (i) out.print(TELEMETRY_SEGMENT_DELIMITER);
             actuators[i]->printTelemetry(out);
         }
-        out.println();
     }
 
     // ==================================================

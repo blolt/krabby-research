@@ -1,9 +1,9 @@
 """FleetServiceStack -- EC2 host, networking, and Cognito for the fleet service.
 
 Provisions the EC2 instance, its Elastic IP, a Route 53 A record, a security
-group, the instance's IAM role, and the Cognito user pool operators
-authenticate against. Depends on `ControlPlaneStack` via the
-`IotAtsEndpoint` CFN export.
+group, the instance's IAM role, the Cognito user pool operators authenticate
+against, and the GitHub Actions OIDC role used by fleet-ci / fleet-deploy.
+Depends on `ControlPlaneStack` via the `IotAtsEndpoint` CFN export.
 
 The instance IAM role grants Secure Tunneling open/close, fleet listing
 (SearchIndex/GetThingShadow/DescribeThing), and the teleop signaling
@@ -45,6 +45,11 @@ TURN_AUTH_SECRET_NAME = "/krabby/fleet/turn-auth-secret"
 # Node binary installed by UserData (must match ExecStart in
 # krabby-fleet-portal.service).
 _NODE_VERSION = "22.14.0"
+
+# GitHub Actions OIDC issuer host (fixed by GitHub; used in trust
+# conditions). Repo owner/name/branch, IdP ARN, and CDK bootstrap
+# qualifier are required CDK context -- no fallbacks (see fleet-service.md).
+_GITHUB_OIDC_ISSUER = "token.actions.githubusercontent.com"
 
 
 class FleetServiceStack(Stack):
@@ -434,6 +439,152 @@ class FleetServiceStack(Stack):
         )
         cognito_app_client_id_param.grant_read(instance_role)
 
+        # --- GitHub Actions OIDC role (fleet-ci / fleet-deploy) ---
+        # One IdP per issuer URL per account: import an existing GitHub
+        # provider (e.g. firmware CI) rather than creating a second one that
+        # would fail deploy with EntityAlreadyExists.
+        _github_ctx_keys = (
+            "githubOwner",
+            "githubRepo",
+            "githubBranch",
+            "githubOidcProviderArn",
+            "cdkBootstrapQualifier",
+        )
+        _github_ctx = {
+            key: self.node.try_get_context(key) for key in _github_ctx_keys
+        }
+        _missing_github = [k for k, v in _github_ctx.items() if not v]
+        if _missing_github:
+            raise ValueError(
+                "FleetServiceStack GitHub Actions OIDC requires CDK context "
+                + ", ".join(f"-c {k}=..." for k in _missing_github)
+                + " (see fleet/infra/fleet-service.md)"
+            )
+        github_owner = _github_ctx["githubOwner"]
+        github_repo = _github_ctx["githubRepo"]
+        github_branch = _github_ctx["githubBranch"]
+        github_oidc_provider_arn = _github_ctx["githubOidcProviderArn"]
+        cdk_bootstrap_qualifier = _github_ctx["cdkBootstrapQualifier"]
+        github_repo_slug = f"{github_owner}/{github_repo}"
+
+        github_oidc_provider = iam.OpenIdConnectProvider.from_open_id_connect_provider_arn(
+            self, "GitHubOidcProvider", github_oidc_provider_arn,
+        )
+        # Trust: default-branch pushes + same-repo pull_request subjects.
+        # Fork PRs do not match these `sub` values (fork sub uses the fork
+        # owner/repo). repository claim is a second belt against confused deputy.
+        github_actions_principal = iam.OpenIdConnectPrincipal(
+            github_oidc_provider,
+            conditions={
+                "StringEquals": {
+                    f"{_GITHUB_OIDC_ISSUER}:aud": "sts.amazonaws.com",
+                    f"{_GITHUB_OIDC_ISSUER}:repository": github_repo_slug,
+                },
+                "StringLike": {
+                    f"{_GITHUB_OIDC_ISSUER}:sub": [
+                        f"repo:{github_repo_slug}:ref:refs/heads/{github_branch}",
+                        f"repo:{github_repo_slug}:pull_request",
+                    ],
+                },
+            },
+        )
+        github_actions_role = iam.Role(
+            self,
+            "FleetGitHubActionsRole",
+            role_name="krabby-fleet-ci",
+            description=(
+                "GitHub Actions OIDC role for fleet-ci / fleet-deploy "
+                f"({github_repo_slug})"
+            ),
+            assumed_by=github_actions_principal,
+            max_session_duration=Duration.hours(1),
+        )
+        # CDK deploy of ControlPlaneStack + FleetServiceStack: assume the
+        # account's bootstrap roles (file publish + deploy + lookup).
+        github_actions_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="CdkBootstrapAssumeRoles",
+                actions=["sts:AssumeRole"],
+                resources=[
+                    f"arn:aws:iam::{self.account}:role/cdk-{cdk_bootstrap_qualifier}-*",
+                ],
+            )
+        )
+        # Post-deploy: read stack outputs, wait for SSM Online, Run Command
+        # restart (mirrors deploy-fleet-service.sh after `cdk deploy`).
+        github_actions_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="FleetDeployStackOutputs",
+                actions=["cloudformation:DescribeStacks"],
+                resources=[
+                    f"arn:aws:cloudformation:{self.region}:{self.account}:stack/ControlPlaneStack/*",
+                    f"arn:aws:cloudformation:{self.region}:{self.account}:stack/FleetServiceStack/*",
+                ],
+            )
+        )
+        github_actions_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="FleetDeploySsmRunCommand",
+                actions=[
+                    "ssm:DescribeInstanceInformation",
+                    "ssm:SendCommand",
+                    "ssm:GetCommandInvocation",
+                    "ssm:ListCommandInvocations",
+                ],
+                resources=["*"],
+            )
+        )
+        # Bench E2E + CI Cognito user lifecycle (scratch users / rotation).
+        github_actions_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="FleetCiCognitoAdmin",
+                actions=[
+                    "cognito-idp:AdminCreateUser",
+                    "cognito-idp:AdminDeleteUser",
+                    "cognito-idp:AdminSetUserPassword",
+                    "cognito-idp:AdminAddUserToGroup",
+                    "cognito-idp:AdminRemoveUserFromGroup",
+                    "cognito-idp:AdminGetUser",
+                    "cognito-idp:AdminResetUserPassword",
+                    "cognito-idp:ListUsers",
+                    "cognito-idp:DescribeUserPool",
+                ],
+                resources=[user_pool.user_pool_arn],
+            )
+        )
+        # Bench E2E against IoT / tunneling / teleop MQTT (scratch thing+cert
+        # isolation tests need create/delete).
+        github_actions_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="FleetCiIotBench",
+                actions=[
+                    "iot:GetPolicy",
+                    "iot:DescribeThingType",
+                    "iot:DescribeThing",
+                    "iot:DescribeEndpoint",
+                    "iot:SearchIndex",
+                    "iot:GetThingShadow",
+                    "iot:CreateThing",
+                    "iot:DeleteThing",
+                    "iot:CreateKeysAndCertificate",
+                    "iot:UpdateCertificate",
+                    "iot:DeleteCertificate",
+                    "iot:AttachPolicy",
+                    "iot:DetachPolicy",
+                    "iot:AttachThingPrincipal",
+                    "iot:DetachThingPrincipal",
+                    "iot:OpenTunnel",
+                    "iot:CloseTunnel",
+                    "iot:DescribeTunnel",
+                    "iot:Connect",
+                    "iot:Publish",
+                    "iot:Subscribe",
+                    "iot:Receive",
+                ],
+                resources=["*"],
+            )
+        )
+
         CfnOutput(self, "FleetServiceInstanceId", value=instance.instance_id)
         CfnOutput(self, "FleetServicePublicIp", value=eip.attr_public_ip)
         CfnOutput(self, "FleetServiceDomainName", value=domain_name)
@@ -454,3 +605,9 @@ class FleetServiceStack(Stack):
             value=user_pool_client.user_pool_client_id, export_name="FleetCognitoUserPoolClientId",
         )
         CfnOutput(self, "FleetCognitoDomain", value=user_pool_domain.domain_name)
+        CfnOutput(
+            self, "FleetGitHubActionsRoleArn",
+            value=github_actions_role.role_arn,
+            export_name="FleetGitHubActionsRoleArn",
+            description="IAM role ARN for fleet-ci / fleet-deploy (GitHub OIDC)",
+        )

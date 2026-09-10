@@ -13,7 +13,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from firmware.krabby_mcu import parse_ver_reply
+from firmware.krabby_mcu import DEFAULT_BAUD, parse_ver_reply
 from firmware.mcu_port import MEGA_USB_IDS
 from firmware.manifest import (
     BranchBuild,
@@ -67,7 +67,7 @@ def _probe_version(port: str, timeout: float = 6.0) -> tuple[Optional[str], Opti
     except ImportError:
         return None, None
     try:
-        with serial.Serial(port, 115200, timeout=0.2) as ser:
+        with serial.Serial(port, DEFAULT_BAUD, timeout=0.2) as ser:
             ready = False
             role_hint: Optional[str] = None
             v_retries = 0

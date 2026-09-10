@@ -46,16 +46,9 @@ class JointTelemetry:
 
     @classmethod
     def parse_line(cls, line: str):
-        joints = []
-        for seg in line.strip().split(";"):
-            seg = seg.strip()
-            if not seg:
-                continue
-            tokens = seg.split()
-            jt = cls.from_tokens(tokens)
-            if jt:
-                joints.append(jt)
-        return joints
+        from firmware.interfaces.telemetry_parser import parse_telemetry_line
+
+        return parse_telemetry_line(line).joints
 
     def format_compact(self, target: Optional[float] = None) -> str:
         pos_part = f"{self.pos:.3f}"

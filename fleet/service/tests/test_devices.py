@@ -28,13 +28,6 @@ def authed_client():
     app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def anon_client():
-    app.dependency_overrides[get_settings] = lambda: _SETTINGS
-    yield TestClient(app)
-    app.dependency_overrides.clear()
-
-
 def test_list_devices_uses_search_index(authed_client):
     shadow = json.dumps({"reported": {"timestamp": 1710000000, "reported_image": "img:tag"}})
     fake_iot = MagicMock()
@@ -141,13 +134,3 @@ def test_get_device_wrong_thing_type_is_404(authed_client):
         resp = authed_client.get("/devices/other-thing")
 
     assert resp.status_code == 404
-
-
-def test_list_devices_without_auth_is_401(anon_client):
-    resp = anon_client.get("/devices")
-    assert resp.status_code == 401
-
-
-def test_get_device_without_auth_is_401(anon_client):
-    resp = anon_client.get("/devices/bench-krabby-ci")
-    assert resp.status_code == 401

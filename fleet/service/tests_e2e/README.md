@@ -1,61 +1,61 @@
 # Fleet service live E2E (SSH + teleop)
 
-Tests against a **deployed** fleet host and an enrolled bench Orin
-(default thing name `bench-krabby-ci`). Skipped unless the env below is set — unit `pytest tests/`
-without a live environment stays green.
+Tests against a **deployed** fleet host and an enrolled bench Orin. Non-secret
+settings come from committed [`../config/fleet.toml`](../config/fleet.toml)
+(see [`../config/README.md`](../config/README.md)).
 
-## Env
+## When tests run
 
-| Variable | Required for | Notes |
-|----------|--------------|-------|
-| `FLEET_SERVICE_URL` | SSH + teleop | e.g. `https://fleet.example.com/api` |
-| `FLEET_PORTAL_URL` | teleop | e.g. `https://fleet.example.com` (no `/api`) |
-| `COGNITO_USER_POOL_ID` | both | From `FleetServiceStack` |
-| `COGNITO_APP_CLIENT_ID` | both | From `FleetServiceStack` |
-| `AWS_REGION` | both | Default `us-east-1` |
-| `BENCH_E2E=1` | teleop | Explicit enable for Playwright suite |
-| `BENCH_THING_NAME` | both | Default `bench-krabby-ci` |
+| Context | Behavior |
+|---------|----------|
+| Local `pytest tests_e2e/` (default) | **Skipped** — unit runs stay green |
+| `BENCH_E2E=1` or GitHub Actions | **Pass/fail** — missing config, password, tools, or bench → red job |
 
-AWS credentials (default chain) need Cognito admin APIs for scratch users, plus
-`iot:DescribeEndpoint` and MQTT SigV4 `Connect`/`Subscribe`/`Receive` on
-`teleop/*/signaling/*` for the teleop signaling sniffer (mirror the fleet
-instance role's teleop IAM, or grant the CI OIDC role the same).
+## Config vs secrets
+
+| Source | What |
+|--------|------|
+| `fleet/config/fleet.toml` | URLs, region, Cognito pool/client IDs, bench thing name, CI operator email |
+| GitHub secret `COGNITO_CI_PASSWORD` | CI operator password only |
+| Env vars | Optional overrides of any committed value |
+
+## CI scope
+
+**Happy path only**: list devices, SSH tunnel, teleop signaling/video/control, authed
+ICE servers. Uses the persistent CI operator (`[ci].operator_username` +
+`COGNITO_CI_PASSWORD`) — no scratch Cognito users, no negative-auth cases.
+
+Teleop also needs runner AWS creds with `iot:DescribeEndpoint` and MQTT SigV4 on
+`teleop/*/signaling/*` (signaling sniffer).
 
 Bench preconditions for teleop:
 
 * `krabby agent` running (shadow + tunnels + teleop shim on `:9000`)
 * HAL edge with `--teleop-ip 127.0.0.1` (and camera available), plus
-  `--teleop-control-echo` for the HAL-ack assertion in
-  `test_teleop_e2e.py`
+  `--teleop-control-echo` for the HAL-ack assertion in `test_teleop_e2e.py`
 
 ## Run
 
 ```bash
 cd fleet/service
 python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[e2e]"
+pip install -e ../config -e ".[e2e]"
 playwright install --with-deps chromium
 
-export FLEET_SERVICE_URL=https://{fleet-domain}/api
-export FLEET_PORTAL_URL=https://{fleet-domain}
-export COGNITO_USER_POOL_ID=...
-export COGNITO_APP_CLIENT_ID=...
-export AWS_REGION=us-east-1
+export COGNITO_CI_PASSWORD='…'   # CI operator password
 export BENCH_E2E=1
 
 pytest tests_e2e/ -q
 ```
 
-SSH-only (no Playwright / no `BENCH_E2E`):
+SSH round-trip also needs `krabby-fleet` CLI and `localproxy` on PATH.
 
-```bash
-pytest tests_e2e/test_ssh_tunnel_e2e.py -q
-```
-
-## Teleop coverage
+## Coverage
 
 | Test | Checks |
 |------|--------|
-| `test_teleop_signaling_control_and_video` | Cognito → viewer → Playing; MQTT `signaling/*` activity; control DC + motion-safe zero payload; ≥1 video track; MQTT idle after close |
-| `test_teleop_unauthenticated_signaling_rejected` | WS without token fails; no `signaling/in` publish |
-| `test_teleop_ice_servers_*` | ICE endpoint 401 anon / 200 + STUN with operator token |
+| `test_open_and_close_tunnel_happy_path` | Operator opens/closes SSH tunnel via REST |
+| `test_get_devices_*` | List + get device shadow for bench |
+| `test_krabby_fleet_ssh_runs_command_end_to_end` | CLI SSH echo through Secure Tunnel |
+| `test_teleop_signaling_control_and_video` | Portal viewer → Playing; control + video; MQTT idle after close |
+| `test_teleop_ice_servers_authed` | ICE endpoint returns STUN with operator token |

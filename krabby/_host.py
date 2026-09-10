@@ -276,7 +276,7 @@ ExecStartPre=-/usr/bin/docker rm -f krabby
 ExecStart={krabby_bin} run
 # The container runs under containerd, not this unit's cgroup; stop it explicitly.
 ExecStop=/usr/bin/docker stop krabby
-# The launcher exits if the MCU has not enumerated yet at boot; retry until it does.
+# Retry on transient docker/HAL failures (missing MCU is non-fatal and does not restart).
 Restart=on-failure
 RestartSec=5
 TimeoutStopSec=40

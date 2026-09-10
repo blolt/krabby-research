@@ -42,7 +42,7 @@ if all(_fleet_context.values()):
     fleet_service_stack = FleetServiceStack(
         app,
         "FleetServiceStack",
-        description="Krabby fleet service host (EC2 + EIP + Route 53 + security group + Cognito + instance IAM)",
+        description="Krabby fleet service host (EC2 + EIP + Route 53 + Cognito + instance IAM + GitHub Actions OIDC)",
         domain_name=_fleet_context["domainName"],
         hosted_zone_name=_fleet_context["hostedZoneName"],
         cognito_domain_prefix=app.node.try_get_context("cognitoDomainPrefix"),

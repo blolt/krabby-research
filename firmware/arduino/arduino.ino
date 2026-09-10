@@ -6,21 +6,33 @@
 
 #include <Arduino.h>
 #include <EEPROM.h>
+#include "src/imu/imu_calibrator.h"
+#include "src/imu/lsm6dso_adapter.h"
 #include "board_pins.h"
 #include "command.h"
 #include "actuator_manager.h"
+#include "src/imu/imu_constants.h"
+#include "src/telemetry.h"
 #include "version.h"
 
 // --- Serial: left follower = Serial1 (TX1/RX1 on Krabby-Uno v0.1 shield), right follower = Serial2 ---
 #define SERIAL_LEFT  Serial1  // pins 18 (TX1), 19 (RX1) — Krabby-Uno v0.1 shield Serial1 connector
 #define SERIAL_RIGHT Serial2   // pins 16 (TX2), 17 (RX2) — Krabby-Uno v0.1 shield Serial2 connector
-#define BAUD_RATE 115200
+#define BAUD_RATE 250000
 #define SYNC_TOKEN "SYNC"
 #define ASSIGN_LEFT  "ROLE:LEFT"
 #define ASSIGN_RIGHT "ROLE:RIGHT"
 
 enum BoardRole { ROLE_UNKNOWN, ROLE_FRONT, ROLE_LEFT, ROLE_RIGHT };
 BoardRole currentRole = ROLE_UNKNOWN;
+
+// M16 I2C sensor cluster is leader-only.
+// ROLE_UNKNOWN also qualifies: it is the solo-board-on-USB bench case (defaults
+// to front actuators + USB serial), not a follower.
+static inline bool isI2CClusterBoard()
+{
+    return currentRole == ROLE_FRONT || currentRole == ROLE_UNKNOWN;
+}
 
 // EEPROM address 32: magic sentinel byte (0xAB); address 33: BoardRole value.
 // Calibration data (CalData) occupies addresses 0–25; gap at 26–31 kept for alignment.
@@ -102,8 +114,91 @@ const LinearActuator::ControlConfig ACTUATOR_CONFIG = {
 const size_t CMD_BUF_SIZE = 18;
 Command cmdBuf[CMD_BUF_SIZE];
 
-const int TELEMETRY_INTERVAL_MS = 50;
+// TELEMETRY_INTERVAL_MS is the existing actuator telemetry cadence.
 unsigned long lastTelemetry = 0;
+
+// --- I2C sensor cluster (Milestone 16) — leader board only ---
+// The LSM6DSO IMU rides the leader's telemetry tick; followers never touch the bus.
+Lsm6dsoAdapter imuSensor;
+static_assert(
+    sizeof(ImuCalibrationRecord) == EEPROM_IMU_CAL_SIZE,
+    "update EEPROM_IMU_CAL_SIZE in src/imu/imu_constants.h");
+
+// EEPROM binding for ImuCalibrator. Kept out of src/imu/ because it needs
+// <EEPROM.h> and that directory compiles on the host.
+class EepromImuCalibrationStorage
+{
+public:
+    void load(ImuCalibrationRecord &record)
+    {
+        EEPROM.get(EEPROM_IMU_CAL_ADDR, record);
+    }
+
+    void writeRecord(const ImuCalibrationRecord &record)
+    {
+        EEPROM.put(EEPROM_IMU_CAL_ADDR, record);
+    }
+
+    void updateMagic(uint8_t magic)
+    {
+        EEPROM.update(EEPROM_IMU_CAL_ADDR, magic);
+    }
+};
+
+static void logImuInitFailure(Lsm6dsoInitializationResult result)
+{
+    if (result == Lsm6dsoInitializationResult::NotDetected)
+    {
+        Serial.println(F("IMU CAL: LSM6DSO not detected at configured addresses; shipping valid=0."));
+        return;
+    }
+
+    if (result == Lsm6dsoInitializationResult::ConfigurationFailed)
+    {
+        Serial.println(F("IMU CAL: LSM6DSO detected but register configuration failed; shipping valid=0."));
+        return;
+    }
+
+    Serial.println(F("IMU CAL: unexpected initialization result; shipping valid=0."));
+}
+
+static void logImuCalibrationResult(ImuCalibrationResult result)
+{
+    switch (result)
+    {
+        case ImuCalibrationResult::Loaded:
+            Serial.println(F("IMU CAL: loaded from EEPROM."));
+            break;
+        case ImuCalibrationResult::Captured:
+            Serial.println(F("IMU CAL: gyro bias captured and saved to EEPROM."));
+            break;
+        case ImuCalibrationResult::ReadFailed:
+            Serial.println(F("IMU CAL: sensor read failed; bias left at zero, not saved."));
+            break;
+        case ImuCalibrationResult::MotionDetected:
+            Serial.println(F("IMU CAL: motion detected; bias left at zero, not saved."));
+            break;
+        case ImuCalibrationResult::VerificationFailed:
+            Serial.println(F("IMU CAL: EEPROM verification failed; bias left at zero."));
+            break;
+    }
+}
+
+static void imuSetup()
+{
+    const Lsm6dsoInitializationResult initResult =
+        imuSensor.initialize();
+    if (initResult != Lsm6dsoInitializationResult::Ok)
+    {
+        logImuInitFailure(initResult);
+        return;
+    }
+
+    EepromImuCalibrationStorage storage;
+    logImuCalibrationResult(imuSensor.calibrate(storage, delay));
+
+    Serial.println(F("IMU CAL: LSM6DSO online."));
+}
 
 // One line = "ROLE; " + ACT_COUNT segments; allow ~55 chars per segment to avoid truncation.
 #define TELEMETRY_LINE_MAX (8 + (ACT_COUNT * 55))
@@ -245,6 +340,9 @@ void setup()
     actuatorManager->initAll();
     hallHwInit();
     actuatorManager->loadCalibration();
+
+    if (isI2CClusterBoard())
+        imuSetup();
 
     Serial.print("Krabby Ready ");
     Serial.print(boardPinRevisionLabel());
@@ -427,8 +525,17 @@ void loop()
     {
         lastTelemetry = millis();
         mainSerial->print(roleName(currentRole));
-        mainSerial->print("; ");
+        mainSerial->print(TELEMETRY_SEGMENT_DELIMITER);
+        mainSerial->print(TELEMETRY_FIELD_SEPARATOR);
         actuatorManager->printTelemetry(*mainSerial);
+        // Leader appends its sensor segments to its own line only; forwarded
+        // LEFT/RIGHT lines pass through forwardFullLines() untouched.
+        if (isI2CClusterBoard())
+        {
+            const ImuMeasurement measurement = imuSensor.measure();
+            appendImuMeasurement(*mainSerial, measurement);
+        }
+        mainSerial->println();
         mainSerial->flush();  // ensure full line is sent before next loop (avoids two "LEFT;" in one buffer on host)
     }
 }

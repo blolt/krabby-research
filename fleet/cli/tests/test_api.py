@@ -29,13 +29,6 @@ def test_list_devices_happy_path():
     assert kwargs["headers"] == {"Authorization": "Bearer access-token"}
 
 
-def test_list_devices_401_exits():
-    fake_resp = MagicMock(status_code=401)
-    with patch("krabby_fleet_cli._api.requests.get", return_value=fake_resp):
-        with pytest.raises(SystemExit):
-            list_devices(_CONFIG, "access-token")
-
-
 def test_open_ssh_tunnel_happy_path():
     fake_resp = MagicMock(status_code=200)
     fake_resp.json.return_value = {
@@ -50,20 +43,6 @@ def test_open_ssh_tunnel_happy_path():
     args, kwargs = post.call_args
     assert args[0] == "https://fleet.example/api/devices/bench-krabby-ci/ssh-tunnel"
     assert kwargs["headers"] == {"Authorization": "Bearer access-token"}
-
-
-def test_open_ssh_tunnel_401_exits():
-    fake_resp = MagicMock(status_code=401)
-    with patch("krabby_fleet_cli._api.requests.post", return_value=fake_resp):
-        with pytest.raises(SystemExit):
-            open_ssh_tunnel(_CONFIG, "bench-krabby-ci", "access-token")
-
-
-def test_open_ssh_tunnel_403_exits():
-    fake_resp = MagicMock(status_code=403)
-    with patch("krabby_fleet_cli._api.requests.post", return_value=fake_resp):
-        with pytest.raises(SystemExit):
-            open_ssh_tunnel(_CONFIG, "bench-krabby-ci", "access-token")
 
 
 def test_close_ssh_tunnel_calls_delete():

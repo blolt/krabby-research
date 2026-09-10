@@ -21,11 +21,15 @@ Index: [`README.md`](README.md).
    Then create an enroll access key once (CDK does not create keys):
    `aws iam create-access-key --user-name krabby-enroll --output json`
 
-2. Deploy the fleet service stack (EC2, Cognito, tunnel API — see
+2. Deploy the fleet service stack (EC2, Cognito, tunnel API — required `-c`
+   keys including GitHub OIDC trust: see
    [`infra/fleet-service.md`](infra/fleet-service.md)):
 
    ```bash
-   ./scripts/deploy-fleet-service.sh
+   ./scripts/deploy-fleet-service.sh \
+     -c domainName=... -c hostedZoneName=... \
+     -c githubOwner=... -c githubRepo=... -c githubBranch=... \
+     -c githubOidcProviderArn=... -c cdkBootstrapQualifier=...
    ```
 
 3. On each robot Orin, enroll and start the agent
@@ -35,12 +39,17 @@ Index: [`README.md`](README.md).
 
 ## Enroll and SSH
 
-- Enroll one Orin: [`ENROLL.md`](ENROLL.md)
+- Enroll one Orin: [`ENROLL.md`](ENROLL.md) — needs
+  **`krabby-launcher` ≥ 0.1.16** (first release with `enroll` / `agent`)
 - One SSH source → one Orin: [`SSH-TUNNEL.md`](SSH-TUNNEL.md)
 - Cognito operators (CLI + Console): [`OPERATORS.md`](OPERATORS.md)
 
 Later, with the fleet service up: `krabby-fleet ssh` / portal Open SSH
 ([`cli/README.md`](cli/README.md)).
+
+**Scale path (document only):** when per-device enroll-time AWS creds no
+longer scale, switch onboarding to AWS IoT Fleet Provisioning by claim —
+see [`ENROLL.md` § Scale path](ENROLL.md#scale-path-not-implemented).
 
 ## MQTT topic scheme
 
@@ -181,8 +190,13 @@ lists it via Fleet Indexing.
 
 ### Operator SSH source
 
+Install and configure the CLI on an operator machine (not the Orin):
+[`cli/README.md`](cli/README.md).
+
 ```bash
-# ~/.config/krabby-fleet/config.toml → service_url = https://<fleet-domain>/api
+# from krabby-research repo root
+pip install ./fleet/cli
+# ~/.config/krabby-fleet/config.toml → service_url + cognito IDs
 krabby-fleet list
 krabby-fleet teleop <thing-name-a>   # browser tab 1
 krabby-fleet teleop <thing-name-b>   # browser tab 2 (concurrent)
@@ -330,7 +344,10 @@ Redeploy CDK at a prior git SHA:
 git checkout <sha>
 cd fleet/infra && source .venv/bin/activate
 ./scripts/deploy-control-plane.sh
-./scripts/deploy-fleet-service.sh
+./scripts/deploy-fleet-service.sh \
+  -c domainName=... -c hostedZoneName=... \
+  -c githubOwner=... -c githubRepo=... -c githubBranch=... \
+  -c githubOidcProviderArn=... -c cdkBootstrapQualifier=...
 ```
 
 SSM restart on the fleet EC2 picks up new service artifacts after
