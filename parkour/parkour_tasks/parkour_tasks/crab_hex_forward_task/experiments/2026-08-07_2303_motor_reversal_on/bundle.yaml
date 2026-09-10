@@ -7,7 +7,7 @@ question: Does restoring penalty_motor_direction_reversal (weight 0.0 -> -0.3) o
 verdict: 'Kept (CHANGELOG.md Verdict block): reversal count down 48% flat / 65% 2b2
   with a more stable, longer-striding 2b2 policy; tippy-tap increase flagged for follow-up,
   not reverted.'
-plant: pre-generator snapshot (old-runs/)
+plant: hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 aliases:
 - sim_fine_tuning/motor_reversal_on
 records:

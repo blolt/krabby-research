@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `screen_C2_airtime/logs/rsl_rl/crab_hex_flat_walk/2026-08-15_18-01-57/model_2999.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** BAKED 2026-08-16 as the velocity-era reference: first tripod of the era (0.573 at 3k, above the position-era 0.517) with tracking PASS; scenarios_v1.yaml flat_walk_forward points at it (sha 7500414c...).
 - **Environment of record:** `KRABBY_TRACK_L1_W=-0.5 KRABBY_AIRTIME_THRESH=0.20`
 

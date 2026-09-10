@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `logs/rsl_rl/crab_hex_flat_walk/2026-08-07_23-03-37/model_19999.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** Flat-stage checkpoint recorded as the 'complete' flat checkpoint in curriculum_state.json (20000-iter from-scratch run with the reversal penalty active), the root of the kept bridge -> 2b1 -> 2b2 chain.
 - **Environment of record:** (see the campaign record)
 

@@ -20,6 +20,6 @@ Key flat-walk settings (see task README Appendix C):
 - ML/MR body–hip splay **±0.25**
 - `KRABBY_HEX_SPAWN_Z = 1.05`
 
-Use `../play_crab_hex_flat_walk_baseline.sh` to play this checkpoint with the bundled USD.
+Play with the task README [Appendix C](../../../README.md#appendix-c--stage-1-flat-walk--2026-05-23-baseline) `play.py` block (`KRABBY_HEX_USD_PATH` = the bundled `crab_simple_2026-05-23_10-15-21.usda`, `KRABBY_HEX_SPAWN_Z=1.05`).
 
 Plant: the pre-generator snapshot USD bundled in `../2026-05-23_10-15-21/` (`KRABBY_HEX_USD_PATH` to it); `KRABBY_HEX_SPAWN_Z=1.05` was the setting of record then (current default 1.085, main asset `assets/crab.usda` = A15+B).

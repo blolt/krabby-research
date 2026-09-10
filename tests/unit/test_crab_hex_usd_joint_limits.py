@@ -1,4 +1,5 @@
-"""Pin the measured-hardware joint limits in ``assets/crab_simple.usda``.
+"""Pin the measured-hardware joint limits in ``assets/crab.usda`` (the main asset; the limits are
+identical in every generated variant).
 
 Pure-text parse of the USD -- no Isaac Sim needed. Guards the 2026-08-20 hardware
 measurement set (physical robot: yaw +-25 deg cam throw, hip 45-150 deg measured from

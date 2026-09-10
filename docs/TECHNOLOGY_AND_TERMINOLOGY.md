@@ -298,7 +298,7 @@ The project follows a modular architecture with clear separation between simulat
 
 ### Core Training Architecture
 
-1. **Environment Layer** (`parkour/parkour_isaaclab/envs/`): Defines the RL environment with managers for actions, observations, rewards, and terminations
+1. **Environment Layer** (`parkour/parkour_isaaclab/envs/`): Defines the RL environment with managers for actions, observations, rewards, and terminations, plus the parkour manager (`envs/mdp/parkours/`: goal tracking, terrain-level curriculum, obstacle-exposure telemetry), the velocity-command term (`envs/mdp/parkour_commands/`) and the reset / domain-randomization events (`envs/mdp/events.py`).
 2. **Terrain Layer** (`parkour/parkour_isaaclab/terrains/`): Generates diverse parkour terrains programmatically
 3. **RL Layer** (`parkour/scripts/rsl_rl/`): Implements the training algorithms, neural networks, and training loops
 4. **Task Configuration** (`parkour/parkour_tasks/`): Defines specific task configurations for different robot models and training scenarios

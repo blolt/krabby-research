@@ -10,12 +10,13 @@ The training plant (the model the RL tasks load) is **generated**, not hand-auth
 - `generate_crab.py --all-variants` regenerates `assets/variants/*.usda` and `assets/variants/MANIFEST.md`.
 - Byte-pin tests: `tests/unit/test_crab_hex_usd_generation.py` — the checked-in USDAs must match the generator output byte for byte.
 - Source of truth for every dimension: `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/mdp/crab_hex_dimensions.py`.
+- `extract_leg_profiles.py` regenerates `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/mdp/crab_hex_leg_profiles.py` (the CAD leg-part outlines the generator turns into link meshes and mass properties) from `~/krabby/joint_specs/KrabV3-Legs.svg`; re-run it when the CAD changes, then regenerate the USDAs.
 
 See [`docs/crab-hexapod-plant.md`](../../docs/crab-hexapod-plant.md) for plant selection (`KRABBY_PLANT` / `--plant`) and provenance.
 
 ## Legacy `crab_hex.usd` demos
 
-The scripts below are **legacy demos** for the hand-rigged [`crab_hex.usd`](../crab_hex.usd) HAL/teleop model (stage **`/World/KrabbyUno`**). They do not target the generated training plant above.
+The scripts below are **legacy demos** for the hand-rigged [`crab_hex.usd`](../crab_hex.usd) Blender-pipeline model (stage **`/World/KrabbyUno`**; see [`Krabby-Uno-USD-pipeline.md`](../Krabby-Uno-USD-pipeline.md) -- the joystick/HAL task loads `assets/crab_hex_ref.usd`, not this file). They do not target the generated training plant above.
 
 ### `squat.py` (legacy)
 

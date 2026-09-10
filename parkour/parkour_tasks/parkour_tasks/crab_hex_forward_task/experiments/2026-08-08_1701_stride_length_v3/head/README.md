@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `logs/rsl_rl/crab_hex_flat_walk/2026-08-08_17-01-57/model_19999.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** Flat stage marked complete on this checkpoint in curriculum_state.json (mean_reward 40.95, crab_failure 2.49%); its gait_eval showed flat-walk stability fully recovered with the series-best slip ratio -- the record's accepted 2b2 teacher model_21900.pt is not bundled.
 - **Environment of record:** (see the campaign record)
 

@@ -7,7 +7,7 @@ question: 'Establish the Milestone 18 Task 1 reference run: measure the CAD-deri
 verdict: 'Reference (CHANGELOG.md Verdict block): the flat model_19999 and 2b2 model_21500
   checkpoints are the baseline every later change in this series is measured against;
   2b2 clears 4/5 README §4.2b gates (forward_progress 0.121 misses).'
-plant: pre-generator snapshot (old-runs/)
+plant: hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 aliases:
 - sim_fine_tuning/baseline
 records:

@@ -18,7 +18,7 @@
 
 ```bash
 cd parkour
-KRABBY_LIN_VEL_X=0.20:0.40 KRABBY_CLOCK_W=1.0 KRABBY_MIN_ACTUAL_SPEED=0.08 KRABBY_HEX_TEACHER_MODE=bridge python scripts/rsl_rl/play.py --task Isaac-Crab-Hex-Flat-Walk-Play-v0 --num_envs 1 --checkpoint ../parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-26_0200_teacher_handoff/head/model_26899_critic_reset.pt
+KRABBY_LIN_VEL_X=0.20:0.40 KRABBY_CLOCK_W=1.0 KRABBY_MIN_ACTUAL_SPEED=0.08 KRABBY_HEX_TEACHER_MODE=bridge python scripts/rsl_rl/play.py --task Isaac-Crab-Hex-Teacher-Play-v0 --num_envs 1 --checkpoint ../parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-26_0200_teacher_handoff/head/model_26899_critic_reset.pt
 ```
 
 ## Paths note

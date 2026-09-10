@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `fromscratch_tripod_reward_w0.15/logs/rsl_rl/crab_hex_flat_walk/2026-08-10_20-08-53/model_19999.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** The campaign's 20k from-scratch confirmation run (reward_tripod_schedule w0.15 active from start); kept as the documented regression evidence - RESULTS.md adopted no checkpoint and the reference remains the predecessor 2026-08-09_1526_gait_tuned model_19999.
 - **Environment of record:** (see the campaign record)
 

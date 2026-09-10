@@ -7,6 +7,8 @@ This folder holds the head that **ships** for the forward-walk task and the stag
 through, one subfolder per stage. Plant: **A15+B** (the main asset `assets/crab.usda`; nothing to set).
 It changes only on a bake decision, which is the user's: the campaign that produced a new head keeps its
 own sha-verified copy under `experiments/<campaign>/head/`; this folder is the shipped lineage.
+Shared training assets the lineage depends on (the RSI reference bank) are bundled alongside, see
+[Shared assets](#shared-assets).
 
 **Current head:** [`3a_student/model_24995.pt`](3a_student/model_24995.pt) -- depth student distilled from the 2c teacher on the 2c MDP (terrain band 0.20-0.70, walking slots, 40 s episodes, DR, plant); the head that SHIPS
 
@@ -18,7 +20,7 @@ own sha-verified copy under `experiments/<campaign>/head/`; this folder is the s
 | 4 | [`2c_teacher/`](2c_teacher/) | `2c` | 15k -> 20k | `Isaac-Crab-Hex-Teacher-v0` | `2b_clearance/` | `model_19996.pt` | `ed43a09d3165` | 0.81 / 19 falls / tripod 0.50 | 0.68 / 32 falls / tripod 0.48 | 0.66 / 34 falls / tripod 0.49 |
 | 5 | [`3a_student/`](3a_student/) | `3a` | 20k -> 25k (5000 distillation iterations) | `Isaac-Crab-Hex-Student-v0` | `2c_teacher/` (teacher + init) | `model_24995.pt` | `e79c4a908ab0` | 0.79 / 21 falls / tripod 0.51 | 0.71 / 29 falls / tripod 0.48 | 0.64 / 36 falls / tripod 0.49 |
 
-Evals: completion / falls out of 100 episodes / tripod score, from the producing campaign's records (flat canary = morph-manifest `slow__A15pB`; step onset = `step__A15pB`; obstacles = `flat_walk_slow_v2` on `recal2b2w` @ 0.20-0.70).
+Evals: completion / falls out of 100 episodes / tripod score, from the producing campaign's records (flat canary = morph-manifest `slow__A15pB`; step onset = `step__A15pB`; obstacles = `flat_walk_slow_v2` on `recal2b2w` @ 0.20-0.70). Task = the preset's task. The 2a-2c files were trained as flat-walk lineage windows on `Isaac-Crab-Hex-Flat-Walk-v0` (log dir `crab_hex_flat_walk/`); the `Isaac-Crab-Hex-Teacher-v0` presets rebuild the identical MDP (pinned by `tests/integration/test_crab_hex_phase_configs.py`).
 
 ## Stages
 
@@ -30,7 +32,7 @@ Evals: completion / falls out of 100 episodes / tripod score, from the producing
 - **Trained in:** experiments/2026-09-06_2130_a15b_lineage (window 0, tag `windows_w0_001_A15pB`, driver run_lineage.py; the `KRABBY_PHASE=1a` preset is pinned to this window's recorded config by tests/integration/test_crab_hex_phase_configs.py)
 - **sha256:** `7027db8e633602d690e7321282eae7fee95bccc63315d61117dcb4eda4383a63`
 
-### `2a_elements/` -- + elements @5k (yaw, edge, stumble, collision, DR push/mass/CoM), recal2b2w 50/50 with curriculum, promotion 0.225:0.125; ramps apex 1->0.5, airtime 0.8->0.4, stride 0.5->0
+### `2a_elements/` -- + elements @5k (yaw, edge, stumble, collision, DR push/mass/CoM), recal2b2w 50/50 with curriculum, promotion 0.225:0.125; ramps apex 1->0.5, airtime 0.8->0.4, stride 0.5->0.25
 
 - **Preset:** `KRABBY_PHASE=2a` (`config/crab_hex/crab_hex_phases.py`; task `Isaac-Crab-Hex-Teacher-v0`, kind `rl`, window 1)
 - **Iterations:** 5k -> 10k; resumes `1a_formation/`
@@ -56,21 +58,33 @@ Evals: completion / falls out of 100 episodes / tripod score, from the producing
 
 ### `3a_student/` -- depth student distilled from the 2c teacher on the 2c MDP (terrain band 0.20-0.70, walking slots, 40 s episodes, DR, plant); the head that SHIPS
 
-- **Preset:** `KRABBY_PHASE=3a` (`config/crab_hex/crab_hex_phases.py`; task `Isaac-Crab-Hex-Student-v0`, kind `distill`, window 4)
+- **Preset:** `KRABBY_PHASE=3a` (`config/crab_hex/crab_hex_phases.py`; task `Isaac-Crab-Hex-Student-v0`, kind `distill`, window —)
 - **Iterations:** 20k -> 25k (5000 distillation iterations); resumes `2c_teacher/` (teacher + init)
 - **Source run (not tracked):** `parkour/logs/rsl_rl/crab_hex_student/2026-09-08_05-54-01/model_24995.pt`
 - **Trained in:** experiments/2026-09-07_1330_phase_pipeline (tag `seed3_3a_003_A15pB`, driver experiments/tools/run_phases.py; bundled there as head/model_24995.pt)
 - **sha256:** `e79c4a908ab01359bede3618cc3347d150e7e62975dd91a9d1728cb5ca57e384`
-- **Notes:** student runner clip_actions = 1.0 is load-bearing (the first 3a run without it fell 100 %); 3b (band 0.70-0.90, model_29994) was equivalent on every eval and is not baked.
+- **Notes:** student runner clip_actions = 1.0 is load-bearing (the first 3a run without it fell 100 %); 3b (band 0.70-0.90, model_29994) was equivalent on every eval and is not baked; the flat canary 0.79 / 21 was measured with the pre-2026-09-09 morph manifest (slow__A15pB then carried an env: block) -- on the current manifest (no block) the same head scores 0.75 / 25, see task README section 4.1b
+
+## Shared assets
+
+### [`rsi/rsi_bank_P0_null.npz`](rsi/rsi_bank_P0_null.npz) -- RSI reference-state bank (full joint state, root height/orientation/velocity, gait-clock phase per frame) harvested on the legacy golden plant from the Phase-0 null-RSI scripted-gait run
+
+- **Used by:** every preset (1a, 2a, 2b, 2c, 3a, 3b) via KRABBY_RSI_FRAC=0.2 -- 20 % of resets start from a bank frame; the presets still read it from its experiments/ source path (config/crab_hex/crab_hex_phases.py FORMATION)
+- **Source (tracked):** `parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-08-26_2200_gated_lineage/rsi_bank_P0_null.npz`
+- **sha256:** `31a53e658a43e6cd9bde631d49406a6dc255b3f0931bac9f18e60a6f0a4e3e2d`
+- **Notes:** harvested on the golden plant, i.e. the bank's foot placements are rotated relative to the A15+B plant the shipped lineage was trained on (toe height is invariant to the mount transform)
 
 ## Using the heads
 
 Paths below are relative to `krabby-research/parkour/` (run from there with the Isaac venv python, headless).
-Task README sections: play [§4.3](../README.md#43-play-a-bundled-checkpoint) / phase-3 [§4.4](../README.md#44-phase-3-student), gait harness [§4.1b](../README.md#41b-gait-metrics-eval-harness-milestone-18-task-0).
+Task README sections: play [§4.3](../README.md#43-play-a-bundled-checkpoint) / phase-3 [§4.4](../README.md#44-student-distillation), gait harness [§4.1b](../README.md#41b-gait-metrics-eval-harness-milestone-18-task-0).
 
 ```bash
 P=parkour_tasks/parkour_tasks/crab_hex_forward_task
-# flat canary of the current head, exactly as the phase driver scores it (reproduces the table above)
+# flat canary of the current head, as the phase driver scores it. NOTE: the table's 3a flat number (0.79 / 21) was
+# recorded with the pre-2026-09-09 morph manifest, whose slow__A15pB carried an env: block; today's slow__A15pB has none,
+# and the harness's post-Kit env write moves the depth student between two repeatable outcomes (0.79/21 vs 0.75/25,
+# task README section 4.1b) -- same policy, different process state.
 KRABBY_LIN_VEL_X=0.0:0.35 KRABBY_TRACK_SIGMA2=0.1 KRABBY_TRACK_L1_W=-1.0 KRABBY_CLOCK_W=1.0 KRABBY_APEX_W=1.0 KRABBY_STUDENT_MDP=1 \
   python $P/scripts/eval_crab_hex_gait.py --headless --manifest $P/experiments/eval/scenarios_morph.yaml \
   --scenario slow__A15pB --task Isaac-Crab-Hex-Student-v0 --checkpoint $P/policy/3a_student/model_24995.pt --save-raw
@@ -85,5 +99,6 @@ as in the task README §4.0 / §4.4; the presets encode each stage's MDP.
 
 ## Maintenance
 
-- `python3 experiments/tools/bundle_policy.py --check` -- every stage file present with its manifest sha (run by `tests/unit/test_policy_of_record.py`).
+- `python3 parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/tools/bundle_policy.py --check` (from `parkour/` like the commands above; the tool is cwd-independent) -- every stage file present with its manifest sha (run by `tests/unit/test_policy_of_record.py`).
 - New bake: add/replace the stage entry in `manifest.yaml` (source run, sha256, campaign, evals), set `current`, run `--sync`, commit. Old heads stay under their campaign's `head/`.
+- New shared asset (e.g. a re-harvested RSI bank): add an `assets:` entry (dir, file, source, sha256, what, used_by), run `--sync`, commit.

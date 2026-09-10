@@ -17,6 +17,6 @@ Key flat-walk settings from this baseline:
 - `reward_collision = 0.0`
 - `KRABBY_HEX_SPAWN_Z = 1.05`
 
-Use `../play_crab_hex_flat_walk_baseline.sh` to play this checkpoint with the bundled USD.
+Play it with the task README §4.3 one-liners ([`../../../README.md#43-play-a-bundled-checkpoint`](../../../README.md#43-play-a-bundled-checkpoint); Appendix B has no one-liner of its own), pointing `KRABBY_HEX_USD_PATH` at the bundled `crab_simple_2026-05-19_12-06-10.usda` and `--checkpoint` at `model_4000.pt`.
 
-Plant: the pre-generator snapshot USD bundled in `../2026-05-23_10-15-21/` (`KRABBY_HEX_USD_PATH` to it); `KRABBY_HEX_SPAWN_Z=1.05` was the setting of record then (current default 1.085, main asset `assets/crab.usda` = A15+B).
+Plant: the pre-generator snapshot USD bundled here, `crab_simple_2026-05-19_12-06-10.usda` (byte-identical to `../2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda`; `KRABBY_HEX_USD_PATH` to it); `KRABBY_HEX_SPAWN_Z=1.05` was the setting of record then.

@@ -19,7 +19,9 @@ from parkour_tasks.crab_hex_forward_task.config.crab_hex.crab_hex_scene_cfg impo
 
 @configclass
 class CrabHexStudentParkourEnvCfg(ParkourManagerBasedRLEnvCfg):
-    """Depth + proprio student MDP for distillation from the 2b2 teacher."""
+    """Depth + proprio student MDP. Paradigm phase 3 (``KRABBY_PHASE=3a/3b`` or
+    ``KRABBY_STUDENT_MDP=1``): ``CrabHexStudentEnvCfg`` mirrors the phase-2c teacher MDP; otherwise
+    the legacy 2b2-teacher MDP (``_apply_crab_hex_student_2b2_teacher_mdp``)."""
 
     scene: CrabHexStudentSceneCfg = CrabHexStudentSceneCfg(num_envs=192, env_spacing=1.0)
     observations: CrabHexStudentObservationsCfg = CrabHexStudentObservationsCfg()
@@ -42,4 +44,5 @@ class CrabHexStudentParkourEnvCfg(ParkourManagerBasedRLEnvCfg):
         self.scene.contact_forces.update_period = self.sim.dt * self.decimation
         self.actions.joint_pos.use_delay = True
         self.actions.joint_pos.history_length = 8
-        # Terrain / commands / DR: ``CrabHexStudentEnvCfg`` → ``_apply_crab_hex_student_2b2_teacher_mdp``.
+        # Terrain / commands / DR: ``CrabHexStudentEnvCfg`` -> phase-3 branch (``is_student_phase()``)
+        # or ``_apply_crab_hex_student_2b2_teacher_mdp`` (legacy).

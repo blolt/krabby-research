@@ -9,7 +9,7 @@ verdict: 'CHANGELOG.md STOP-AND-EVALUATE block: spin de-scoped after 13 null arm
   lineage model_22688 beat the position-era teacher on pinned 2b2 (completion 0.8
   vs 0.7, tripod 0.237 vs 0.052); CAMPAIGN COMPLETE, student distillation recorded
   at 12k ceiling.'
-plant: pre-generator snapshot (old-runs/)
+plant: hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 aliases: []
 records:
 - CHANGELOG.md

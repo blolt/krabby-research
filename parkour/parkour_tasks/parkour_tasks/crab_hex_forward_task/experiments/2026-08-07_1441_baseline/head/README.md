@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `logs/rsl_rl/crab_hex_flat_walk/2026-08-07_15-31-12/model_19999.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** CHANGELOG.md Verdict names this flat checkpoint (20000 iter from scratch) as the reference baseline for the whole series; 2b2 model_21500 is the valid Task 1 resume point.
 - **Environment of record:** (see the campaign record)
 

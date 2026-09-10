@@ -8,7 +8,7 @@ verdict: 'CLOSED (RESULTS.md campaign summary): all three arms L1/L3/L5 were INE
   on pitch (+0.209 rad +/-0.001 at every checkpoint, doses up to 5x prior maxima);
   L2/L4/L6 skipped per protocol; the lean is structurally locked and the route to
   tripod >0.45 is morphology/CoM/cam-geometry work, not reward weights.'
-plant: pre-generator snapshot (old-runs/)
+plant: hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 aliases: []
 records:
 - RESULTS.md

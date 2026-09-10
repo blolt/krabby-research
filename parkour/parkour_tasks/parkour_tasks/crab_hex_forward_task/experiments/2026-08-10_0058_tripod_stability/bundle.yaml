@@ -8,7 +8,7 @@ verdict: 'RESULTS.md ''Campaign closed'' block, decision 2026-08-12 (d): no bake
   no checkpoint adoption; the 2026-08-09_1526_gait_tuned baseline (tripod 0.401) stays
   the reference and both campaign terms stay at weight 0.0 - documented negative result,
   tripod >0.45 judged a morphology/CoM problem.'
-plant: pre-generator snapshot (old-runs/)
+plant: hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 aliases: []
 records:
 - CHANGELOG.md

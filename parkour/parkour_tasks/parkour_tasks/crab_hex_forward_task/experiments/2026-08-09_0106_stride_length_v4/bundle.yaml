@@ -7,7 +7,7 @@ question: Does a redesigned v4 stride-length reward (per-foot signed touchdown-t
 verdict: 'Not kept, reverting to v3: 2b2 stride length hit a series-best 0.189 m but
   v4 regressed vs v3 on tippy-tap (worst in series), crab_failure at every stage,
   2b2 slip_ratio and forward_progress peak (CHANGELOG.md Verdict block).'
-plant: pre-generator snapshot (old-runs/)
+plant: hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 aliases:
 - sim_fine_tuning/stride_length_v4
 records:

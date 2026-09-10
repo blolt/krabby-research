@@ -3,8 +3,9 @@
 
 ``policy/`` holds the head that ships for this task plus the stage heads it was trained through
 (1a formation -> 2a -> 2b -> 2c teacher -> 3a depth student), one subfolder per stage, declared in
-``policy/manifest.yaml`` (source run, sha256, campaign, evals). It changes ONLY on a bake decision,
-which is the user's: edit the manifest, run ``--sync``, commit.
+``policy/manifest.yaml`` (source run, sha256, campaign, evals), plus the shared training assets the
+lineage depends on (``assets:`` -- e.g. the RSI reference bank every preset seeds resets from). It
+changes ONLY on a bake decision, which is the user's: edit the manifest, run ``--sync``, commit.
 
     python3 experiments/tools/bundle_policy.py --sync     # copy missing stage files (sha-verified),
                                                           #   verify present ones, regenerate README.md,
@@ -55,11 +56,22 @@ def load_manifest() -> dict:
         for k in ("dir", "phase", "task", "iterations", "source", "file", "sha256"):
             if k not in s:
                 raise SystemExit(f"{MANIFEST}: stage {s.get('dir')!r} missing {k!r}")
+    m.setdefault("assets", [])
+    for a in m["assets"]:
+        for k in ("dir", "file", "source", "sha256"):
+            if k not in a:
+                raise SystemExit(f"{MANIFEST}: asset {a.get('file')!r} missing {k!r}")
+        if a["dir"] in dirs:
+            raise SystemExit(f"{MANIFEST}: asset dir {a['dir']!r} collides with a stage dir")
     return m
 
 
 def stage_path(s: dict) -> Path:
     return POLICY / s["dir"] / s["file"]
+
+
+def asset_path(a: dict) -> Path:
+    return POLICY / a["dir"] / a["file"]
 
 
 def check(m: dict) -> list[str]:
@@ -76,28 +88,43 @@ def check(m: dict) -> list[str]:
         extra = [q for q in p.parent.glob("*.pt") if q.name != s["file"]]
         if extra:
             problems.append(f"{p.parent.relative_to(REPO)}: stray checkpoints {[q.name for q in extra]}")
+    for a in m["assets"]:
+        p = asset_path(a)
+        if not p.exists():
+            problems.append(f"{p.relative_to(REPO)}: missing")
+            continue
+        got = sha256_of(p)
+        if got != a["sha256"]:
+            problems.append(f"{p.relative_to(REPO)}: sha256 {got[:12]} != manifest {a['sha256'][:12]}")
     return problems
+
+
+def _sync_one(dest: Path, src: Path, sha: str, label: str, *, force: bool) -> None:
+    if dest.exists() and not force:
+        got = sha256_of(dest)
+        if got != sha:
+            raise SystemExit(f"{dest}: sha256 {got[:12]} != manifest {sha[:12]} (use --force to recopy)")
+        print(f"ok      {dest.relative_to(REPO)}")
+        return
+    if not src.exists():
+        raise SystemExit(f"{label}: source {src} missing (raw run dirs are not tracked; recover the file first)")
+    got = sha256_of(src)
+    if got != sha:
+        raise SystemExit(f"{label}: source {src} sha256 {got[:12]} != manifest {sha[:12]}")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dest)
+    print(f"copied  {dest.relative_to(REPO)} ({dest.stat().st_size / 1e6:.1f} MB)")
 
 
 def sync(m: dict, *, force: bool) -> list[Path]:
     produced = []
     for s in m["stages"]:
         dest = stage_path(s)
-        src = REPO / s["source"]
-        if dest.exists() and not force:
-            got = sha256_of(dest)
-            if got != s["sha256"]:
-                raise SystemExit(f"{dest}: sha256 {got[:12]} != manifest {s['sha256'][:12]} (use --force to recopy)")
-            print(f"ok      {dest.relative_to(REPO)}")
-        else:
-            if not src.exists():
-                raise SystemExit(f"{s['dir']}: source {src} missing (raw run dirs are not tracked; recover the file first)")
-            got = sha256_of(src)
-            if got != s["sha256"]:
-                raise SystemExit(f"{s['dir']}: source {src} sha256 {got[:12]} != manifest {s['sha256'][:12]}")
-            dest.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(src, dest)
-            print(f"copied  {dest.relative_to(REPO)} ({dest.stat().st_size / 1e6:.1f} MB)")
+        _sync_one(dest, REPO / s["source"], s["sha256"], s["dir"], force=force)
+        produced.append(dest)
+    for a in m["assets"]:
+        dest = asset_path(a)
+        _sync_one(dest, REPO / a["source"], a["sha256"], a["file"], force=force)
         produced.append(dest)
     readme = POLICY / "README.md"
     readme.write_text(readme_text(m))
@@ -129,6 +156,8 @@ def readme_text(m: dict) -> str:
         f"through, one subfolder per stage. Plant: **{m['plant']}** (the main asset `assets/crab.usda`; nothing to set).",
         "It changes only on a bake decision, which is the user's: the campaign that produced a new head keeps its",
         "own sha-verified copy under `experiments/<campaign>/head/`; this folder is the shipped lineage.",
+        "Shared training assets the lineage depends on (the RSI reference bank) are bundled alongside, see",
+        "[Shared assets](#shared-assets).",
         "",
         f"**Current head:** [`{cur['dir']}/{cur['file']}`]({cur['dir']}/{cur['file']}) -- {cur.get('what', '')}",
         "",
@@ -140,7 +169,9 @@ def readme_text(m: dict) -> str:
                  f"`{s['file']}` | `{s['sha256'][:12]}` | " + " | ".join(_ev(s, k) for k, _ in EVAL_KEYS) + " |")
     L += ["", "Evals: completion / falls out of 100 episodes / tripod score, from the producing campaign's records "
           "(flat canary = morph-manifest `slow__A15pB`; step onset = `step__A15pB`; obstacles = `flat_walk_slow_v2` on "
-          "`recal2b2w` @ 0.20-0.70).", "", "## Stages", ""]
+          "`recal2b2w` @ 0.20-0.70). Task = the preset's task. The 2a-2c files were trained as flat-walk lineage windows on "
+          "`Isaac-Crab-Hex-Flat-Walk-v0` (log dir `crab_hex_flat_walk/`); the `Isaac-Crab-Hex-Teacher-v0` presets rebuild the "
+          "identical MDP (pinned by `tests/integration/test_crab_hex_phase_configs.py`).", "", "## Stages", ""]
     for s in m["stages"]:
         L += [f"### `{s['dir']}/` -- {s.get('what', '')}", "",
               f"- **Preset:** `KRABBY_PHASE={s['phase']}` (`config/crab_hex/crab_hex_phases.py`; task `{s['task']}`, kind `{s.get('kind', '')}`, window {s.get('window', '—')})",
@@ -151,16 +182,29 @@ def readme_text(m: dict) -> str:
         if s.get("notes"):
             L.append(f"- **Notes:** {s['notes']}")
         L.append("")
+    if m["assets"]:
+        L += ["## Shared assets", ""]
+        for a in m["assets"]:
+            L += [f"### [`{a['dir']}/{a['file']}`]({a['dir']}/{a['file']}) -- {a.get('what', '')}", "",
+                  f"- **Used by:** {a.get('used_by', '—')}",
+                  f"- **Source (tracked):** `{a['source']}`",
+                  f"- **sha256:** `{a['sha256']}`"]
+            if a.get("notes"):
+                L.append(f"- **Notes:** {a['notes']}")
+            L.append("")
     L += [
         "## Using the heads",
         "",
         "Paths below are relative to `krabby-research/parkour/` (run from there with the Isaac venv python, headless).",
-        "Task README sections: play [§4.3](../README.md#43-play-a-bundled-checkpoint) / phase-3 [§4.4](../README.md#44-phase-3-student), "
+        "Task README sections: play [§4.3](../README.md#43-play-a-bundled-checkpoint) / phase-3 [§4.4](../README.md#44-student-distillation), "
         "gait harness [§4.1b](../README.md#41b-gait-metrics-eval-harness-milestone-18-task-0).",
         "",
         "```bash",
         "P=parkour_tasks/parkour_tasks/crab_hex_forward_task",
-        "# flat canary of the current head, exactly as the phase driver scores it (reproduces the table above)",
+        "# flat canary of the current head, as the phase driver scores it. NOTE: the table's 3a flat number (0.79 / 21) was",
+        "# recorded with the pre-2026-09-09 morph manifest, whose slow__A15pB carried an env: block; today's slow__A15pB has none,",
+        "# and the harness's post-Kit env write moves the depth student between two repeatable outcomes (0.79/21 vs 0.75/25,",
+        "# task README section 4.1b) -- same policy, different process state.",
         "KRABBY_LIN_VEL_X=0.0:0.35 KRABBY_TRACK_SIGMA2=0.1 KRABBY_TRACK_L1_W=-1.0 KRABBY_CLOCK_W=1.0 KRABBY_APEX_W=1.0 KRABBY_STUDENT_MDP=1 \\",
         f"  python $P/scripts/eval_crab_hex_gait.py --headless --manifest $P/experiments/eval/scenarios_morph.yaml \\",
         f"  --scenario slow__A15pB --task Isaac-Crab-Hex-Student-v0 --checkpoint $P/policy/{cur['dir']}/{cur['file']} --save-raw",
@@ -175,10 +219,12 @@ def readme_text(m: dict) -> str:
         "",
         "## Maintenance",
         "",
-        "- `python3 experiments/tools/bundle_policy.py --check` -- every stage file present with its manifest sha "
+        "- `python3 parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/tools/bundle_policy.py --check` (from `parkour/` like the commands above; the tool is cwd-independent) -- every stage file present with its manifest sha "
         "(run by `tests/unit/test_policy_of_record.py`).",
         "- New bake: add/replace the stage entry in `manifest.yaml` (source run, sha256, campaign, evals), set `current`, "
         "run `--sync`, commit. Old heads stay under their campaign's `head/`.",
+        "- New shared asset (e.g. a re-harvested RSI bank): add an `assets:` entry (dir, file, source, sha256, what, "
+        "used_by), run `--sync`, commit.",
         "",
     ]
     return "\n".join(L)
@@ -199,8 +245,9 @@ def main() -> int:
         print(f"policy of record: {len(m['stages'])} stages, current {m['current']}: {'OK' if not problems else 'FAILED'}")
         return 1 if problems else 0
     sync(m, force=a.force)
-    total = sum(stage_path(s).stat().st_size for s in m["stages"]) / 1e6
-    print(f"synced {len(m['stages'])} stages ({total:.1f} MB), current {m['current']}")
+    total = (sum(stage_path(s).stat().st_size for s in m["stages"])
+             + sum(asset_path(a).stat().st_size for a in m["assets"])) / 1e6
+    print(f"synced {len(m['stages'])} stages + {len(m['assets'])} assets ({total:.1f} MB), current {m['current']}")
     return 0
 
 

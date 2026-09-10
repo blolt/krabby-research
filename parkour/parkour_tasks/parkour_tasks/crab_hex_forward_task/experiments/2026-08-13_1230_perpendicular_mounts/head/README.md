@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `canary_ft/logs/rsl_rl/crab_hex_flat_walk/2026-08-13_11-51-09/model_21998.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** End of the 2000-iter fine-tune canary from the symmetric reference across the re-centering shock; the only trained checkpoint of the campaign (canary PASS, catastrophe check only).
 - **Environment of record:** (see the campaign record)
 

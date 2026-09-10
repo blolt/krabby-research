@@ -43,7 +43,13 @@ def main() -> int:
     parser.add_argument("--repeat", type=int, default=1, help="Runs per scenario (use 2 for a noise-floor check).")
     parser.add_argument("--seed-offset", type=int, default=0, help="Added to each repeat index for --env-seed.")
     parser.add_argument("--extra", default="", help="Extra args appended verbatim to the harness.")
-    parser.add_argument("--plant", default=None, help="Named plant passed to the harness (--plant); e.g. legacy_golden for the v1 baselines.")
+    parser.add_argument(
+        "--plant",
+        default=None,
+        help="Named plant passed to the harness (--plant); e.g. legacy_golden for pre-A15+B heads trained "
+        "after the 2026-08-20 rebuild (with --manifest scenarios_v2.yaml or scenarios_morph.yaml). "
+        "The v1 baselines predate that rebuild and no longer load.",
+    )
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--continue-on-error", action="store_true")

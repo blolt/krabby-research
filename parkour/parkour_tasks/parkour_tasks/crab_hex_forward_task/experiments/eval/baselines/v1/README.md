@@ -1,6 +1,6 @@
 # Gait eval baselines — v1 (Milestone 18, Task 0, AC 0c)
 
-Produced by `scripts/run_gait_eval_suite.py --manifest experiments/eval/scenarios_v1.yaml` against
+Produced by `scripts/run_gait_eval_suite.py` (default manifest `experiments/eval/scenarios_v1.yaml`, run from `krabby-research/parkour`) against
 `experiments/eval/scenarios_v1.yaml`. Every later task (Task 1 reward shaping, Task 4 stage gates) is scored
 against these numbers.
 
@@ -14,6 +14,7 @@ against these numbers.
 - Teacher: `logs/rsl_rl/crab_hex_teacher/2026-08-05_17-36-56/model_21100.pt` (2b2 stage)
 - Student: `logs/rsl_rl/crab_hex_student/2026-08-06_14-22-48/model_29098.pt`
 - Flat-walk teacher: `logs/rsl_rl/crab_hex_flat_walk/2026-08-04_23-34-31/model_19999.pt`
+  Note: the `flat_walk_forward` row was measured on `2026-08-04_23-34-31/model_19999.pt` (sha256 `68eb4e25…`, see its `run_meta.json`).
 
 ## Headline: tripod score is low everywhere, consistently
 
@@ -54,14 +55,13 @@ capability measurement -- see `eval_crab_hex_gait.py`'s module docstring and
 
 ## Reproduce
 
-```bash
-cd krabby-research/parkour
-python3 parkour_tasks/parkour_tasks/crab_hex_forward_task/scripts/run_gait_eval_suite.py --plant legacy_golden
-```
-
-`--plant legacy_golden` is required: these baseline checkpoints predate the A15+B lineage and were trained on the
-legacy golden geometry (`assets/variants/crab_simple__splay00_axis5p5in.usda`), whereas the default plant is now the main asset
-`assets/crab.usda` (A15+B).
+**Not reproducible on the current tree.** These are era-A heads (2026-08-04..06) trained on the hand-authored
+cam-shaft `assets/crab_simple.usda` of the day, before the 2026-08-20 measured-hardware rebuild, with
+1151-wide observations (`run_meta.json: obs_dim_actual`). The rebuild changed the plant, the action layout and
+the observation width (1149 today), so `runner.load` rejects them with a size mismatch (critic input 1151 vs 1149)
+on every plant, including `--plant legacy_golden`. The reports here are the frozen AC 0c record; the manifest
+`experiments/eval/scenarios_v1.yaml` stays sha-pinned to these checkpoints, but re-running the suite against them is
+not possible.
 
 Each scenario is a separate `isaaclab.sh -p` process (only one Isaac Sim process fits the GPU at
 a time). `--repeat 2` reruns a scenario with different seeds to check the tripod-score

@@ -99,6 +99,5 @@ scenarios:
       - {vx: 0.35, hold_s: 10.0, label: low}
     notes: >-
       Survival-phase probe: standing hold (fall/oscillation check), then the low end of
-      the stand-first command range. vx 0.0 and 0.25 sit at/below lin_vel_clip 0.2 --
-      the 0.0 hold is commanded stop by construction; interpret tracking there as
-      station-keeping only.
+      the stand-first command range. the vx 0.0 hold is a commanded stop by construction (interpret its tracking as station-keeping only);
+      0.25 is just above lin_vel_clip 0.2 and is scored as a walking hold.

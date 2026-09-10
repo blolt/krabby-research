@@ -6,7 +6,7 @@ manifest. This tool (stdlib + PyYAML, no Isaac) turns it into the tracked bundle
 
     bundle_experiment.py <campaign_dir>...      # bundle these campaigns
     bundle_experiment.py --all                  # every campaign with a bundle.yaml
-    bundle_experiment.py --all --check          # re-hash heads, no writes (unit-test hook)
+    bundle_experiment.py --all --check          # re-hash heads, no writes (same check tests/unit/test_experiment_layout.py runs itself)
     bundle_experiment.py --index                # regenerate experiments/README.md
     bundle_experiment.py --dry-run ...          # report what would be copied
 
@@ -17,7 +17,7 @@ Manifest (``bundle.yaml``)::
     dates: 2026-09-07..2026-09-09
     question: one line
     verdict: one line (+ pointer to the record)
-    plant: A15+B | legacy_golden | per-arm variants | pre-generator snapshot
+    plant: A15+B | legacy_golden | per-arm variants | pre-generator snapshot | hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
     aliases: [sim_fine_tuning/baseline]          # pre-rename dir names seen in old records
     records: [REPORT.md, CHANGELOG.md, state.json]
     head:                                        # ONE checkpoint of record ...
@@ -124,8 +124,9 @@ def head_readme(cdir: Path, b: dict, head: dict, size: int, sha: str, extra: lis
     task = head.get("task", "")
     env = head.get("env") or {}
     env_str = " ".join(f"{k}={v}" for k, v in env.items())
-    is_student = head.get("role") == "student"
-    play_task = "Isaac-Crab-Hex-Student-Play-v0" if is_student else "Isaac-Crab-Hex-Flat-Walk-Play-v0"
+    play_task = {"student": "Isaac-Crab-Hex-Student-Play-v0", "teacher": "Isaac-Crab-Hex-Teacher-Play-v0"}.get(head.get("role"), "Isaac-Crab-Hex-Flat-Walk-Play-v0")
+    # the play line runs from parkour/: repo-relative env values (e.g. a variant USD path) need a ../ prefix
+    play_env = " ".join(f"{k}={'../' + str(v) if (REPO / str(v)).exists() else v}" for k, v in env.items())
     lines = [
         f"# {cdir.name} — checkpoint of record",
         "",
@@ -148,7 +149,7 @@ def head_readme(cdir: Path, b: dict, head: dict, size: int, sha: str, extra: lis
         "",
         "```bash",
         "cd parkour",
-        f"{env_str + ' ' if env_str else ''}python scripts/rsl_rl/play.py --task {play_task} --num_envs 1 --checkpoint ../{rel_head}",
+        f"{play_env + ' ' if play_env else ''}python scripts/rsl_rl/play.py --task {play_task} --num_envs 1 --checkpoint ../{rel_head}",
         "```",
         "",
         "## Paths note",
@@ -335,9 +336,12 @@ def index_text() -> str:
         "**Plant names in old records:** before 2026-09-09 the config default was the 2026-08-20 golden geometry;",
         "records that say *golden* / *base* mean `legacy_golden` (`assets/variants/crab_simple__splay00_axis5p5in.usda`). Since 2026-09-09 the",
         "main asset `assets/crab.usda` is the A15+B plant of record (see `docs/crab-hexapod-plant.md`). Campaigns",
-        "before 2026-08-20 trained on the pre-generator USD snapshots bundled under `old-runs/`.",
+        "before 2026-08-20 (era A) trained on the hand-authored, cam-shaft `assets/crab_simple.usda` of their day (every",
+        "era-A `params/env.yaml` records that path; the 2026-08-09 baseline revision `5ca0a8c` is the file kept in the tree",
+        "today, and the 2026-08-13 geometry commits `1b42d8d` / `ba8d060` changed it for the later era-A campaigns) -- not",
+        "on the May-2026 snapshot under `old-runs/`, which predates the cam-shaft mechanism.",
         "",
-        "**Pre-campaign stage baselines (2026-05):** the bridge / 2b1 / 2b2 / student stage bundles live in",
+        "**Pre-campaign stage baselines (2026-05):** the flat-walk / bridge / 2b1 / 2b2 / student stage bundles (seven May-2026 runs, with the USD snapshot they trained on beside the two flat-walk bundles) live in",
         "[`old-runs/`](old-runs/) (moved here from the package-level `runs/` on 2026-09-09; see the task README appendices).",
         "",
         "**Policy of record:** the head that ships and the stage heads it was trained through live OUTSIDE the campaigns at",

@@ -21,17 +21,22 @@ Facts of record as of 2026-09-09.
 What did **not** change versus the legacy golden: splay and re-hinge are rigid transforms of the
 whole leg chain (hip plate, cam rotor, femur, tibia, footpad), so joint-local anchors, link
 masses and inertias, joint limits, the cam mapping and the linkage geometry are all untouched.
-The byte-pin test `test_splay_variant_touches_only_outer_leg_mount_lines` enforces that only the
-outer-mount lines differ between variants.
+The byte-pin test `test_splay_variant_touches_only_outer_leg_mount_lines` enforces that a splay
+change touches only the outer-mount lines (orient / translate / localRot0) at a fixed axis position;
+`test_variant_masses_unchanged` checks that a combined splay + re-hinge variant (20 deg, 2.5 in)
+keeps the total mass.
 
 `assets/variants/crab_simple__splay00_axis5p5in.usda` is the **legacy golden**: the 2026-08-20 measured-robot
 build with splay 0 and outer axes 5.5 in from the body ends. It is kept byte-pinned because every
-checkpoint before the a15b lineage was trained on it (see section 5).
+checkpoint from the 2026-08-20 measured-hardware rebuild up to the a15b lineage was trained on it
+(see section 5; earlier heads used the hand-authored pre-generator models).
 
 `assets/crab_simple.usda` is **not a plant any more**. On 2026-09-09 it was reverted to the
 hand-authored Cube model of the 2026-08-09 campaign baseline (git `5ca0a8c`: 31 Cube prims with the
 cam-shaft mechanism, before the measured-hardware rebuild replaced it with generated plywood-outline
-meshes). It is kept as a historical reference of the pre-experimentation robot, sha-pinned by
+meshes). It is kept as a historical reference of the robot as it stood at the 2026-08-09 Task-1
+campaign baseline (the pre-experimentation May-2026 revision is the snapshot bundled under
+`experiments/old-runs/`), sha-pinned by
 `tests/unit/test_crab_hex_usd_generation.py`, never generated, and no task or plant name loads it.
 
 ## 2. Measured hardware
@@ -81,7 +86,7 @@ Names are defined in `crab_hex_phases.PLANTS`
 | Plant name | File | Splay (deg) | Outer axis (in) | Note |
 |---|---|---|---|---|
 | `A15+B`, `main` | `assets/crab.usda` | 15 | 2.5 | plant of record; default, nothing to set |
-| `legacy_golden`, `golden` | `assets/variants/crab_simple__splay00_axis5p5in.usda` | 0 | 5.5 | 2026-08-20 build; every head before the a15b lineage. `golden` is the alias used by pre-2026-09-09 records and commands |
+| `legacy_golden`, `golden` | `assets/variants/crab_simple__splay00_axis5p5in.usda` | 0 | 5.5 | 2026-08-20 build; every head between the 2026-08-20 rebuild and the a15b lineage. `golden` is the alias used by pre-2026-09-09 records and commands |
 | `B` | `assets/variants/crab_simple__splay00_axis2p5in.usda` | 0 | 2.5 | re-hinge only |
 | `A10` | `assets/variants/crab_simple__splay10_axis5p5in.usda` | 10 | 5.5 | splay only |
 | `A15` | `assets/variants/crab_simple__splay15_axis5p5in.usda` | 15 | 5.5 | splay only |
@@ -100,12 +105,14 @@ Names are defined in `crab_hex_phases.PLANTS`
   needed for the main plant.
 - Gait harness: `--plant <name>` on `eval_crab_hex_gait.py` or `run_gait_eval_suite.py`. The USD
   is read at config-import time, so a scenario manifest's env block cannot select it; the flag
-  exports `KRABBY_PLANT` before the task package import.
+  exports `KRABBY_PLANT` (only when it is not already set) before the task package import.
 
 **Precedence:** an explicitly exported `KRABBY_HEX_USD_PATH` wins over `KRABBY_PLANT` / `--plant`,
 which wins over the default (`assets/crab.usda`). If `KRABBY_HEX_USD_PATH` is already set, the
 harness aborts after spawning when the spawned USD is not the one `--plant` asked for; unset it
-first. Every eval `run_meta.json`
+first. `--plant` is applied with setdefault, so an already-exported `KRABBY_PLANT` naming a
+different plant also wins over the flag and triggers the same abort (whose message names only
+`KRABBY_HEX_USD_PATH`); unset both before passing a different `--plant`. Every eval `run_meta.json`
 records both the requested plant and the USD actually spawned.
 
 **Warning (joystick-task coupling):** the joystick/HAL task `Isaac-CrabHex-Joystick-v0`
@@ -119,11 +126,13 @@ loads the other's robot.
 | Heads | Plant | How to select |
 |---|---|---|
 | A15+B lineage and later (2c head `crab_hex_flat_walk/2026-09-07_04-38-50/model_19996.pt`, 3a head `crab_hex_student/2026-09-08_05-54-01/model_24995.pt`, all `launch_phases.sh --plant A15+B` runs) | `A15+B` | nothing |
-| Pre-a15b heads: golden 30k `crab_hex_flat_walk/2026-09-02_00-42-53/model_29994.pt`, golden 20k `crab_hex_flat_walk/2026-09-01_15-10-31/model_19996.pt`, the v1 eval baselines (`crab_hex_forward_task/experiments/eval/baselines/v1/`) | `legacy_golden` | `--plant legacy_golden` / `KRABBY_PLANT=legacy_golden` |
-| May-2026 bundled stage checkpoints under `crab_hex_forward_task/experiments/old-runs/<ts>/` | the pre-generator USD snapshot bundled next to each checkpoint, e.g. `experiments/old-runs/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda` | `KRABBY_HEX_USD_PATH=<that file>` plus their setting of record `KRABBY_HEX_SPAWN_Z=1.05` |
+| Legacy-golden heads (2026-08-20 rebuild .. 2026-09-06): golden 30k `crab_hex_flat_walk/2026-09-02_00-42-53/model_29994.pt`, golden 20k `crab_hex_flat_walk/2026-09-01_15-10-31/model_19996.pt`, the era-B campaign heads under `experiments/2026-08-2*/head/` and `2026-08-31_*/head/` | `legacy_golden` | `--plant legacy_golden` / `KRABBY_PLANT=legacy_golden` |
+| May-2026 bundled stage checkpoints under `crab_hex_forward_task/experiments/old-runs/<ts>/` | the pre-generator USD snapshot bundled with the 2026-05-19 and 2026-05-23 runs (byte-identical; the five later May bundles point at the 2026-05-23 copy), e.g. `experiments/old-runs/2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda` | `KRABBY_HEX_USD_PATH=<that file>` plus their setting of record `KRABBY_HEX_SPAWN_Z=1.05` |
+| Era-A heads (2026-08-04 .. 08-17): the v1 eval baselines under `experiments/eval/baselines/v1/` and the `experiments/2026-08-0*..2026-08-1*/head/` bundles | hand-authored pre-generator `crab_simple.usda` revisions (the cam-shaft model committed as `5ca0a8c`, then `1b42d8d` / `ba8d060`); no plant name resolves to them | not runnable in the current MDP: their `run_meta.json` record 1151-wide observations vs 1149 today and `runner.load` is strict -- records only. Reproduction needs `git show <rev>:assets/crab_simple.usda` as `KRABBY_HEX_USD_PATH` plus that era's code |
 
-Checkpoint paths above are relative to `parkour/logs/rsl_rl/` (git-ignored); the one checkpoint of
-record per campaign is also kept under `<campaign>/head/` in the experiments tree.
+Checkpoint paths above are relative to `parkour/logs/rsl_rl/` (git-ignored); campaigns that baked a
+checkpoint also keep it under `<campaign>/head/` in the experiments tree (probe-only campaigns have
+none; see experiments/README.md).
 
 Gait harness on a legacy head (run from `parkour/`, one scenario from a manifest):
 
@@ -140,8 +149,10 @@ Training on a named plant (single phase, and the campaign driver):
 ```bash
 KRABBY_PHASE=legacy_golden_1a KRABBY_PLANT=legacy_golden python scripts/rsl_rl/train.py \
   --task Isaac-Crab-Hex-Flat-Walk-v0 --headless --num_envs 256 --max_iterations 5000
+# --campaign-dir is resolved by run_phases.py inside the systemd unit, whose cwd is the REPO ROOT
+# (launch_phases.sh --working-directory), not parkour/: pass an absolute path
 parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/tools/launch_phases.sh \
-  --campaign-dir parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/<campaign> \
+  --campaign-dir "$PWD/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/<campaign>" \
   --plant A15+B --phases 1a,2a,2b,2c,3a [--seed 3] [--from-checkpoint <pt>] [--continue]
 ```
 
@@ -166,10 +177,21 @@ plants; only the outer mounts move). The formation preset of record points at
 `rsi_bank_P0_null.npz` regardless of plant. Any bank harvested in the future should record the
 plant it was harvested on.
 
+The knobs (`config/crab_hex/crab_hex_env_cfg.py`): `KRABBY_RSI_FRAC=<fraction of resets>` arms RSI
+(unset or `0` = off; the presets use `0.2`) and `KRABBY_RSI_BANK=<npz>` picks the bank. Every preset
+sets both: the A15+B lineage and `legacy_golden_1a`/`2a` point at `rsi_bank_P0_null.npz`,
+`legacy_golden_2b..2e` at `rsi_bank_pg_r1..r4.npz` (`crab_hex_phases.py`, `LEGACY_GOLDEN_BANKS`). If
+`KRABBY_RSI_FRAC` is set by hand without `KRABBY_RSI_BANK`, the code default is
+`experiments/2026-08-22_1200_gait_formation_v2/rsi_bank_setAB.npz` -- the original 165-state bank,
+harvested 2026-08-22 on the legacy-golden geometry and superseded by `rsi_bank_E1.npz` and then
+`rsi_bank_P0_null.npz`; it is not a bank of record, so always pass the bank explicitly.
+`KRABBY_RSI_SPAWN_FIX=1` (set by no preset) places bank resets where `reset_root_state` places every
+other reset instead of the original tile-centre placement.
+
 ## 7. Regeneration and tests
 
 Generator: [assets/scripts/generate_crab.py](../assets/scripts/generate_crab.py) (stdlib only; loads
-the dimensions module by path, no Isaac needed).
+`crab_hex_dimensions.py` and the CAD-outline module `crab_hex_leg_profiles.py` by path, no Isaac needed).
 
 ```bash
 python3 assets/scripts/generate_crab.py                  # assets/crab.usda (main asset, A15+B)
@@ -178,11 +200,12 @@ python3 assets/scripts/generate_crab.py --all-variants   # assets/variants/*.usd
 python3 assets/scripts/generate_crab.py --splay-deg 10 --outer-axis-in 5.5 --out /tmp/x.usda   # ad hoc
 ```
 
-Never hand-edit a USDA: change `crab_hex_dimensions.py` (or the generator) and regenerate all
+Never hand-edit a USDA: change `crab_hex_dimensions.py` (numbers), `crab_hex_leg_profiles.py` via
+`assets/scripts/extract_leg_profiles.py` (link outlines), or the generator, and regenerate all
 three forms. [tests/unit/test_crab_hex_usd_generation.py](../tests/unit/test_crab_hex_usd_generation.py)
 byte-pins the committed files to the generator (`test_committed_asset_matches_generator`,
-`test_legacy_asset_matches_legacy_variant`, `test_main_asset_is_the_a15b_plant`,
-`test_committed_variants_match_their_regeneration`, `test_manifest_lists_every_plant`) and checks
+`test_legacy_golden_variant_matches_generator`, `test_main_asset_is_the_a15b_plant`,
+`test_committed_variants_match_their_regeneration`, `test_manifest_lists_every_plant`; the hand-authored `assets/crab_simple.usda` is sha-pinned by `test_hand_authored_crab_simple_is_the_campaign_baseline_cube_model`) and checks
 the physical invariants (per-leg mass sums to 26.2 lb, total mass matches hardware, body keeps its
 full mass, variants change only the outer-mount lines and no masses). Toe forward kinematics
 against Isaac's settled footpads is covered by `tests/unit/test_crab_hex_foot_fk.py`.

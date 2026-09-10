@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `logs/rsl_rl/crab_hex_flat_walk/2026-08-09_15-27-14/model_19999.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** Phase 0 from-scratch flat-walk retrain on the baked config (20000 iters); first checkpoint to show emergent tripod_score 0.401 (series prior ~0-0.025) and the seed for all three teacher-stack arms (CHANGELOG.md section 1).
 - **Environment of record:** (see the campaign record)
 

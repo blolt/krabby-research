@@ -105,7 +105,12 @@ def _crab_action_clip(pos_clip: tuple[float, float]) -> dict[str, tuple[float, f
 
 @configclass
 class CrabHexFlatWalkActionsCfg:
-    """Flat-walk: scale 0.24 and ±1 raw clip (matches runner clip_actions)."""
+    """Class-level defaults 0.24 / ±1 (re-applied by ``_apply_crab_hex_bridge_actions_and_events`` for
+    the legacy bridge / 2b1 / 2b2 modes and inherited by the legacy ``CrabHexStudentActionsCfg``).
+    Flat-Walk-v0 (mode ``full``), the phase-2 modes and the phase-3 student override these to 0.25
+    (``KRABBY_ACTION_SCALE``) / ±4.8 with action delay via ``_apply_crab_hex_full_actions``; the
+    runner's ``clip_actions = 1.0`` bounds the raw policy output.
+    """
 
     joint_pos = CrabHexDelayedJointPositionActionCfg(
         asset_name="robot",

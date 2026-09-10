@@ -8,7 +8,7 @@ Log: `logs/rsl_rl/crab_hex_teacher/2026-05-26_21-46-37/`. USD: `../2026-05-23_10
 
 **Supersedes** [2026-05-26_11-30-18](../2026-05-26_11-30-18/) for distillation/play defaults.
 
-Play: `../play_crab_hex_2b2_baseline.sh` with Appendix C USD + `model_6300.pt`. See task README [Appendix F](../../../README.md#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26).
+Play: the task README [Appendix F](../../../README.md#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) one-liner with the Appendix C USD + `model_6300.pt`.
 
 `model_6400.pt` and `model_6500.pt` from the log are kept for reference; selected baseline remains `model_6300.pt` by play quality.
 

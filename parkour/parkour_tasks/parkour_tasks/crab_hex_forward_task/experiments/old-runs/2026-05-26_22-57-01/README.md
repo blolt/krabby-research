@@ -8,7 +8,7 @@ Stage 3 student: distillation from [Appendix F](../2026-05-26_21-46-37/) teacher
 
 **Metrics @ `9800` (TensorBoard):** `crab_failure` ~**28.7%**; `ep_len` ~**758**; `goal_idx` ~**0.50**; `depth_actor_loss` ~**1.85**.
 
-**Play @9800:** good forward walk on **50/50 flat/parkour** student terrain — use `play_crab_hex_student_baseline.sh`. Not tuned for 100% flat (`play_crab_hex_student_flat.sh` is diagnostic only).
+**Play @9800:** good forward walk on **50/50 flat/parkour** student terrain -- use the task README [Appendix G](../../../README.md#appendix-g--stage-3-student-distillation--2026-05-26) `play.py` block (`Isaac-Crab-Hex-Student-Play-v0`). Not tuned for 100% flat (`KRABBY_HEX_PLAY_FLAT=1` is a diagnostic only).
 
 **USD:** `../2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda` (same as teacher bundles).
 

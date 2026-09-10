@@ -6,7 +6,7 @@ Stage 2b phase 2 (2b2-v2 rewards): Appendix E `model_6198.pt` → **~102** PPO i
 
 Log: `logs/rsl_rl/crab_hex_teacher/2026-05-26_11-30-18/`. USD: `../2026-05-23_10-15-21/crab_simple_2026-05-23_10-15-21.usda`.
 
-Play (historical): `../play_crab_hex_2b2_baseline.sh` with Appendix C USD + this `model_6300.pt`. See task README Appendix F (superseded section).
+Play (historical): the task README [Appendix F](../../../README.md#appendix-f--stage-2b2-teacher-ready-baseline--2026-05-26) one-liner with the Appendix C USD, substituting this `model_6300.pt` for the 2026-05-26_21-46-37 one. See Appendix F (superseded section).
 
 **Do not use `6400+` from the same log** — play degrades (hole / fall) even when training continues.
 

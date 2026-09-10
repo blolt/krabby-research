@@ -50,6 +50,12 @@ CRAB_HEX_VIEWER = ViewerCfg(
 # Set before train/play:  export KRABBY_HEX_TEACHER_MODE=<mode>
 # Unset or omit for:     default full parkour teacher (``full``).
 #
+# Paradigm phases (2026-09-07, pipeline of record): ``KRABBY_HEX_TEACHER_MODE=2a|2b|2c`` (exported
+# by ``KRABBY_PHASE``) = the flat-walk MDP + that window's elements (``apply_flat_walk_knobs``); the
+# student (3a/3b) distills from the 2c teacher. The staged chain below (bridge -> 2b1 -> 2b2 ->
+# full1 -> full2 -> full) is the LEGACY May-2026 recipe kept for reproduction; ``full1``/``full2``
+# are ramp stages between 2b2 and ``full``.
+#
 # Pipeline (checkpoint chain):
 #   Stage 1  Flat walk     →  task ``Isaac-Crab-Hex-Flat-Walk-v0`` (NOT this flag)
 #   Stage 2a bridge        →  ``bridge``   resume flat ``model_6000``
@@ -95,8 +101,8 @@ CRAB_HEX_VIEWER = ViewerCfg(
 
 
 def _crab_hex_teacher_mode() -> str:
-    """Resolve ``KRABBY_HEX_TEACHER_MODE`` → ``bridge`` | ``2b1`` | ``2b2`` | ``full1`` | ``full2`` |
-    ``full`` (see module comment above).
+    """Resolve ``KRABBY_HEX_TEACHER_MODE`` → ``2a`` | ``2b`` | ``2c`` (paradigm phases) | ``bridge`` |
+    ``2b1`` | ``2b2`` | ``full1`` | ``full2`` | ``full`` (see module comment above).
 
     ``full1``/``full2`` are intermediate ramp stages between 2b2 and true ``full`` -- jumping
     straight from 2b2's bridge-lite MDP to full's (terrain 0-1, full domain randomization,
@@ -248,9 +254,10 @@ def _apply_crab_hex_bridge_actions_and_events(cfg, *, action_scale: float = 0.24
 
 
 def _apply_crab_hex_full_actions(cfg) -> None:
-    """Stage 4 (``full``): restore 0.25 scale / ±4.8 raw clip, action delay on -- matches the
-    original Go2-imported ``ActionsCfg`` this repo used before the cam-mechanism migration
-    (stages 1-2b2 override down to a softer 0.24/±1, see ``_apply_crab_hex_bridge_actions_and_events``).
+    """Flat-walk / phase 2a-2c / phase-3 student / ``full`` action config: 0.25 scale
+    (``KRABBY_ACTION_SCALE``) / ±4.8 raw clip, 1-step action delay on -- matches the original
+    Go2-imported ``ActionsCfg`` this repo used before the cam-mechanism migration. Only the legacy
+    bridge / 2b1 / 2b2 modes override to 0.24 / ±1 (see ``_apply_crab_hex_bridge_actions_and_events``).
     ``cfg.actions.joint_pos.joint_names`` itself is unaffected -- already fixed at the class-level
     default (``CrabHexFlatWalkActionsCfg``) to exclude the passive ``*_Body_Hip_RevoluteJoint``.
     """
@@ -687,7 +694,7 @@ class CrabHexFlatWalkEnvCfg(CrabHexTeacherEnvCfg):
 
     Learn alternating hex footfall on 100% flat tiles before any teacher mode.
     Rewards emphasize commanded speed, forward progress, upright pose, and light
-    swing/stance shaping — not parkour goals. See README §3.0 and
+    swing/stance shaping — not parkour goals. See README §2 / §3 and
     ``CrabHexFlatWalkRewardsCfg``.
     """
 
@@ -781,7 +788,8 @@ class CrabHexTeacherEnvCfgPLAY(CrabHexTeacherEnvCfg):
 
 @configclass
 class CrabHexStudentEnvCfg(CrabHexStudentParkourEnvCfg):
-    """Gym entry ``Isaac-Crab-Hex-Student-v0``: depth student MDP matched to 2b2 teacher terrain."""
+    """Gym entry ``Isaac-Crab-Hex-Student-v0``: depth student MDP — the phase-2c teacher MDP under a
+    phase-3 preset / ``KRABBY_STUDENT_MDP=1``, else the legacy 2b2-teacher MDP."""
 
     def __post_init__(self):
         super().__post_init__()

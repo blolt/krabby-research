@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `screen_r4c_ft19999/logs/rsl_rl/crab_hex_flat_walk/2026-08-14_17-25-51/model_22998.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** The campaign's SPIN reference candidate (RESULTS.md 'Current best artifacts' + BAKED 2026-08-14 block) - the quick-return mechanism working as designed; that bake was later rescinded (CLOSED - UNBAKED) but it remains the era's checkpoint of record.
 - **Environment of record:** `KRABBY_REVERSAL_W=-0.3 KRABBY_CAM_SCHED_W=-0.1 KRABBY_PHASE_LOCK_W=0.1`
 

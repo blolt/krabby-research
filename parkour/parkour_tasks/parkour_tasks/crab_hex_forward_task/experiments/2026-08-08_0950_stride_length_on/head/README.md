@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `logs/rsl_rl/crab_hex_flat_walk/2026-08-08_09-51-01/model_19999.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** Final flat-walk checkpoint (20000 iter from scratch) of the reverted v2 stride-length run; kept as the 'reverted attempt with reasons' record, not a reference of record (CHANGELOG.md Verdict).
 - **Environment of record:** (see the campaign record)
 

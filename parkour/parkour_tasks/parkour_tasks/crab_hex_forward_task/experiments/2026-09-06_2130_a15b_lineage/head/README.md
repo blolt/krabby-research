@@ -19,7 +19,7 @@
 
 ```bash
 cd parkour
-KRABBY_HEX_USD_PATH=assets/variants/crab_simple__splay15_axis2p5in.usda KRABBY_STAND_FRAC=0.2 KRABBY_EPISODE_S=40 KRABBY_RESAMPLE_S=10:10 KRABBY_RSI_FRAC=0.2 KRABBY_FLAT_TERRAIN_GEOM=recal2b2w KRABBY_FLAT_TERRAIN_DIFF=0.20:0.70 KRABBY_FLAT_TERRAIN_CURRICULUM=1 KRABBY_TERRAIN_PROMOTE=0.225:0.125 KRABBY_PHASEOUT=reward_clock_schedule:1.0:0.5:0:24000 KRABBY_APEX_W=0.001 KRABBY_AIRTIME_W=0.001 KRABBY_STRIDE_W=0.001 python scripts/rsl_rl/play.py --task Isaac-Crab-Hex-Flat-Walk-Play-v0 --num_envs 1 --checkpoint ../parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-06_2130_a15b_lineage/head/model_19996.pt
+KRABBY_HEX_USD_PATH=../assets/variants/crab_simple__splay15_axis2p5in.usda KRABBY_STAND_FRAC=0.2 KRABBY_EPISODE_S=40 KRABBY_RESAMPLE_S=10:10 KRABBY_RSI_FRAC=0.2 KRABBY_FLAT_TERRAIN_GEOM=recal2b2w KRABBY_FLAT_TERRAIN_DIFF=0.20:0.70 KRABBY_FLAT_TERRAIN_CURRICULUM=1 KRABBY_TERRAIN_PROMOTE=0.225:0.125 KRABBY_PHASEOUT=reward_clock_schedule:1.0:0.5:0:24000 KRABBY_APEX_W=0.001 KRABBY_AIRTIME_W=0.001 KRABBY_STRIDE_W=0.001 python scripts/rsl_rl/play.py --task Isaac-Crab-Hex-Flat-Walk-Play-v0 --num_envs 1 --checkpoint ../parkour/parkour_tasks/parkour_tasks/crab_hex_forward_task/experiments/2026-09-06_2130_a15b_lineage/head/model_19996.pt
 ```
 
 ## Paths note

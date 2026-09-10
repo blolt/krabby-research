@@ -1,11 +1,23 @@
 # Copyright (c) 2022-2025, The Isaac Lab Project Developers.
 # Policy layout sizes for ``CrabHexParkourObservations`` (see crab_hex_forward_task.mdp.observations).
 #
-# Krabby ``crab.usda``: ``num_joints = 18``, joint_pos action dim ``18``.
-#   obs_buf_dim = 15 + 2 * num_joints + action_dim + num_contact  ->  15 + 36 + 18 + 6 = 75  (= num_prop; +2 root_lin_vel_xy)
-#   priv_latent   = mass(1+3) + friction(1) + stiffness(N) + damping(N)  ->  4 + 1 + 18 + 18 = 41
-#   policy flat len = (1 + history_length) * obs_buf_dim + 132 + 9 + priv_latent
-#                   = 11 * 75 + 141 + 41 = 987  (141 = 132 scan + 9 priv_explicit)
+# Krabby ``assets/crab.usda``: 24 articulation joints (6 legs x CamShaft / Body_Hip / Hip_Femur /
+# Femur_Tibia -- ``*_Body_Hip_RevoluteJoint`` is passive for actions, tracking the cam shaft through
+# its own actuator, but it is still an articulation joint, so ``asset.num_joints == 24``);
+# joint_pos action dim ``18`` (``_CRAB_ACTUATED_JOINT_NAMES``).
+#   base term (``ExtremeParkourObservations``): proprio = 13 + 2 * asset.num_joints + action_dim + num_contact
+#   crab term adds ``_CRAB_EXTRA_BASE_DIM = 4`` (planar lin-vel 2 + gait-clock sin/cos 2)
+#   priv_latent = mass(1) + com(3) + friction(1) + stiffness(N) + damping(N), N = asset.num_joints
+#
+# ``num_prop = 75`` / ``num_priv_latent = 41`` below are the NETWORK's slice sizes (``CrabHexActorCriticRMA``):
+#   actor in_features = num_prop + num_scan + num_priv_latent + num_priv_explicit + num_prop * num_hist
+#                     = 75 + 132 + 41 + 9 + 10 * 75 = 1007
+# The live policy group is wider: the evals of every head since 2026-08-22 (incl. the policy of
+# record) record ``obs_dim_actual: 1149`` in ``run_meta.json``, with the warning that num_prop=75
+# does not match that width (train and play share the slicing, so it is self-consistent, but the
+# "scan" slice is not the height scan). Reconcile these sizes against ``group_obs_dim["policy"]``
+# at env creation instead of assuming they are equal; do not write a closed-form total here
+# without re-deriving the layout from the live env.
 
 from __future__ import annotations
 

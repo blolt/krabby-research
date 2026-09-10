@@ -4,7 +4,7 @@
 
 - **Source (not tracked):** `fromscratch_sym_20k/logs/rsl_rl/crab_hex_flat_walk/2026-08-13_00-35-14/model_19999.pt`
 - **Role / task:** flat_walk / `Isaac-Crab-Hex-Flat-Walk-v0`
-- **Plant:** pre-generator snapshot (runs/)
+- **Plant:** hand-authored crab_simple.usda (era A, pre-2026-08-20 rebuild)
 - **Why this checkpoint:** CHANGELOG.md names it the new reference flat-walk checkpoint (20k from scratch, plain rewards + mirror loss 0.5), superseding 2026-08-09_1526_gait_tuned model_19999; KRABBY_SYM_LOSS_COEF default baked 0.0 -> 0.5.
 - **Environment of record:** `KRABBY_SYM_LOSS_COEF=0.5`
 
