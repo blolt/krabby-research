@@ -101,6 +101,13 @@ test-native-coverage: test-native
 		--exclude-unreachable-branches --exclude-throw-branches \
 		--txt --print-summary --fail-under-line 90 --fail-under-branch 88
 
+	# Only the verbatim extracted sketch regions, not whole-sketch coverage.
+	$(CMAKE) -E chdir "$(REPO_ROOT)" $(GCOVR) --root . "$(NATIVE_COVERAGE_BUILD)" \
+		--gcov-executable "$(GCOV)" \
+		--filter 'firmware/arduino/arduino\.ino$$' \
+		--exclude-unreachable-branches --exclude-throw-branches \
+		--txt --print-summary --fail-under-line 100 --fail-under-branch 100
+
 test-firmware: test-native
 	cd "$(REPO_ROOT)" && $(PYTEST) -q tests/unit/firmware
 
@@ -124,7 +131,8 @@ LSM6DSO_LIB_DIR := SparkFun_Qwiic_6Dof_-_LSM6DSO
 
 # Versions after 1.0.9 include C++ <map> and do not build for AVR.
 OLED_LIB := SparkFun Qwiic OLED Arduino Library@1.0.9
-INA228_LIB := Adafruit INA228 Library@3.0.0
+INA228_LIB := SparkFun INA2XX Arduino Library@1.0.0
+SPARKFUN_TOOLKIT_LIB := SparkFun Toolkit@1.2.0
 
 fetch-libs:
 	@installed="$$($(ARDUINO_CLI) config get directories.user)/libraries/$(LSM6DSO_LIB_DIR)"; \
@@ -136,6 +144,7 @@ fetch-libs:
 		echo "$(LSM6DSO_LIB_REF)" > "$$installed/.krabby-pin"; \
 	fi
 	$(ARDUINO_CLI) lib install "$(OLED_LIB)"
+	$(ARDUINO_CLI) lib install "$(SPARKFUN_TOOLKIT_LIB)"
 	$(ARDUINO_CLI) lib install "$(INA228_LIB)"
 
 compile-firmware: arduino-core fetch-libs

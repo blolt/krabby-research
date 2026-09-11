@@ -6,6 +6,7 @@
 
 #include "../units/electrical_units.h"
 #include "power_monitor_constants.h"
+#include "power_measurement.h"
 
 #pragma pack(push, 1)
 struct PowerCalibrationRecord
@@ -115,6 +116,23 @@ public:
         return persist(storage, candidate);
     }
 
+    PowerMonitorMeasurement applyPackCalibration(const PowerMonitorMeasurement &raw) const
+    {
+        PowerMonitorMeasurement calibrated = raw;
+        calibrated.voltage = raw.voltage + packVoltageOffset();
+        calibrated.current = raw.current.scalarMultiply(record_.packShuntScale);
+        calibrated.power = raw.power.scalarMultiply(record_.packShuntScale);
+        calibrated.charge = raw.charge.scalarMultiply(record_.packShuntScale);
+        return calibrated;
+    }
+
+    PowerMonitorMeasurement applyMidpointCalibration(const PowerMonitorMeasurement &raw) const
+    {
+        PowerMonitorMeasurement calibrated = raw;
+        calibrated.voltage = raw.voltage + midpointVoltageOffset();
+        return calibrated;
+    }
+
     Volts packVoltageOffset() const
     {
         return Volts(record_.packVoltageOffset);
@@ -128,21 +146,6 @@ public:
     float packShuntScale() const
     {
         return record_.packShuntScale;
-    }
-
-    Amps correctPackCurrent(Amps current) const
-    {
-        return Amps(current.value() * record_.packShuntScale);
-    }
-
-    Watts correctPackPower(Watts power) const
-    {
-        return Watts(power.value() * record_.packShuntScale);
-    }
-
-    Coulombs correctPackCharge(Coulombs charge) const
-    {
-        return Coulombs(charge.value() * record_.packShuntScale);
     }
 
 private:

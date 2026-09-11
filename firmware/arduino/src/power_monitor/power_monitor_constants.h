@@ -7,6 +7,12 @@
 #include "../units/time_units.h"
 #include "../telemetry.h"
 
+// Wiring and external shunt configuration belong to the application.
+static constexpr uint8_t PACK_POWER_MONITOR_ADDRESS = 0x40;
+static constexpr uint8_t MIDPOINT_POWER_MONITOR_ADDRESS = 0x41;
+static constexpr float PACK_SHUNT_RESISTANCE_OHMS = 0.000375f;
+static constexpr float PACK_SHUNT_MAX_CURRENT_AMPS = 200.0f;
+
 // Power monitoring shares the telemetry tick.
 static constexpr Milliseconds POWER_POLL_INTERVAL(TELEMETRY_INTERVAL_MS);
 static constexpr uint8_t POWER_MONITOR_REINIT_AFTER_BAD_TICKS = 3;

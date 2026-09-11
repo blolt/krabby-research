@@ -46,14 +46,17 @@ function(add_firmware_native_test test_path)
 endfunction()
 
 set(KRABBY_FIRMWARE_NATIVE_TESTS
+    fakes/wire/test_wire
     arduino/test_units
     arduino/test_actuator_manager
     arduino/src/test_telemetry
     arduino/src/imu/test_imu_calibrator
+    arduino/src/imu/test_lsm6dso_adapter
     arduino/src/imu/test_imu_measurement
     arduino/src/i2c/test_i2c_recovery
     arduino/src/display/test_display_frame_model
     arduino/src/display/test_display_renderer
+    arduino/src/display/test_ssd1306_adapter
     arduino/src/actuator/test_actuator_current_tracker
     arduino/src/actuator/test_actuator_status
     arduino/src/actuator/test_actuator_identity
@@ -62,13 +65,13 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/src/controller/test_board_role
     arduino/src/controller/test_controller_freshness_tracker
     arduino/src/cli/test_power_calibration_command
-    arduino/src/power_monitor/test_battery_split
     arduino/src/power_monitor/test_battery_telemetry
     arduino/src/power_monitor/test_ina228_adapter
     arduino/src/power_monitor/test_power_calibration
     arduino/src/power_monitor/test_power_monitor_constants
     arduino/src/telemetry/test_telemetry_poll
     arduino/test_eeprom_layout
+    arduino/test_power_poll
 )
 
 # Require every discovered test to appear in the manifest.
@@ -130,3 +133,41 @@ else()
 endif()
 
 target_include_directories(test_ina228_adapter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support")
+
+include(cmake/power_poll_characterization.cmake)
+
+# Reusable host support; Arduino/vendor substitutes are scoped to this target.
+add_library(imu_native_support STATIC fakes/imu/environment.cpp)
+target_include_directories(imu_native_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/imu")
+if(MSVC)
+    target_compile_options(imu_native_support PRIVATE /W4 /WX)
+else()
+    target_compile_options(imu_native_support PRIVATE -Wall -Wextra -Werror)
+endif()
+target_link_libraries(test_lsm6dso_adapter PRIVATE imu_native_support)
+
+add_library(oled_native_support STATIC fakes/oled/environment.cpp)
+target_include_directories(oled_native_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/oled")
+if(MSVC)
+    target_compile_options(oled_native_support PRIVATE /W4 /WX)
+else()
+    target_compile_options(oled_native_support PRIVATE -Wall -Wextra -Werror)
+endif()
+target_link_libraries(test_ssd1306_adapter PRIVATE oled_native_support)
+target_sources(test_ssd1306_adapter PRIVATE
+    "${KRABBY_ARDUINO_DIR}/src/display/display_frame_model.cpp"
+    "${KRABBY_ARDUINO_DIR}/src/telemetry.cpp")
+
+# The transport fake has no dependency on Unity or any device driver.
+add_library(wire_native_support STATIC fakes/wire/Wire.cpp)
+target_include_directories(wire_native_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/wire")
+if(MSVC)
+    target_compile_options(wire_native_support PRIVATE /W4 /WX)
+else()
+    target_compile_options(wire_native_support PRIVATE -Wall -Wextra -Werror)
+endif()
+target_link_libraries(imu_native_support PUBLIC wire_native_support)
+target_link_libraries(oled_native_support PUBLIC wire_native_support)
+target_link_libraries(test_ina228_adapter PRIVATE wire_native_support)
+target_link_libraries(test_power_poll PRIVATE wire_native_support)
+target_link_libraries(test_wire PRIVATE wire_native_support)

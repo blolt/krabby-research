@@ -161,18 +161,22 @@ DisplayFrame buildFrame(const SimulatedState &state)
             : glyph == ActuatorGlyph::Retract ? -MOVE_THRESHOLD : 0;
     }
 
-    DisplayFrame frame = buildDisplayFrame(
+    PowerMonitorMeasurement pack, midpoint;
+    midpoint.voltage = Volts(state.isBatteryValid ? state.batteryVolts[0] : NAN);
+    const Volts batteryB(state.isBatteryValid ? state.batteryVolts[1] : NAN);
+    const bool canDisplayBoth =
+        isfinite(state.batteryVolts[0]) && state.batteryVolts[0] >= 0.0f && state.batteryVolts[0] <= 99.9f &&
+        isfinite(state.batteryVolts[1]) && state.batteryVolts[1] >= 0.0f && state.batteryVolts[1] <= 99.9f;
+    pack.voltage = canDisplayBoth ? midpoint.voltage + batteryB : Volts(NAN);
+    pack.isValid = midpoint.isValid = state.isBatteryValid;
+    return buildDisplayFrame(
         state.role,
         controllerFreshnessTrackers,
         actuators,
         measurementForTilt(state),
         NOW_MILLISECONDS,
-        MOVE_THRESHOLD);
-    const Volts batteryVoltage[2] = {
-        Volts(state.batteryVolts[0]), Volts(state.batteryVolts[1])};
-    if (state.isBatteryValid)
-        setBatteryVoltages(frame, batteryVoltage);
-    return frame;
+        MOVE_THRESHOLD,
+        pack, midpoint, batteryB);
 }
 
 }  // namespace

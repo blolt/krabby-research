@@ -447,8 +447,6 @@ robot integration.
 
 ### Bench bring-up runbook (M16, solo board)
 
-> Formal ATP-style test procedures (with run logs and an AC traceability matrix) live in `firmware/bench_tests/INDEX.md` (PR #3, branch m16-docs); this runbook is the narrative version.
-
 Replicated 2026-07-06 at a café table. Everything below assumes the repo venv
 (`testenv`) has `pyserial`, and `PORT` = the board's device (macOS:
 `ls /dev/cu.usbmodem*`; if nothing appears but the board is powered, check the
@@ -490,6 +488,11 @@ sleep already covers. `krabby_mcu.connect()` avoids the
 reset with its pre-open `dtr = False` on Linux/Jetson, but macOS resets anyway.
 
 ### Fetched libraries
+
+Power monitoring uses SparkFun INA2XX Arduino Library 1.0.0 and SparkFun Toolkit
+1.2.0, installed by `make -C firmware fetch-libs`. The adapter maps individual
+read errors to NaN and uses SI readings directly. Each monitor's telemetry validity
+flag reports whether all four reads succeeded.
 
 The current M16 build fetches the pinned, upstream-clean SparkFun LSM6DSO
 library declared in `scripts/fetch_arduino_libs.py`. `make` and CI pass the

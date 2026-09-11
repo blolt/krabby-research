@@ -81,6 +81,15 @@ static PowerCalibrationRecord record(
     return result;
 }
 
+static PowerMonitorMeasurement shuntReadings(float current, float power, float charge)
+{
+    PowerMonitorMeasurement raw;
+    raw.current = Amps(current);
+    raw.power = Watts(power);
+    raw.charge = Coulombs(charge);
+    return raw;
+}
+
 static void assertIdentity(const PowerCalibration &calibration)
 {
     TEST_ASSERT_EQUAL_FLOAT(0.0f, calibration.packVoltageOffset().value());
@@ -94,11 +103,11 @@ static void test_layout_and_identity_are_stable()
     PowerCalibration calibration;
     assertIdentity(calibration);
     TEST_ASSERT_EQUAL_FLOAT(
-        2.0f, calibration.correctPackCurrent(Amps(2.0f)).value());
+        2.0f, calibration.applyPackCalibration(shuntReadings(2.0f, 0, 0)).current.value());
     TEST_ASSERT_EQUAL_FLOAT(
-        3.0f, calibration.correctPackPower(Watts(3.0f)).value());
+        3.0f, calibration.applyPackCalibration(shuntReadings(0, 3.0f, 0)).power.value());
     TEST_ASSERT_EQUAL_FLOAT(
-        4.0f, calibration.correctPackCharge(Coulombs(4.0f)).value());
+        4.0f, calibration.applyPackCalibration(shuntReadings(0, 0, 4.0f)).charge.value());
 }
 
 static void test_load_accepts_valid_record_and_rejects_invalid_records()
@@ -298,11 +307,11 @@ static void test_current_capture_applies_one_scale_to_all_shunt_measurements()
             storage, Amps(10.0f), Amps(12.0f))));
     TEST_ASSERT_EQUAL_FLOAT(1.2f, calibration.packShuntScale());
     TEST_ASSERT_EQUAL_FLOAT(
-        12.0f, calibration.correctPackCurrent(Amps(10.0f)).value());
+        12.0f, calibration.applyPackCalibration(shuntReadings(10.0f, 0, 0)).current.value());
     TEST_ASSERT_EQUAL_FLOAT(
-        24.0f, calibration.correctPackPower(Watts(20.0f)).value());
+        24.0f, calibration.applyPackCalibration(shuntReadings(0, 20.0f, 0)).power.value());
     TEST_ASSERT_EQUAL_FLOAT(
-        36.0f, calibration.correctPackCharge(Coulombs(30.0f)).value());
+        36.0f, calibration.applyPackCalibration(shuntReadings(0, 0, 30.0f)).charge.value());
 }
 
 static void test_invalid_current_capture_preserves_active_record()
@@ -472,9 +481,86 @@ static void test_each_interrupted_write_preserves_active_calibration()
     }
 }
 
+static void test_measurement_correction_preserves_input()
+{
+    for (int configured = 0; configured < 2; ++configured)
+    {
+        PowerCalibration calibration;
+        FakeStorage storage;
+        if (configured)
+        {
+            storage.seed(record(0.5f, -0.25f, 1.25f));
+            TEST_ASSERT_TRUE(calibration.load(storage));
+        }
+        for (int available = 0; available < 2; ++available)
+        {
+            PowerMonitorMeasurement raw;
+            raw.isValid = available;
+            raw.voltage = Volts(12.0f);
+            raw.current = Amps(-8.0f);
+            raw.power = Watts(16.0f);
+            raw.charge = Coulombs(-24.0f);
+            const auto pack = calibration.applyPackCalibration(raw);
+            const auto midpoint = calibration.applyMidpointCalibration(raw);
+            TEST_ASSERT_EQUAL(available, raw.isValid);
+            TEST_ASSERT_EQUAL(available, pack.isValid);
+            TEST_ASSERT_EQUAL(available, midpoint.isValid);
+            TEST_ASSERT_EQUAL_FLOAT(configured ? 12.5f : 12.0f, pack.voltage.value());
+            TEST_ASSERT_EQUAL_FLOAT(configured ? -10.0f : -8.0f, pack.current.value());
+            TEST_ASSERT_EQUAL_FLOAT(configured ? 20.0f : 16.0f, pack.power.value());
+            TEST_ASSERT_EQUAL_FLOAT(configured ? -30.0f : -24.0f, pack.charge.value());
+            TEST_ASSERT_EQUAL_FLOAT(configured ? 11.75f : 12.0f, midpoint.voltage.value());
+            TEST_ASSERT_EQUAL_FLOAT(-8.0f, midpoint.current.value());
+            TEST_ASSERT_EQUAL_FLOAT(16.0f, midpoint.power.value());
+            TEST_ASSERT_EQUAL_FLOAT(-24.0f, midpoint.charge.value());
+            TEST_ASSERT_EQUAL_FLOAT(12.0f, raw.voltage.value());
+            TEST_ASSERT_EQUAL_FLOAT(-8.0f, raw.current.value());
+            TEST_ASSERT_EQUAL_FLOAT(16.0f, raw.power.value());
+            TEST_ASSERT_EQUAL_FLOAT(-24.0f, raw.charge.value());
+        }
+    }
+}
+
+static void test_measurement_correction_preserves_nonfinite_values()
+{
+    PowerCalibration calibration;
+    FakeStorage storage;
+    storage.seed(record(0.5f, -0.25f, 1.25f));
+    TEST_ASSERT_TRUE(calibration.load(storage));
+    const float values[] = {NAN, INFINITY, -INFINITY};
+    for (float value : values)
+    {
+        for (int available = 0; available < 2; ++available)
+        {
+            PowerMonitorMeasurement raw;
+            raw.isValid = available;
+            raw.voltage = Volts(value);
+            raw.current = Amps(value);
+            raw.power = Watts(value);
+            raw.charge = Coulombs(value);
+            const PowerMonitorMeasurement results[] = {
+                calibration.applyPackCalibration(raw),
+                calibration.applyMidpointCalibration(raw), raw};
+            for (const auto &result : results)
+            {
+                TEST_ASSERT_EQUAL(available, result.isValid);
+                const float fields[] = {result.voltage.value(), result.current.value(),
+                    result.power.value(), result.charge.value()};
+                for (float field : fields)
+                {
+                    if (isnan(value)) TEST_ASSERT_TRUE(isnan(field));
+                    else TEST_ASSERT_TRUE(field == value);
+                }
+            }
+        }
+    }
+}
+
 int main()
 {
     UNITY_BEGIN();
+    RUN_TEST(test_measurement_correction_preserves_input);
+    RUN_TEST(test_measurement_correction_preserves_nonfinite_values);
     RUN_TEST(test_layout_and_identity_are_stable);
     RUN_TEST(test_load_accepts_valid_record_and_rejects_invalid_records);
     RUN_TEST(test_load_rejects_each_nonfinite_field_and_accepts_exact_bounds);

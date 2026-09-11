@@ -1,5 +1,10 @@
 # M16 Power Bus — Wiring Diagram (AC 3j)
 
+[Open the Task 3 system wiring diagram](wiring/generated/sheets/task3_wiring.html)
+([SVG](wiring/generated/sheets/task3_wiring.svg), [PDF](wiring/generated/sheets/task3_wiring.pdf)).
+The generated sheet shows the planned SparkFun boards; the bench observations
+below were recorded with the earlier Adafruit boards.
+
 The 24 V pack, the external shunt, and the two INA228 monitors, as built and
 verified on the bench. This is the rebuild reference: it records not just what
 connects to what, but the several places where the obvious wiring is wrong.

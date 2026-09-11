@@ -1,5 +1,7 @@
 #pragma once
 
+#include "power_monitor/power_measurement.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -10,12 +12,8 @@
 
 static constexpr uint16_t TELEMETRY_INTERVAL_MS = 50;
 
-// The one scheduler gate for the telemetry tick. Everything the leader appends
-// to a line - actuators, IMU, power - rides this, so there is a single period
-// and a single timestamp rather than per-subsystem gates that drift apart.
-//
-// Unsigned subtraction intentionally preserves the elapsed duration across the
-// uint32_t millis() rollover.
+// Actuator telemetry and leader sensor reads share this cadence.
+// Unsigned subtraction preserves elapsed time across millis() rollover.
 inline bool isTelemetryPollDue(uint32_t now, uint32_t previousPoll)
 {
     return static_cast<uint32_t>(now - previousPoll) >= TELEMETRY_INTERVAL_MS;
@@ -70,21 +68,8 @@ void appendImuMeasurement(
     out.print(measurement.didSucceed() ? 1 : 0);
 }
 
-// ---- Battery segment (Task 3) ----
-// Lives beside appendImuMeasurement: both are wire-format appends under their
-// own tag, and a reader looking for the line's shape should find them together.
-
-// §4's power_state field, carrying only the measurement half of it: which band
-// pack_v falls in. Task 3 emits a constant NORMAL; Task 4 owns the thresholds
-// that decide it (4a).
-//
-// §4's enum also lists 5=sleep and 6=resuming, which are controller states
-// rather than voltage regions. They are deliberately absent here: Task 4 adds
-// the controller axis as its own field when it has a state machine to report
-// and knows where 4b's reason code belongs. One byte cannot hold both anyway -
-// 4a names a RECOVERY threshold that §4's enum has no value for, because a pack
-// back above RECOVERY while the controller is still asleep is region NORMAL
-// with the controller asleep, a pair a single byte has nowhere to put.
+// Voltage-region codes carried in BATT telemetry. Task 3 emits NORMAL;
+// power-management transitions are implemented in Task 4.
 enum PackVoltageRegion : uint8_t
 {
     PACK_REGION_NORMAL = 0,
@@ -94,49 +79,35 @@ enum PackVoltageRegion : uint8_t
     PACK_REGION_OVER_VOLT = 4
 };
 
-struct BatteryTelemetryFrame
-{
-    Volts packVoltage;
-    Amps packCurrent;
-    Watts packPower;
-    Coulombs packCharge;
-    Volts batteryAVoltage;
-    Volts batteryBVoltage;
-    bool isDiverged;
-    uint8_t packRegion;
-    // Per-monitor liveness, the same convention as the IMU segment's valid byte
-    // (TASK-1 §4). One byte each because the two monitors fail and recover
-    // independently. When a byte is 0 its fields carry the last trustworthy
-    // reading, not the library's failure sentinel.
-    bool isPackValid;
-    bool isMidpointValid;
-};
-
 template <typename Output>
 inline void appendBatteryTelemetry(
     Output& out,
-    const BatteryTelemetryFrame& frame)
+    const PowerMonitorMeasurement& packMeasurement,
+    const PowerMonitorMeasurement& midpointMeasurement,
+    Volts inferredBattBVoltage,
+    bool isDiverged,
+    uint8_t packRegion)
 {
     out.print(TELEMETRY_SEGMENT_DELIMITER);
     out.print(BATT_TELEMETRY_TAG);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.packVoltage.value(), 2);
+    out.print(packMeasurement.voltage.value(), 2);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.packCurrent.value(), 2);
+    out.print(packMeasurement.current.value(), 2);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.packPower.value(), 1);
+    out.print(packMeasurement.power.value(), 1);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.packCharge.value(), 1);
+    out.print(packMeasurement.charge.value(), 1);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.batteryAVoltage.value(), 2);
+    out.print(midpointMeasurement.voltage.value(), 2);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.batteryBVoltage.value(), 2);
+    out.print(inferredBattBVoltage.value(), 2);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.isDiverged ? 1 : 0);
+    out.print(isDiverged ? 1 : 0);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.packRegion);
+    out.print(packRegion);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.isPackValid ? 1 : 0);
+    out.print(packMeasurement.isValid ? 1 : 0);
     out.print(TELEMETRY_FIELD_SEPARATOR);
-    out.print(frame.isMidpointValid ? 1 : 0);
+    out.print(midpointMeasurement.isValid ? 1 : 0);
 }

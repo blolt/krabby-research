@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../power_monitor/power_measurement.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
@@ -38,14 +40,6 @@ struct DisplayFrame
 
 void setBatteryVoltages(DisplayFrame &frame, const Volts (&voltage)[2]);
 
-// Pack voltage and battery A remain useful when only one monitor is working.
-void setBatteryMeasurements(
-    DisplayFrame &frame,
-    Volts packVoltage,
-    bool isPackVoltageValid,
-    const Volts (&voltage)[2],
-    const bool (&isBatteryValid)[2]);
-
 int8_t batteryFillPixels(float level);
 int16_t displayPackDecivolts(Volts voltage);
 
@@ -55,7 +49,10 @@ DisplayFrame buildDisplayFrame(
     const ActuatorStatus (&actuatorStatus)[ActuatorId::ActuatorCount],
     const ImuMeasurement &measurement,
     uint32_t nowMilliseconds,
-    int moveThreshold);
+    int moveThreshold,
+    const PowerMonitorMeasurement &packMeasurement,
+    const PowerMonitorMeasurement &midpointMeasurement,
+    Volts inferredBattBVoltage);
 
 ActuatorGlyph selectActuatorGlyph(
     const ActuatorStatus &status,

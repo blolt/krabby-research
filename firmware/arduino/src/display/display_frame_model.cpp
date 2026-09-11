@@ -38,19 +38,15 @@ void setBatteryVoltages(DisplayFrame &frame, const Volts (&voltage)[2])
             ? voltage[0].value() + voltage[1].value() : -1.0f);
 }
 
-void setBatteryMeasurements(
+static void setBatteryMeasurements(
     DisplayFrame &frame,
-    Volts packVoltage,
-    bool isPackVoltageValid,
-    const Volts (&voltage)[2],
-    const bool (&isBatteryValid)[2])
+    const PowerMonitorMeasurement &packMeasurement,
+    const PowerMonitorMeasurement &midpointMeasurement,
+    Volts inferredBattBVoltage)
 {
-    const Volts availableVoltage[2] = {
-        isBatteryValid[0] ? voltage[0] : Volts(-1.0f),
-        isBatteryValid[1] ? voltage[1] : Volts(-1.0f),
-    };
-    setBatteryVoltages(frame, availableVoltage);
-    frame.packVoltage = isPackVoltageValid ? packVoltage : Volts(-1.0f);
+    const Volts voltage[2] = {midpointMeasurement.voltage, inferredBattBVoltage};
+    setBatteryVoltages(frame, voltage);
+    frame.packVoltage = packMeasurement.voltage;
 }
 
 int8_t batteryFillPixels(float level)
@@ -114,9 +110,13 @@ DisplayFrame buildDisplayFrame(
     const ActuatorStatus (&actuatorStatus)[ActuatorId::ActuatorCount],
     const ImuMeasurement &measurement,
     uint32_t nowMilliseconds,
-    int moveThreshold)
+    int moveThreshold,
+    const PowerMonitorMeasurement &packMeasurement,
+    const PowerMonitorMeasurement &midpointMeasurement,
+    Volts inferredBattBVoltage)
 {
     DisplayFrame frame;
+    setBatteryMeasurements(frame, packMeasurement, midpointMeasurement, inferredBattBVoltage);
     frame.role = role;
     for (BoardRole boardRole : ALL_BOARD_ROLES)
         frame.controllers[boardRole] =

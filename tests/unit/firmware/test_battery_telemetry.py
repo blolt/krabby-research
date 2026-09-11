@@ -1,13 +1,7 @@
-"""Unit tests for the BATT telemetry segment (parse layer + GUI state).
+"""BATT parsing and display tests.
 
-``pack_region`` carries the measurement half of §4's power_state: which voltage
-band ``pack_v`` falls in. Task 3 emits a constant NORMAL; Task 4 owns the
-thresholds that decide it, and adds the controller axis as its own field when it
-has a state machine to report.
-
-``pack_valid`` and ``midpoint_valid`` are the two monitors' liveness. They fail
-and recover independently, so most of what is worth testing is that nothing
-recombines them: a fault in one must not discard the other's reading.
+Adapter availability, numeric readings, divergence, and frame age remain
+separate fields. Divergence includes unavailable and non-finite battery inputs.
 """
 
 import math
@@ -88,9 +82,9 @@ class TestMalformedSegmentsAreDropped:
     def test_nonnumeric_measurement_is_rejected(self):
         assert _parse(BATT_SEG.replace("327.6", "warm")) is None
 
-    def test_nonfinite_measurement_is_rejected(self):
-        assert _parse(BATT_SEG.replace("26.55", "nan")) is None
-        assert _parse(BATT_SEG.replace("26.55", "inf")) is None
+    def test_nonfinite_measurement_is_preserved(self):
+        assert str(_parse(BATT_SEG.replace("26.55", "nan")).pack_volts) == "nan"
+        assert _parse(BATT_SEG.replace("26.55", "inf")).pack_volts == float("inf")
 
     def test_invalid_divergence_is_rejected(self):
         assert _parse(_seg(divergence=2)) is None
@@ -160,9 +154,7 @@ class TestResolveDivergence:
 
 
 class TestTheTwoDisplayAxesAreIndependent:
-    """3g.10 wants divergence state and freshness state both displayed. Sharing
-    one column made the most important pair - a pack that was diverging when it
-    went quiet - impossible to report."""
+    """A diverged sample can be either fresh or stale."""
 
     def test_a_pack_that_was_diverging_when_it_went_quiet_reports_both(self):
         diverged = _parse(_seg(divergence=1))
@@ -190,9 +182,7 @@ class TestTheTwoDisplayAxesAreIndependent:
 
 
 class TestMonitorValidity:
-    """TASK-3 §4 appends the frame the way the Task 1 IMU segment is appended, and
-    TASK-1:105 makes that segment report failure in-band. Two bytes, and a GUI
-    column each, because the monitors fail and recover independently."""
+    """The wire flags preserve each adapter's availability independently."""
 
     def test_both_up(self):
         b = _parse()
@@ -266,3 +256,59 @@ def test_battery_segments_share_the_consolidated_telemetry_parser():
     assert frame.joints[0].name == "FLHY"
     assert frame.imu.valid is True
     assert frame.battery == _parse()
+
+
+class TestUnavailableBatteryVoltages:
+    def test_missing_pack_keeps_numeric_battery_values(self):
+        b = _parse("BATT 0.00 0.00 0.0 0.0 12.75 -12.75 0 0 0 1")
+        assert b is not None
+        assert not b.pack_valid and b.midpoint_valid
+        assert b.battery_a_volts == 12.75 and b.battery_b_volts == -12.75
+        assert not b.split_available
+        assert "A:12.75V B:-12.75V" in b.format_compact()
+        assert BattRow.resolve_divergence(b) == ("—", "")
+
+    def test_missing_midpoint_does_not_discard_pack(self):
+        b = _parse("BATT 25.50 -12.50 331.2 1200.0 0.00 25.50 0 0 1 0")
+        assert b is not None and b.pack_valid and not b.midpoint_valid
+        assert b.pack_volts == 25.5
+        assert "A:0.00V B:25.50V" in b.format_compact()
+        assert b.format_battery_voltage(b.battery_a_volts) == "0.00"
+
+    def test_numeric_range_does_not_change_availability(self):
+        b = _parse("BATT 10.00 -12.50 331.2 1200.0 12.00 -2.00 0 0 1 1")
+        assert b.pack_valid and b.midpoint_valid
+        assert b.split_available
+        assert BattRow.resolve_divergence(b)[0] != "—"
+
+    def test_zero_volts_is_available_and_recovery_restores_split(self):
+        b = _parse("BATT 0.00 0.00 0.0 0.0 0.00 0.00 0 0 1 1")
+        assert b.split_available
+        assert b.format_battery_voltage(0.0) == "0.00"
+        assert _parse().split_available
+
+    def test_monitor_validity_is_required_even_with_numeric_battery_fields(self):
+        b = _parse(_seg(pack_valid=0))
+        assert not b.split_available
+        assert BattRow.resolve_divergence(b) == ("—", "")
+
+
+def test_nonfinite_midpoint_preserves_pack_and_disables_split():
+    b = _parse("BATT 26.00 1.00 26.0 100.0 nan nan 0 0 1 0")
+    assert b.pack_volts == 26.0 and b.pack_valid
+    assert not b.split_available
+    assert BattRow.resolve_divergence(b) == ("—", "")
+
+
+def test_divergence_is_not_hidden_when_a_monitor_is_unavailable():
+    for pack, midpoint in ((0, 1), (1, 0), (0, 0)):
+        b = _parse(_seg(divergence=1, pack_valid=pack, midpoint_valid=midpoint))
+        assert BattRow.resolve_divergence(b) == ("DIVERGED", STATE_COLOR_STALE)
+        assert "DIVERGE" in b.format_compact()
+
+
+def test_nonfinite_voltage_divergence_preserves_working_pack():
+    b = _parse("BATT 26.00 1.00 26.0 100.0 nan nan 1 0 1 1")
+    assert b.pack_volts == 26.0
+    assert BattRow.resolve_divergence(b) == ("DIVERGED", STATE_COLOR_STALE)
+    assert "DIVERGE" in b.format_compact()

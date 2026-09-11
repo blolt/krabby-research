@@ -172,37 +172,17 @@ SENSOR_STALE_S = 1.0
 
 
 class BattRow:
-    """Pack and per-battery readout, in the same idiom as ImuRow.
+    """Display battery readings, divergence, measurement validity, and frame age.
 
-    Latches each sample so a value persists between frames, and the state
-    column reports how old the latched sample is: blanking the row would read as
-    a dropout rather than as a gap between updates.
-
-    region and diverge are parsed frame fields and are each shown in their own
-    column (AC 3g.10); the GUI reports what the firmware said rather than
-    re-deriving behaviour from the combination.
-
-    freshness is the one thing no frame can carry - how long ago the sample
-    arrived - so the column is named for that and holds nothing else. It shared a
-    cell with divergence once, under the name "state", which made the pair that
-    matters most unreportable: a pack that was diverging when it went quiet. A
-    column called "state" invites any state into it; one called "freshness" does
-    not.
-
-    Each monitor's validity byte reports sensor health; freshness reports the
-    age of the most recently received BATT frame.
+    Retain samples between updates. Divergence includes assumed divergence when
+    a battery cannot be read; successful reads may still need numeric checks.
     """
 
-    # The first four are the Pack monitor's own measurements, so they carry the
-    # prefix rather than leaving bare units to be read as a units row. Charge is
-    # named separately because it is an accumulator, not an instantaneous value.
     COLS = ["", "pack V", "pack A", "pack W", "charge C", "battA", "battB",
             "region", "diverge", "pack", "mid", "freshness"]
-    # Numeric columns fit in 7; the word columns do not. "DIVERGED" is 8, and a
-    # clipped fault label is worse than none.
+    # Leave room for DIVERGED and the longer region labels.
     COL_WIDTHS = {"region": 8, "diverge": 9, "pack": 6, "mid": 6, "freshness": 9}
-    # Columns whose colour carries meaning, so their labels are kept by name
-    # rather than by an offset from the end of COLS.
+    # Status columns have independent colours.
     COLOURED = ("diverge", "pack", "mid", "freshness")
 
     @staticmethod
@@ -216,25 +196,20 @@ class BattRow:
 
     @staticmethod
     def resolve_monitor(valid: Optional[bool]) -> tuple[str, str]:
-        """One monitor's liveness, straight from its own valid byte.
-
-        A column each rather than one combined cell, because the two monitors
-        fail and recover independently — the same reason the frame carries two
-        bytes instead of one four-valued field. This is what the firmware knows;
-        freshness is only what the GUI can infer.
-        """
+        """Display whether all reads in the monitor measurement succeeded."""
         if valid is None:
             return "—", ""
         return ("up", STATE_COLOR_OK) if valid else ("DOWN", STATE_COLOR_STALE)
 
     @staticmethod
     def resolve_divergence(battery) -> tuple[str, str]:
-        """The frame's divergence field, reported on its own terms. Whether it is
-        still current is the freshness column's business, not this one's."""
+        """Keep assumed divergence visible even when a monitor is unavailable."""
         if battery is None:
             return "—", ""
         if battery.divergence:
             return "DIVERGED", STATE_COLOR_STALE
+        if not battery.split_available:
+            return "—", ""
         return "ok", STATE_COLOR_OK
 
     @staticmethod
@@ -287,8 +262,8 @@ class BattRow:
             f"{battery.pack_current_amperes:+.2f}",
             f"{battery.pack_power_watts:.1f}",
             f"{battery.pack_charge_coulombs:.0f}",
-            f"{battery.battery_a_volts:.2f}",
-            f"{battery.battery_b_volts:.2f}",
+            battery.format_battery_voltage(battery.battery_a_volts),
+            battery.format_battery_voltage(battery.battery_b_volts),
             _state_label(battery.pack_region),
         ]
         for c, text in enumerate(fmt):

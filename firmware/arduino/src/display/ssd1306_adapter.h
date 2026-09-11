@@ -20,7 +20,9 @@ public:
                       COLOR_WHITE == SSD1306_COLOR_WHITE,
                   "SparkFun's colour constants no longer match the renderer's");
 
-    bool begin() { return driver_.begin(); }
+    explicit Ssd1306Canvas(TwoWire &wire) : wire_(wire) {}
+
+    bool begin() { return driver_.begin(wire_); }
     bool reset() { return driver_.reset(true); }
     void display() { driver_.display(); }
 
@@ -54,14 +56,15 @@ private:
     // Match the driver's uint8_t coordinate conversion.
     static uint8_t narrow(int value) { return static_cast<uint8_t>(value); }
 
+    TwoWire &wire_;
     Qwiic1in3OLED driver_;
 };
 
 class Ssd1306Adapter
 {
 public:
-    Ssd1306Adapter()
-        : canvas_(), renderer_(canvas_), recoveryPolicy_{}, stuckBusLatch_{},
+    explicit Ssd1306Adapter(TwoWire &wire)
+        : wire_(wire), canvas_(wire), renderer_(canvas_), recoveryPolicy_{}, stuckBusLatch_{},
           isInitialized_(false)
     {
     }
@@ -104,9 +107,9 @@ public:
         if (!renderer_.render(frame))
             return false;
 
-        Wire.setClock(SSD1306_TRANSFER_BUS_CLOCK_HZ);
+        wire_.setClock(SSD1306_TRANSFER_BUS_CLOCK_HZ);
         canvas_.display();
-        Wire.setClock(I2C_DEFAULT_BUS_CLOCK_HZ);
+        wire_.setClock(I2C_DEFAULT_BUS_CLOCK_HZ);
         return true;
     }
 
@@ -124,9 +127,9 @@ private:
 
     bool responds()
     {
-        Wire.clearWireTimeoutFlag();
-        Wire.beginTransmission(SSD1306_I2C_ADDRESS);
-        return Wire.endTransmission() == 0;
+        wire_.clearWireTimeoutFlag();
+        wire_.beginTransmission(SSD1306_I2C_ADDRESS);
+        return wire_.endTransmission() == 0;
     }
 
     bool recoverAndConfigure()
@@ -134,11 +137,12 @@ private:
         if (responds())
             return resetPanel();
 
-        if (!Wire.getWireTimeoutFlag())
+        if (!wire_.getWireTimeoutFlag())
             return false;
 
-        Wire.end();
+        wire_.end();
         ArduinoI2cBus bus(
+            wire_,
             I2C_DEFAULT_BUS_CLOCK_HZ,
             I2C_BUS_TIMEOUT_MICROSECONDS);
         if (!stuckBusLatch_.mayAttempt(bus.isSdaHigh()))
@@ -159,6 +163,7 @@ private:
         return true;
     }
 
+    TwoWire &wire_;
     Ssd1306Canvas canvas_;
     DisplayRenderer<Ssd1306Canvas> renderer_;
     I2cRecoveryPolicy recoveryPolicy_;

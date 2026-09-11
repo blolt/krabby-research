@@ -1,143 +1,139 @@
 #pragma once
 
-#include <Adafruit_INA228.h>
+#include <SparkFun_INA2XX.h>
 #include <Arduino.h>
 #include <Wire.h>
+#include <math.h>
 
 #include "../i2c/i2c_recovery.h"
 #include "power_monitor_constants.h"
-
-enum class PowerMonitorRole : uint8_t
-{
-    Pack,
-    Midpoint,
-};
+#include "power_measurement.h"
 
 class Ina228Adapter
 {
 public:
-    explicit Ina228Adapter(PowerMonitorRole role)
-        : address_(addressFor(role)), role_(role), isUp_(false),
-          isInitialized_(false)
+    explicit Ina228Adapter(uint8_t address)
+        : Ina228Adapter(address, 0.0f, 0.0f)
+    {
+        hasShuntConfiguration_ = false;
+    }
+
+    explicit Ina228Adapter(uint8_t address, float shuntResistanceOhms,
+        float shuntMaxCurrentAmps, bool resetChargeOnBegin = false)
+        : address_(address), shuntResistanceOhms_(shuntResistanceOhms),
+          shuntMaxCurrentAmps_(shuntMaxCurrentAmps), hasShuntConfiguration_(true),
+          resetChargeOnBegin_(resetChargeOnBegin),
+          wire_(nullptr), isUp_(false)
     {
     }
 
     bool begin(TwoWire *wire)
     {
-        isUp_ = start(wire, false);
-        isInitialized_ = isInitialized_ || isUp_;
+        wire_ = wire;
+        isUp_ = wire_ && start(wire_, false);
         return isUp_;
     }
 
     bool isUp() const { return isUp_; }
 
-    Volts readBusVoltage(Volts offset = Volts())
+    Volts readBusVoltage()
     {
-        return Volts(device_.readBusVoltage() + offset.value());
+        float value = NAN;
+        if (device_.getBusVoltage_V(value) != ksfTkErrOk) value = NAN;
+        return Volts(value);
     }
 
     Amps readCurrent()
     {
-        return MilliAmps(device_.readCurrent()).toAmps();
+        float value = NAN;
+        if (device_.getCurrent_A(value) != ksfTkErrOk) value = NAN;
+        return Amps(value);
     }
 
     Watts readPower()
     {
-        return MilliWatts(device_.readPower()).toWatts();
+        float value = NAN;
+        if (device_.getPower_W(value) != ksfTkErrOk) value = NAN;
+        return Watts(value);
     }
 
     Coulombs readCharge()
     {
-        return Coulombs(device_.readCharge());
+        double value = NAN;
+        if (device_.getCharge_C(value) != ksfTkErrOk) value = NAN;
+        return Coulombs(value);
     }
 
-    void noteRead(bool didSucceed, TwoWire *wire, uint32_t nowMs)
+    PowerMonitorMeasurement measure()
     {
         const I2cRecoveryLimits limits = {
             POWER_MONITOR_REINIT_AFTER_BAD_TICKS,
             POWER_MONITOR_REINIT_INTERVAL_MILLISECONDS,
         };
-        if (didSucceed)
+        PowerMonitorMeasurement measurement;
+        if (!wire_) return measurement;
+        const bool wasUp = isUp_;
+        if (!wasUp)
         {
-            isUp_ = true;
-            recovery_.noteSuccess();
-            return;
+            if (!recovery_.noteFailure(millis(), limits) || !recover())
+                return measurement;
         }
-        isUp_ = false;
-        if (recovery_.noteFailure(nowMs, limits))
-            isUp_ = recover(wire);
+        float voltage = NAN, current = NAN, power = NAN;
+        double charge = NAN;
+        const bool voltageRead = device_.getBusVoltage_V(voltage) == ksfTkErrOk;
+        const bool currentRead = device_.getCurrent_A(current) == ksfTkErrOk;
+        const bool powerRead = device_.getPower_W(power) == ksfTkErrOk;
+        const bool chargeRead = device_.getCharge_C(charge) == ksfTkErrOk;
+        measurement.voltage = Volts(voltageRead ? voltage : NAN);
+        measurement.current = Amps(currentRead ? current : NAN);
+        measurement.power = Watts(powerRead ? power : NAN);
+        measurement.charge = Coulombs(chargeRead ? charge : NAN);
+        measurement.isValid = voltageRead && currentRead && powerRead && chargeRead;
+        if (measurement.isValid)
+            recovery_.noteSuccess();
+        else if (wasUp && recovery_.noteFailure(millis(), limits))
+            recover();
+        return measurement;
     }
 
     uint8_t address() const { return address_; }
     uint8_t badTicks() const { return recovery_.badTicks(); }
 
 private:
-    static constexpr uint8_t PACK_ADDRESS = 0x40;
-    static constexpr uint8_t MIDPOINT_ADDRESS = 0x41;
-    static constexpr float PACK_SHUNT_RESISTANCE_OHMS = 0.000375f;
-    static constexpr float PACK_SHUNT_MAX_CURRENT_AMPS = 200.0f;
-
-    static uint8_t addressFor(PowerMonitorRole role)
+    bool recover()
     {
-        return role == PowerMonitorRole::Pack
-            ? PACK_ADDRESS
-            : MIDPOINT_ADDRESS;
-    }
-
-    // Avoid repeated begin() calls: Adafruit_INA2xx allocates internal register
-    // objects without freeing the old ones.
-    bool recover(TwoWire *wire)
-    {
-        if (isInitialized_)
-        {
-            if (!isPresent(wire))
-                return false;
-            reconfigure();
-            return true;
-        }
-        if (!isPresent(wire))
-            return false;
-        const bool didStart = start(wire, true);
-        isInitialized_ = isInitialized_ || didStart;
-        return didStart;
-    }
-
-    bool isPresent(TwoWire *wire)
-    {
-        wire->beginTransmission(address_);
-        return wire->endTransmission() == 0;
-    }
-
-    void reconfigure()
-    {
-        if (role_ == PowerMonitorRole::Pack)
-            configurePack();
-    }
-
-    void configurePack()
-    {
-        device_.setShunt(
-            PACK_SHUNT_RESISTANCE_OHMS,
-            PACK_SHUNT_MAX_CURRENT_AMPS);
+        isUp_ = start(wire_, true);
+        return isUp_;
     }
 
     bool start(TwoWire *wire, bool isRecovery)
     {
-        if (role_ == PowerMonitorRole::Midpoint)
-            return device_.begin(address_, wire);
-
-        if (!device_.begin(address_, wire, isRecovery))
+        if (!device_.begin(address_, *wire))
             return false;
-        configurePack();
-        if (!isRecovery)
-            device_.resetAccumulators();
+        // Keep accumulated pack charge across recovery.
+        if (!(isRecovery && resetChargeOnBegin_))
+        {
+            if (device_.reset() != ksfTkErrOk) return false;
+        }
+        if (device_.setConversionReadyAlert(true) != ksfTkErrOk ||
+            device_.setADCMode(INA2XX_MODE_CONT_ALL) != ksfTkErrOk)
+            return false;
+        delay(2);
+        if (hasShuntConfiguration_ &&
+            device_.calibrate(shuntResistanceOhms_, shuntMaxCurrentAmps_) != ksfTkErrOk)
+            return false;
+        if (!isRecovery && resetChargeOnBegin_ && device_.resetAccumulators() != ksfTkErrOk)
+            return false;
         return true;
     }
 
-    Adafruit_INA228 device_;
+    SfeINA228ArdI2C device_;
     I2cRecoveryPolicy recovery_;
     uint8_t address_;
-    PowerMonitorRole role_;
+    float shuntResistanceOhms_;
+    float shuntMaxCurrentAmps_;
+    bool hasShuntConfiguration_;
+    bool resetChargeOnBegin_;
+    TwoWire *wire_;
     bool isUp_;
-    bool isInitialized_;
 };
