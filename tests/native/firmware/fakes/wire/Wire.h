@@ -58,6 +58,7 @@ public:
     bool getWireTimeoutFlag();
     void beginTransmission(uint8_t);
     size_t write(uint8_t);
+    size_t write(const uint8_t *, size_t);
     uint8_t endTransmission(uint8_t stop = true);
     uint8_t requestFrom(uint8_t, uint8_t, uint8_t stop = true);
     int available();

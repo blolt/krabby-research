@@ -28,8 +28,10 @@ ACK/NACK status, timeout flags, reported read counts and actual receive bytes ar
 independent so tests can inject acquisition failures and inconsistent reads.
 An ACK does not clear a previously set timeout flag; clear it explicitly through
 the Wire API. The fake records the requested address, write bytes, STOP flags and
-read counts for protocol assertions. It does not emulate registers or electrical
-timing, enforce a hardware buffer size, or simulate GPIO bus clearing.
+read counts for protocol assertions. A buffered `write(data, length)` is recorded
+byte by byte and returns the sum of the per-byte scripted counts. The fake does
+not emulate registers or electrical timing, enforce a hardware buffer size, or
+simulate GPIO bus clearing.
 
 Clock, timeout configuration, initialization state, scripts, errors and events are
 per bus. `reset()` clears all fake state, including the observer and active read.

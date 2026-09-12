@@ -85,11 +85,15 @@ test-native:
 # The filter must name real files -- a filter matching
 # nothing reports 0% and fails, it does not pass vacuously.
 test-native-coverage: test-native
-	# Rebuild to exclude stale .gcda/.gcno data. Reuse Unity from the test build.
+	# Rebuild to exclude stale .gcda/.gcno data. Reuse fetched sources from the test build.
 	$(CMAKE) -E rm -rf "$(NATIVE_COVERAGE_BUILD)"
 	$(CMAKE) -S "$(NATIVE_TEST_SOURCE)" -B "$(NATIVE_COVERAGE_BUILD)" \
 		-DKRABBY_NATIVE_COVERAGE=ON \
-		-DFETCHCONTENT_SOURCE_DIR_UNITY="$(NATIVE_TEST_BUILD)/_deps/unity-src"
+		-DFETCHCONTENT_SOURCE_DIR_UNITY="$(NATIVE_TEST_BUILD)/_deps/unity-src" \
+		-DFETCHCONTENT_SOURCE_DIR_SPARKFUN_TOOLKIT="$(NATIVE_TEST_BUILD)/_deps/sparkfun_toolkit-src" \
+		-DFETCHCONTENT_SOURCE_DIR_SPARKFUN_INA2XX="$(NATIVE_TEST_BUILD)/_deps/sparkfun_ina2xx-src" \
+		-DFETCHCONTENT_SOURCE_DIR_SPARKFUN_LSM6DSO="$(NATIVE_TEST_BUILD)/_deps/sparkfun_lsm6dso-src" \
+		-DFETCHCONTENT_SOURCE_DIR_SPARKFUN_QWIIC_OLED="$(NATIVE_TEST_BUILD)/_deps/sparkfun_qwiic_oled-src"
 	$(CMAKE) --build "$(NATIVE_COVERAGE_BUILD)"
 	$(CTEST) --test-dir "$(NATIVE_COVERAGE_BUILD)" --output-on-failure
 	$(CMAKE) -E chdir "$(REPO_ROOT)" $(GCOVR) --root . "$(NATIVE_COVERAGE_BUILD)" \

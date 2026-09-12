@@ -171,3 +171,5 @@ target_link_libraries(oled_native_support PUBLIC wire_native_support)
 target_link_libraries(test_ina228_adapter PRIVATE wire_native_support)
 target_link_libraries(test_power_poll PRIVATE wire_native_support)
 target_link_libraries(test_wire PRIVATE wire_native_support)
+
+include(cmake/sparkfun_libraries.cmake)

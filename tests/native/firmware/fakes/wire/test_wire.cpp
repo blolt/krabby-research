@@ -153,6 +153,36 @@ static void test_bus_lifecycle_configuration_and_observer_are_isolated()
     TEST_ASSERT_EQUAL_UINT(1, state.errors.size());
 }
 
+static void test_buffered_write_records_each_byte_and_sums_scripted_counts()
+{
+    TwoWire bus;
+    wire_native::Transfer accepted;
+    accepted.address = 0x40;
+    wire_native::Transfer refused;
+    refused.address = 0x41;
+    refused.written = 0;
+    bus.state().transfers.push_back(accepted);
+    bus.state().transfers.push_back(refused);
+    const uint8_t bytes[] = {0x01, 0x02, 0x03};
+
+    bus.beginTransmission(0x40);
+    TEST_ASSERT_EQUAL_UINT(3, bus.write(bytes, sizeof bytes));
+    TEST_ASSERT_EQUAL_INT(0, bus.endTransmission());
+    bus.beginTransmission(0x41);
+    TEST_ASSERT_EQUAL_UINT(0, bus.write(bytes, sizeof bytes));
+    TEST_ASSERT_EQUAL_INT(0, bus.endTransmission());
+
+    const auto &events = bus.state().events;
+    TEST_ASSERT_EQUAL_UINT(10, events.size());
+    for (size_t index = 0; index < 3; ++index)
+    {
+        TEST_ASSERT_EQUAL_STRING("wire.write", events[1 + index].name.c_str());
+        TEST_ASSERT_EQUAL_INT(bytes[index], events[1 + index].args[0]);
+    }
+    TEST_ASSERT_TRUE(bus.state().errors.empty());
+    TEST_ASSERT_TRUE(bus.state().transfers.empty());
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -162,5 +192,6 @@ int main()
     RUN_TEST(test_reported_count_does_not_conceal_buffer_exhaustion);
     RUN_TEST(test_unexpected_operations_fail_and_unconsumed_scripts_remain_visible);
     RUN_TEST(test_bus_lifecycle_configuration_and_observer_are_isolated);
+    RUN_TEST(test_buffered_write_records_each_byte_and_sums_scripted_counts);
     return UNITY_END();
 }

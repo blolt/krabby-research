@@ -67,6 +67,15 @@ size_t TwoWire::write(uint8_t value)
     }
     return active_.written;
 }
+
+// Byte by byte, so buffered writes produce the same events and scripted counts.
+size_t TwoWire::write(const uint8_t *data, size_t length)
+{
+    size_t written = 0;
+    for (size_t index = 0; index < length; ++index)
+        written += write(data[index]);
+    return written;
+}
 uint8_t TwoWire::endTransmission(uint8_t stop)
 {
     state().record("wire.endTransmission", {stop});
