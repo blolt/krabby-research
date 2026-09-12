@@ -13,31 +13,33 @@ The suite is registered in the native CMake manifest and runs through CTest,
 `make -C firmware test-native`, and the existing firmware CI coverage job.
 
 `imu_native_support` is a separate static-library target with its substitute
-headers scoped to consumers. It does not link Unity. Its environment exposes
-per-address discovery/configuration responses, configuration-register results,
-queued raw transfers, SDA inputs, operation logs, and virtual microsecond time.
-Arduino delays advance that clock without sleeping; `millis()` wraps at 32 bits.
+headers scoped to consumers. It does not link Unity. Its environment attaches
+register-level LSM6DSO fakes to the test bus and supplies SDA inputs and virtual
+microsecond time. Arduino delays advance that clock without sleeping; `millis()`
+wraps at 32 bits.
 
-Transfer return counts and actual receive bytes are independent, allowing tests
-to represent a truncated buffer even when requestFrom reports success. Unscripted
-samples, devices, registers, wrong addresses, and buffer overruns populate an
-error list; test teardown rejects those errors and leftover sample/SDA scripts.
-Configuration calls and GPIO/bus operations are recorded for assertion.
+The suite compiles the pinned SparkFun LSM6DSO driver. The device fake answers it
+register by register: identification, read-modify-write configuration, the
+adapter's 14-byte burst read, address and register NACKs, and short reads. The
+merged event log records bus lifecycle, GPIO, clock, identification reads and
+register writes; transfer-level Wire events stay in the bus log. Teardown rejects
+bus and environment errors and unconsumed samples or SDA scripts.
 
-The substitute surface was checked against the installed SparkFun LSM6DSO header.
-The real-library Mega build remains a separate check. These substitutes do not
-implement the vendor driver, chip registers, or electrical bus behavior.
+A requestFrom count that differs from the bytes available, and a write that fails
+on an acknowledged byte, are not modelled: no AVR Wire produces them, so the
+adapter's checks for those cases are not exercised. The device fake does not
+model sensor physics or electrical bus behavior.
 
 ## Coverage and behavioral checks
 
-Fourteen tests cover:
+The tests cover:
 
-- Primary/alternate discovery, absent devices, every configuration failure,
-  configuration values, timeout/clock settings, and startup delay.
+- Primary/alternate discovery, absent devices, a device answering with another
+  WHO_AM_I (accepted by the driver), every configuration failure, the resulting
+  register values, timeout/clock settings, and startup delay.
 - Raw burst protocol, signed sample decoding, independent expected SI values,
   temperature, extreme signed inputs, and the current identity body-axis mapping.
-- Register-selection and transmission errors; all short response lengths and
-  buffer exhaustion at every byte position.
+- Register-selection and transmission errors, and every short response length.
 - All-zero motion versus nonzero channels; each configuration-register read error;
   every bit of the three configuration registers, including ignored bits.
 - Loaded and captured calibration through public adapter methods, failed reads,

@@ -1,10 +1,13 @@
 #include "unity.h"
 #include <algorithm>
 #include <initializer_list>
+#include <memory>
+#include <vector>
 #include "environment.h"
 #include "src/imu/lsm6dso_adapter.h"
 
 using namespace imu_native;
+using lsm6dso_native::Sample;
 
 static TwoWire testWire(environment.bus);
 
@@ -15,14 +18,15 @@ static void checkScript()
     if (!environment.bus.errors.empty()) TEST_FAIL_MESSAGE(environment.bus.errors.front().c_str());
     if (!environment.errors.empty()) TEST_FAIL_MESSAGE(environment.errors.front().c_str());
     TEST_ASSERT_TRUE(environment.bus.transfers.empty());
+    for (const auto &entry : environment.devices) TEST_ASSERT_TRUE(entry.second.samples.empty());
     TEST_ASSERT_TRUE(environment.sda.empty());
 }
 static void resetCase()
 {
     checkScript();
     imu_native::reset();
-    environment.devices[0x6B].present = true;
-    environment.devices[0x6A].present = false;
+    device(0x6B);
+    device(0x6A).present = false;
 }
 void setUp() { imu_native::reset(); resetCase(); }
 void tearDown() { checkScript(); }
@@ -46,29 +50,52 @@ static size_t count(const char *name)
     for (const auto &event : environment.events) if (event.name == name) ++result;
     return result;
 }
-static Transfer sample(std::initializer_list<int16_t> words = {256, 100, -200, 300, -1000, 2000, 4098})
+// Transfer-level Wire events, which the merged event log leaves out.
+static size_t busCount(const char *name)
 {
-    Transfer transfer;
-    transfer.address = 0x6B;
-    transfer.reported = 14;
-    for (int16_t word : words)
-    {
-        transfer.bytes.push_back(static_cast<uint16_t>(word) & 255);
-        transfer.bytes.push_back(static_cast<uint16_t>(word) >> 8);
-    }
-    return transfer;
+    size_t result = 0;
+    for (const auto &event : environment.bus.events) if (event.name == name) ++result;
+    return result;
 }
-static void enqueue(const Transfer &transfer = sample()) { environment.bus.transfers.push_back(transfer); }
+static bool busIs(const wire_native::Event &event, const char *name, std::initializer_list<long> args)
+{
+    return event.name == name && event.args == std::vector<long>(args);
+}
+static void clearEvents()
+{
+    environment.events.clear();
+    environment.bus.events.clear();
+    for (auto &entry : environment.devices) entry.second.clearLog();
+}
+static size_t configurationReads(uint8_t address = 0x6B)
+{
+    const auto &sensor = device(address);
+    return sensor.readCount(lsm6dso_native::CTRL1_XL) + sensor.readCount(lsm6dso_native::CTRL2_G) +
+           sensor.readCount(lsm6dso_native::CTRL3_C);
+}
+
+static constexpr Sample DEFAULT_SAMPLE = {{256, 100, -200, 300, -1000, 2000, 4098}};
+static Sample sample(std::initializer_list<int16_t> words)
+{
+    Sample value{};
+    std::copy(words.begin(), words.end(), value.begin());
+    return value;
+}
+static void enqueue(const Sample &value = DEFAULT_SAMPLE, uint8_t address = 0x6B)
+{ device(address).samples.push_back(value); }
+
+static bool failsBurstRead(uint8_t reg, bool isWrite, uint8_t)
+{ return !isWrite && reg == lsm6dso_native::OUT_TEMP_L; }
+// NACK the index-th register write: each configuration call makes exactly one.
+static void failWrite(size_t index)
+{
+    const auto writes = std::make_shared<size_t>(0);
+    device(0x6B).nack = [index, writes](uint8_t, bool isWrite, uint8_t) { return isWrite && (*writes)++ == index; };
+}
+
 static void initialize(Lsm6dsoAdapter &adapter)
 {
     TEST_ASSERT_EQUAL_INT(static_cast<int>(Lsm6dsoInitializationResult::Ok), static_cast<int>(adapter.initialize()));
-}
-static void validRegisters(uint8_t address = 0x6B)
-{
-    auto &registers = environment.devices[address].registers;
-    registers[0x10].value = 0x6C;
-    registers[0x11].value = 0x64;
-    registers[0x12].value = 0x44;
 }
 static void failedMeasurement(Lsm6dsoAdapter &adapter)
 { TEST_ASSERT_FALSE(adapter.measure().didSucceed()); }
@@ -112,19 +139,34 @@ static void test_initialization_and_address_fallback()
     Lsm6dsoAdapter adapter(testWire);
     initialize(adapter);
     assertEvents({{"wire.begin",0,0,0}, {"wire.clock",100000,0,0}, {"wire.timeout",10000,1,0},
-        {"sensor.begin",0x6B,0,0}, {"increment",1,0,0}, {"accelRange",8,0,0},
-        {"accelRate",416,0,0}, {"gyroRange",500,0,0}, {"gyroRate",416,0,0},
-        {"blockUpdate",1,0,0}, {"delay",5,0,0}});
+        {"sensor.identify",0x6B,0,0}, {"sensor.write",0x12,0x04,0}, {"sensor.write",0x10,0x0C,0},
+        {"sensor.write",0x10,0x6C,0}, {"sensor.write",0x11,0x04,0}, {"sensor.write",0x11,0x64,0},
+        {"sensor.write",0x12,0x44,0}, {"delay",5,0,0}});
     TEST_ASSERT_EQUAL_UINT32(5, millis());
+    // The driver's read-modify-write setters leave the configuration the adapter verifies.
+    TEST_ASSERT_EQUAL_HEX8(0x6C, device(0x6B).registerValue(lsm6dso_native::CTRL1_XL));
+    TEST_ASSERT_EQUAL_HEX8(0x64, device(0x6B).registerValue(lsm6dso_native::CTRL2_G));
+    TEST_ASSERT_EQUAL_HEX8(0x44, device(0x6B).registerValue(lsm6dso_native::CTRL3_C));
     resetCase();
-    environment.devices[0x6B].present = false;
-    environment.devices[0x6A].present = true;
+    device(0x6B).present = false;
+    device(0x6A).present = true;
     initialize(adapter);
-    TEST_ASSERT_EQUAL_UINT(2, count("sensor.begin"));
+    TEST_ASSERT_EQUAL_UINT(2, count("sensor.identify"));
     TEST_ASSERT_EQUAL_INT(0x6B, environment.events[3].a);
     TEST_ASSERT_EQUAL_INT(0x6A, environment.events[4].a);
-    Transfer transfer = sample(); transfer.address = 0x6A; enqueue(transfer);
+    enqueue(DEFAULT_SAMPLE, 0x6A);
     TEST_ASSERT_TRUE(adapter.measure().didSucceed());
+}
+
+static void test_driver_accepts_any_responding_device()
+{
+    // The SparkFun driver reads WHO_AM_I but never rejects a mismatch, so another
+    // chip answering at 0x6B is configured as though it were an LSM6DSO.
+    device(0x6B).setRegister(lsm6dso_native::WHO_AM_I, 0x00);
+    Lsm6dsoAdapter adapter(testWire);
+    initialize(adapter);
+    TEST_ASSERT_EQUAL_UINT(1, count("sensor.identify"));
+    TEST_ASSERT_EQUAL_HEX8(0x6C, device(0x6B).registerValue(lsm6dso_native::CTRL1_XL));
 }
 
 static void test_absent_and_each_configuration_failure()
@@ -133,30 +175,26 @@ static void test_absent_and_each_configuration_failure()
     {
         resetCase();
         Lsm6dsoAdapter adapter(testWire);
-        if (failure == -1) environment.devices[0x6B].present = false;
-        else environment.devices[0x6B].configuration[failure] = false;
+        if (failure == -1) device(0x6B).present = false;
+        else failWrite(size_t(failure));
         TEST_ASSERT_EQUAL_INT(static_cast<int>(failure == -1 ? Lsm6dsoInitializationResult::NotDetected :
             Lsm6dsoInitializationResult::ConfigurationFailed), static_cast<int>(adapter.initialize()));
         TEST_ASSERT_EQUAL_UINT(failure == -1 ? 5 : 5 + failure, environment.events.size());
         TEST_ASSERT_EQUAL_UINT(0, count("delay"));
+        clearEvents();
         Storage storage;
         TEST_ASSERT_EQUAL_INT(static_cast<int>(ImuCalibrationResult::ReadFailed),
             static_cast<int>(adapter.calibrate(storage, delay)));
-        TEST_ASSERT_EQUAL_UINT(0, count("wire.transmit"));
+        TEST_ASSERT_EQUAL_UINT(0, busCount("wire.transmit"));
     }
 }
 
 static void test_burst_protocol_signed_samples_and_units()
 {
     Lsm6dsoAdapter adapter(testWire); initialize(adapter);
-    environment.events.clear();
-    // Explicit little-endian bytes, distinct across all seven channels.
-    Transfer transfer;
-    transfer.address = 0x6B;
-    transfer.reported = 14;
-    transfer.bytes = {0x00,0xFF, 0x64,0x00, 0x38,0xFF, 0x2C,0x01,
-                      0x18,0xFC, 0xD0,0x07, 0x02,0x10};
-    enqueue(transfer);
+    clearEvents();
+    // Distinct words across all seven channels, including a negative temperature word.
+    enqueue(sample({-256, 100, -200, 300, -1000, 2000, 4098}));
     const auto reading = adapter.measure();
     TEST_ASSERT_TRUE(reading.didSucceed());
     TEST_ASSERT_EQUAL_FLOAT(24.0f, reading.temperature.value());
@@ -167,40 +205,39 @@ static void test_burst_protocol_signed_samples_and_units()
         TEST_ASSERT_FLOAT_WITHIN(0.000001f, rates[axis], reading.angularRate[axis].value());
         TEST_ASSERT_FLOAT_WITHIN(0.00001f, acceleration[axis], reading.acceleration[axis].value());
     }
-    const Event prefix[] = {{"wire.transmit",0x6B,0,0}, {"wire.write",0x20,0,0},
-        {"wire.endTransmission",0,0,0}, {"wire.request",0x6B,14,1}};
-    TEST_ASSERT_EQUAL_UINT(18, environment.events.size());
-    for (size_t i = 0; i < 4; ++i) TEST_ASSERT_TRUE(prefix[i] == environment.events[i]);
-    TEST_ASSERT_EQUAL_UINT(14, count("wire.read"));
-    TEST_ASSERT_EQUAL_UINT(0, count("sensor.register"));
-    enqueue(sample({-32768,-32768,32767,-1,32767,-32768,1}));
+    const auto &bus = environment.bus.events;
+    TEST_ASSERT_EQUAL_UINT(18, bus.size());
+    TEST_ASSERT_TRUE(busIs(bus[0], "wire.transmit", {0x6B}));
+    TEST_ASSERT_TRUE(busIs(bus[1], "wire.write", {0x20}));
+    TEST_ASSERT_TRUE(busIs(bus[2], "wire.endTransmission", {0}));
+    TEST_ASSERT_TRUE(busIs(bus[3], "wire.request", {0x6B, 14, 1}));
+    TEST_ASSERT_EQUAL_UINT(14, busCount("wire.read"));
+    TEST_ASSERT_EQUAL_UINT(0, configurationReads());
+    enqueue(sample({-32768, -32768, 32767, -1, 32767, -32768, 1}));
     const auto extreme = adapter.measure();
     TEST_ASSERT_EQUAL_FLOAT(-103.0f, extreme.temperature.value());
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, -10.008421f, extreme.angularRate[0].value());
     TEST_ASSERT_FLOAT_WITHIN(0.0001f, -78.408011f, extreme.acceleration[1].value());
 }
 
-static void test_failed_transfer_and_every_truncated_buffer()
+static void test_failed_transfer_and_every_short_read()
 {
-    for (int kind = 0; kind < 4; ++kind)
-        for (int n = 0; n < (kind >= 2 ? 14 : 1); ++n)
+    for (int kind = 0; kind < 2; ++kind)
+        for (int n = 0; n < (kind == 1 ? 14 : 1); ++n)
         {
             resetCase();
             Lsm6dsoAdapter adapter(testWire); initialize(adapter);
-            environment.events.clear();
-            Transfer transfer = sample();
-            if (kind == 0) transfer.written = 0;
-            if (kind == 1) transfer.status = 2;
-            if (kind == 2) transfer.reported = n;
-            if (kind == 3) transfer.bytes.resize(n);
-            enqueue(transfer); failedMeasurement(adapter);
-            TEST_ASSERT_EQUAL_UINT(kind == 3 ? n : 0, count("wire.read"));
-            TEST_ASSERT_EQUAL_UINT(kind == 0 ? 0 : 1, count("wire.endTransmission"));
-            TEST_ASSERT_EQUAL_UINT(kind < 2 ? 0 : 1, count("wire.request"));
-            TEST_ASSERT_EQUAL_UINT(0, count("sensor.register"));
+            clearEvents();
+            if (kind == 0) device(0x6B).nack = failsBurstRead;
+            else device(0x6B).maxReadBytes = size_t(n);
+            failedMeasurement(adapter);
+            TEST_ASSERT_EQUAL_UINT(0, busCount("wire.read"));
+            TEST_ASSERT_EQUAL_UINT(1, busCount("wire.endTransmission"));
+            TEST_ASSERT_EQUAL_UINT(kind, busCount("wire.request"));
+            TEST_ASSERT_EQUAL_UINT(0, configurationReads());
             // A failed read makes the next call wait for recovery, not read again.
             failedMeasurement(adapter);
-            TEST_ASSERT_EQUAL_UINT(1, count("wire.transmit"));
+            TEST_ASSERT_EQUAL_UINT(1, busCount("wire.transmit"));
         }
 }
 
@@ -210,25 +247,29 @@ static void test_zero_motion_checks_configuration_and_nonzero_motion_does_not()
     {
         resetCase();
         Lsm6dsoAdapter adapter(testWire); initialize(adapter);
-        Transfer transfer = sample({0,0,0,0,0,0,0});
-        transfer.bytes[2 + channel * 2] = 1;
-        enqueue(transfer); TEST_ASSERT_TRUE(adapter.measure().didSucceed());
-        TEST_ASSERT_EQUAL_UINT(0, count("sensor.register"));
+        clearEvents();
+        Sample motion{};
+        motion[1 + channel] = 1;
+        enqueue(motion); TEST_ASSERT_TRUE(adapter.measure().didSucceed());
+        TEST_ASSERT_EQUAL_UINT(0, configurationReads());
     }
     for (int reg = 0; reg < 3; ++reg)
         for (int bit = 0; bit < 8; ++bit)
         {
             resetCase();
-            Lsm6dsoAdapter adapter(testWire); initialize(adapter); validRegisters();
+            Lsm6dsoAdapter adapter(testWire); initialize(adapter);
+            clearEvents();
             const uint8_t masks[] = {0xFC, 0xFE, 0x44};
-            environment.devices[0x6B].registers[0x10 + reg].value ^= 1 << bit;
-            enqueue(sample({256,0,0,0,0,0,0}));
+            auto &sensor = device(0x6B);
+            const uint8_t address = uint8_t(lsm6dso_native::CTRL1_XL + reg);
+            sensor.setRegister(address, uint8_t(sensor.registerValue(address) ^ (1 << bit)));
+            enqueue(sample({256, 0, 0, 0, 0, 0, 0}));
             TEST_ASSERT_EQUAL_INT((masks[reg] & (1 << bit)) == 0, adapter.measure().didSucceed());
-            TEST_ASSERT_EQUAL_UINT(3, count("sensor.register"));
+            TEST_ASSERT_EQUAL_UINT(3, configurationReads());
         }
     resetCase();
-    Lsm6dsoAdapter adapter(testWire); initialize(adapter); validRegisters();
-    enqueue(sample({0,0,0,0,0,0,0}));
+    Lsm6dsoAdapter adapter(testWire); initialize(adapter);
+    enqueue(sample({0, 0, 0, 0, 0, 0, 0}));
     TEST_ASSERT_TRUE(adapter.measure().didSucceed());
 }
 
@@ -237,25 +278,30 @@ static void test_each_configuration_register_read_error()
     for (int reg = 0; reg < 3; ++reg)
     {
         resetCase();
-        Lsm6dsoAdapter adapter(testWire); initialize(adapter); validRegisters();
-        environment.devices[0x6B].registers[0x10 + reg].status = IMU_HW_ERROR;
-        enqueue(sample({0,0,0,0,0,0,0})); failedMeasurement(adapter);
-        TEST_ASSERT_EQUAL_UINT(reg + 1, count("sensor.register"));
+        Lsm6dsoAdapter adapter(testWire); initialize(adapter);
+        clearEvents();
+        device(0x6B).nack = [reg](uint8_t address, bool isWrite, uint8_t) {
+            return !isWrite && address == lsm6dso_native::CTRL1_XL + reg;
+        };
+        enqueue(sample({0, 0, 0, 0, 0, 0, 0})); failedMeasurement(adapter);
+        TEST_ASSERT_EQUAL_UINT(reg + 1, configurationReads());
     }
 }
 
 static void test_stored_calibration_applied_and_retained_during_recovery()
 {
     Lsm6dsoAdapter adapter(testWire); initialize(adapter);
+    clearEvents();
     Storage storage = storedCalibration();
     TEST_ASSERT_EQUAL_INT(static_cast<int>(ImuCalibrationResult::Loaded), static_cast<int>(adapter.calibrate(storage, delay)));
     TEST_ASSERT_EQUAL_UINT(1, storage.operations.size());
-    TEST_ASSERT_EQUAL_UINT(0, count("wire.transmit"));
+    TEST_ASSERT_EQUAL_UINT(0, busCount("wire.transmit"));
     enqueue(); const auto reading = adapter.measure();
     TEST_ASSERT_FLOAT_WITHIN(0.000001f, 0, reading.angularRate[0].value());
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, 3.8049802f, reading.acceleration[1].value());
-    Transfer failure = sample(); failure.status = 2; enqueue(failure); failedMeasurement(adapter);
+    device(0x6B).nack = failsBurstRead; failedMeasurement(adapter);
     failedMeasurement(adapter);
+    device(0x6B).nack = nullptr;
     enqueue(); const auto recovered = adapter.measure();
     TEST_ASSERT_TRUE(recovered.didSucceed());
     TEST_ASSERT_FLOAT_WITHIN(0.000001f, 0, recovered.angularRate[0].value());
@@ -273,13 +319,10 @@ static void test_calibration_capture_and_failures_use_real_samples()
         Lsm6dsoAdapter adapter(testWire); initialize(adapter);
         Storage storage;
         storage.corrupt = outcome == 3;
-        if (outcome == 1)
-        {
-            Transfer failure = sample(); failure.status = 2; enqueue(failure);
-        }
+        if (outcome == 1) device(0x6B).nack = failsBurstRead;
         else
             for (int n = 0; n < 200; ++n)
-                enqueue(outcome == 2 && n == 199 ? sample({256,1000,0,0,0,0,4098}) : sample());
+                enqueue(outcome == 2 && n == 199 ? sample({256, 1000, 0, 0, 0, 0, 4098}) : DEFAULT_SAMPLE);
         const auto result = adapter.calibrate(storage, delay);
         const ImuCalibrationResult expected[] = {ImuCalibrationResult::Captured, ImuCalibrationResult::ReadFailed,
             ImuCalibrationResult::MotionDetected, ImuCalibrationResult::VerificationFailed};
@@ -294,7 +337,7 @@ static void test_calibration_capture_and_failures_use_real_samples()
         else TEST_ASSERT_TRUE(storage.operations == std::vector<int>({0}));
         if (outcome == 0)
         {
-            enqueue(sample({256,200,-200,300,-1000,2000,4098}));
+            enqueue(sample({256, 200, -200, 300, -1000, 2000, 4098}));
             const auto reading = adapter.measure();
             TEST_ASSERT_FLOAT_WITHIN(0.000001f, 0.030543262f, reading.angularRate[0].value());
             TEST_ASSERT_FLOAT_WITHIN(0.000001f, 0, reading.angularRate[1].value());
@@ -314,7 +357,7 @@ static void test_free_bus_recovery_order_and_same_call_read()
     TEST_ASSERT_TRUE(environment.events.size() > 10);
     for (size_t i = 0; i < 10; ++i) TEST_ASSERT_TRUE(prefix[i] == environment.events[i]);
     TEST_ASSERT_EQUAL_UINT(0, count("digitalWrite"));
-    TEST_ASSERT_EQUAL_UINT(1, count("sensor.begin"));
+    TEST_ASSERT_EQUAL_UINT(1, count("sensor.identify"));
     TEST_ASSERT_EQUAL_UINT(2, count("wire.begin"));
 }
 
@@ -324,20 +367,21 @@ static void test_retry_boundary_rollover_and_failed_reconfiguration()
     {
         resetCase(); atMilliseconds(start);
         Lsm6dsoAdapter adapter(testWire);
-        environment.devices[0x6B].configuration[2] = false;
+        failWrite(2);
         failedMeasurement(adapter); failedMeasurement(adapter); failedMeasurement(adapter);
-        TEST_ASSERT_EQUAL_UINT(1, count("sensor.begin"));
-        environment.devices[0x6B].configuration[2] = true;
+        TEST_ASSERT_EQUAL_UINT(1, count("sensor.identify"));
+        device(0x6B).nack = nullptr;
         atMilliseconds(start + 999);
         for (int i = 0; i < 3; ++i) failedMeasurement(adapter);
-        TEST_ASSERT_EQUAL_UINT(1, count("sensor.begin"));
+        TEST_ASSERT_EQUAL_UINT(1, count("sensor.identify"));
         atMilliseconds(start + 1000); enqueue();
         TEST_ASSERT_TRUE(adapter.measure().didSucceed());
-        TEST_ASSERT_EQUAL_UINT(2, count("sensor.begin"));
+        TEST_ASSERT_EQUAL_UINT(2, count("sensor.identify"));
         // Success resets the failure qualification count.
-        Transfer failure = sample(); failure.status = 2; enqueue(failure); failedMeasurement(adapter);
+        device(0x6B).nack = failsBurstRead; failedMeasurement(adapter);
         failedMeasurement(adapter);
-        TEST_ASSERT_EQUAL_UINT(2, count("sensor.begin"));
+        TEST_ASSERT_EQUAL_UINT(2, count("sensor.identify"));
+        device(0x6B).nack = nullptr;
         atMilliseconds(start + 2000); enqueue();
         TEST_ASSERT_TRUE(adapter.measure().didSucceed());
     }
@@ -373,7 +417,7 @@ static void test_stuck_bus_latches_until_release()
     failedMeasurement(adapter); failedMeasurement(adapter); failedMeasurement(adapter);
     TEST_ASSERT_EQUAL_UINT(9, count("digitalWrite"));
     TEST_ASSERT_EQUAL_UINT(0, count("wire.begin"));
-    TEST_ASSERT_EQUAL_UINT(0, count("sensor.begin"));
+    TEST_ASSERT_EQUAL_UINT(0, count("sensor.identify"));
     atMilliseconds(1000); environment.events.clear();
     for (int i = 0; i < 3; ++i) failedMeasurement(adapter);
     TEST_ASSERT_EQUAL_UINT(0, count("digitalWrite"));
@@ -382,14 +426,14 @@ static void test_stuck_bus_latches_until_release()
     failedMeasurement(adapter); failedMeasurement(adapter); enqueue();
     TEST_ASSERT_TRUE(adapter.measure().didSucceed());
     TEST_ASSERT_EQUAL_UINT(0, count("digitalWrite"));
-    TEST_ASSERT_EQUAL_UINT(1, count("sensor.begin"));
+    TEST_ASSERT_EQUAL_UINT(1, count("sensor.identify"));
 }
 
 static void test_explicit_initialize_resets_recovery_policy_and_latch()
 {
     Lsm6dsoAdapter adapter(testWire); environment.sdaHigh = false;
     failedMeasurement(adapter); failedMeasurement(adapter); failedMeasurement(adapter);
-    environment.devices[0x6B].present = false;
+    device(0x6B).present = false;
     TEST_ASSERT_EQUAL_INT(static_cast<int>(Lsm6dsoInitializationResult::NotDetected), static_cast<int>(adapter.initialize()));
     environment.events.clear();
     failedMeasurement(adapter); failedMeasurement(adapter); failedMeasurement(adapter);
@@ -411,9 +455,10 @@ int main()
     UNITY_BEGIN();
     RUN_TEST(test_bus_delay_has_one_microsecond_minimum);
     RUN_TEST(test_initialization_and_address_fallback);
+    RUN_TEST(test_driver_accepts_any_responding_device);
     RUN_TEST(test_absent_and_each_configuration_failure);
     RUN_TEST(test_burst_protocol_signed_samples_and_units);
-    RUN_TEST(test_failed_transfer_and_every_truncated_buffer);
+    RUN_TEST(test_failed_transfer_and_every_short_read);
     RUN_TEST(test_zero_motion_checks_configuration_and_nonzero_motion_does_not);
     RUN_TEST(test_each_configuration_register_read_error);
     RUN_TEST(test_stored_calibration_applied_and_retained_during_recovery);
