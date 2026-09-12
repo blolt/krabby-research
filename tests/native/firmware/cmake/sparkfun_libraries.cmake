@@ -6,25 +6,25 @@ FetchContent_Declare(
     sparkfun_toolkit
     URL https://github.com/sparkfun/SparkFun_Toolkit/archive/refs/tags/v1.2.0.tar.gz
     URL_HASH SHA256=44e02fceaa0db83765b021b964de701e6d0a057fff62ff3a1eea80d98d4b034d
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
 )
 FetchContent_Declare(
     sparkfun_ina2xx
     URL https://github.com/sparkfun/SparkFun_INA2XX_Arduino_Library/archive/refs/tags/v1.0.0.tar.gz
     URL_HASH SHA256=51ea7aa21b219707f9f43504b3e815a797b848d2a1e2077babb9e56cf4b50265
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
 )
 FetchContent_Declare(
     sparkfun_lsm6dso
     URL https://github.com/sparkfun/SparkFun_Qwiic_6DoF_LSM6DSO_Arduino_Library/archive/4addc5ffd7cb71a0481aee259ab85c232aa92afe.tar.gz
     URL_HASH SHA256=7dca3c2616a980e521213a1f823e6ed0b18e6523f024c31e96032ee3ceb2effc
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
 )
 FetchContent_Declare(
     sparkfun_qwiic_oled
-    URL https://github.com/sparkfun/SparkFun_Qwiic_OLED_Arduino_Library/archive/refs/tags/v1.0.9.tar.gz
-    URL_HASH SHA256=245eccce3898ae0b2804d93932e1392fa0df6412bc70ec3710ca483ac2d76a74
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE
+    URL https://github.com/sparkfun/SparkFun_Qwiic_OLED_Arduino_Library/archive/refs/tags/v1.0.13.tar.gz
+    URL_HASH SHA256=17f345a2fbccaaa5fa0171f69d6eb63daa555d8cd2bdbf7ebe38a0f87fb95bbc
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
 )
 # None of the archives has a CMakeLists.txt, so this only downloads and unpacks.
 FetchContent_MakeAvailable(sparkfun_toolkit sparkfun_ina2xx sparkfun_lsm6dso sparkfun_qwiic_oled)

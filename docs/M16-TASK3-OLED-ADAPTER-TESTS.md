@@ -16,7 +16,7 @@ display model and telemetry implementation.
 
 `oled_native_support` is a Unity-independent static library with target-scoped
 Arduino and Wire substitutes. The suite compiles the pinned SparkFun Qwiic OLED
-library (v1.0.9). An SSD1306 device fake at 0x3D answers it on the test bus,
+library (v1.0.13). An SSD1306 device fake at 0x3D answers it on the test bus,
 decoding setup commands, page and column addressing and display data into a
 128x64 frame that tests inspect pixel by pixel.
 
@@ -26,10 +26,6 @@ sequence, and each run of display data with the bus clock active when it was sen
 Ping and probe outcomes (ACK, NACK or timeout) are scripted in bus order, and
 leftover scripts fail the tests. Virtual delays advance time without sleeping;
 millis wraps at 32 bits.
-
-The library's 1.3" device inherits a constructor that skips its own member
-initializers. Production is unaffected because the adapter is a zero-initialized
-global; the tests place adapters and canvases in zeroed storage for the same reason.
 
 ## Covered behavior
 

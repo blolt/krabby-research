@@ -3,7 +3,7 @@
 Contract for the krab status screen, and the hardware limits that shape it.
 
 - **Target panel:** SparkFun Qwiic OLED 1.3" (`Qwiic1in3OLED`), 128×64, 1-bit.
-- **Library:** SparkFun Qwiic OLED, pinned **v1.0.9** (newer versions pull in
+- **Library:** SparkFun Qwiic OLED, pinned **v1.0.13** (v1.0.14 and later pull in
   C++ `<map>` and break the AVR build).
 - **MCU:** ATmega2560 (Arduino Mega), AVR, Harvard architecture.
 

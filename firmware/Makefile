@@ -133,8 +133,9 @@ LSM6DSO_LIB_URL := https://github.com/sparkfun/SparkFun_Qwiic_6DoF_LSM6DSO_Ardui
 LSM6DSO_LIB_REF := 4addc5ffd7cb71a0481aee259ab85c232aa92afe
 LSM6DSO_LIB_DIR := SparkFun_Qwiic_6Dof_-_LSM6DSO
 
-# Versions after 1.0.9 include C++ <map> and do not build for AVR.
-OLED_LIB := SparkFun Qwiic OLED Arduino Library@1.0.9
+# Versions from 1.0.14 compile a CH1120 driver that includes C++ <map>, which the
+# AVR toolchain lacks. 1.0.13 is the last that builds for AVR.
+OLED_LIB := SparkFun Qwiic OLED Arduino Library@1.0.13
 INA228_LIB := SparkFun INA2XX Arduino Library@1.0.0
 SPARKFUN_TOOLKIT_LIB := SparkFun Toolkit@1.2.0
 
