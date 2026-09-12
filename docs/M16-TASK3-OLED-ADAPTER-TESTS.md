@@ -15,35 +15,43 @@ firmware CI job. It compiles the production adapter/canvas and links the product
 display model and telemetry implementation.
 
 `oled_native_support` is a Unity-independent static library with target-scoped
-Arduino, Wire, SparkFun OLED and font substitute headers. It does not alter the
-INA or IMU support. The vendor surface was checked against the installed pinned
-SparkFun library; the font substitute is only an identity token, not bitmap data.
+Arduino and Wire substitutes. The suite compiles the pinned SparkFun Qwiic OLED
+library (v1.0.9). An SSD1306 device fake at 0x3D answers it on the test bus,
+decoding setup commands, page and column addressing and display data into a
+128x64 frame that tests inspect pixel by pixel.
 
-One ordered event log records drawing arguments, font selection, resets, transfers,
-bus operations and GPIO activity. Probe ACK and timeout results are independent.
-Begin/reset/probe responses are scripted, and unexpected operations or leftover
-scripts fail the tests. Virtual delays advance time without sleeping; millis wraps
-at 32 bits. A transfer records the bus clock actually active at that moment.
+One ordered event log records bus lifecycle, clock and timeout-flag changes, GPIO
+activity and panel events: each probe or library ping with its status, each setup
+sequence, and each run of display data with the bus clock active when it was sent.
+Ping and probe outcomes (ACK, NACK or timeout) are scripted in bus order, and
+leftover scripts fail the tests. Virtual delays advance time without sleeping;
+millis wraps at 32 bits.
+
+The library's 1.3" device inherits a constructor that skips its own member
+initializers. Production is unaffected because the adapter is a zero-initialized
+global; the tests place adapters and canvases in zeroed storage for the same reason.
 
 ## Covered behavior
 
-Thirteen tests cover:
+The tests cover:
 
-- Canvas begin/reset return values, reset's clear-display argument, font selection,
-  erase/display forwarding, all drawing arguments and uint8 coordinate conversion.
-- Adapter initialization success/failure, initialization state and font selection.
+- Canvas begin/reset results, begin doing nothing once initialized, erase and
+  display, and uint8 coordinate and colour conversion shown in the pixels sent.
+- Adapter initialization success/failure and initialization state.
 - First-frame drawing, unchanged-frame probing without drawing/transfers,
   single-element partial redraw and explicit invalidation.
 - Drawing before transfer, 400 kHz transfer clock and restoration to 100 kHz.
 - Disconnect detection even for an unchanged frame, suppressed drawing while
   unavailable, failed reset and exact retry boundaries including clock rollover.
-- Recovery restoring font and forcing a full redraw of the same frame. Drawing
-  calls match a fresh adapter's rendering, with explicit erase/transfer assertions.
+- Recovery resetting the panel and forcing a full redraw of the same frame; the
+  frame sent matches a fresh adapter's.
 - Ordinary NACKs versus timeouts, clearing stale timeout flags, free-bus restart,
   pulse-based recovery, open-drain STOP, stuck-bus latching and release.
 - Failed post-clear probe, failed post-clear reset, and failed final probe before
   rendering, with no display transfer on any of those paths.
 - Explicit initialization clearing cached frame, retry timing and stuck-bus state.
+- A NACK during display leaving the panel stale while the adapter treats the frame
+  as drawn, until an invalidation sends it again.
 
 ## Reproduce
 
@@ -64,17 +72,20 @@ compiler. No production coverage exclusions or thresholds were changed.
 
 ## Results and limits
 
-- All 13 direct tests pass (`ctest -R test_ssd1306_adapter`).
-- GCC 15 adapter/canvas coverage: 76/76 lines, 20/20 functions, 45/45 branches.
-- All 25 native suites and 266 Python firmware/OLED tests pass.
-- Existing aggregate coverage gates pass: 96.0% lines, 91.8% branches. The separately
+- All 14 direct tests pass (`ctest -R test_ssd1306_adapter`), including 25
+  repeated runs.
+- Adapter/canvas coverage from the `test-native-coverage` build: 84/84 lines,
+  23/23 functions, 27/30 branches. The three uncovered branches are on the
+  constructor's member-initializer line; every adapter decision is covered.
+- All 26 native suites and 266 Python firmware/OLED tests pass.
+- Existing aggregate coverage gates pass: 97.0% lines, 89.7% branches. The separately
   measured extracted sketch regions remain at 100% lines and branches.
 - Mega build passes: 56,358 bytes flash and 5,939 bytes static RAM.
 
-The driver display() method returns no transfer status. These tests establish
-when the adapter requests a transfer and restores the clock; they cannot establish
-that the physical panel received it. Driver framebuffer rendering and electrical
-bus behavior are outside this substitute. Existing renderer and simulator tests
+The library's display() returns no transfer status. The tests show what reaches
+the panel over the bus, including a stale panel after a NACK; electrical bus
+behavior remains outside the device fake. The status font is the library's default,
+so selecting it changes nothing on the panel. Existing renderer and simulator tests
 remain responsible for their own rendering behavior.
 
 No production fix was introduced. This completes the OLED review checkpoint.

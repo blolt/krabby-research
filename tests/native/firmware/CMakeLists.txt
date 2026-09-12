@@ -193,3 +193,16 @@ endif()
 target_link_libraries(imu_native_support PUBLIC lsm6dso_native_device)
 # After imu_native_support, whose Arduino.h adds the SDA/SCL and GPIO the adapter uses.
 target_link_libraries(test_lsm6dso_adapter PRIVATE sparkfun_lsm6dso_native)
+
+add_library(ssd1306_native_device STATIC fakes/devices/ssd1306.cpp)
+target_include_directories(ssd1306_native_device PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/devices")
+target_link_libraries(ssd1306_native_device PUBLIC wire_native_support)
+if(MSVC)
+    target_compile_options(ssd1306_native_device PRIVATE /W4 /WX)
+else()
+    target_compile_options(ssd1306_native_device PRIVATE -Wall -Wextra -Werror)
+endif()
+target_link_libraries(oled_native_support PUBLIC ssd1306_native_device)
+# After oled_native_support, whose Arduino.h adds the GPIO, Print and String the adapter
+# and the library header use.
+target_link_libraries(test_ssd1306_adapter PRIVATE sparkfun_qwiic_oled_native)

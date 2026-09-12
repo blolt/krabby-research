@@ -12,11 +12,10 @@ redraw behavior are unchanged. INA production code is unchanged.
 
 The existing 14 IMU and 13 OLED tests now run against a non-global bus. Its scripts,
 device state and events are separate from global Wire, which must remain unused.
-Clock and GPIO state remain shared physical-environment inputs. Fake vendor
+Clock and GPIO state remain shared physical-environment inputs. The vendor
 drivers retain the supplied bus for subsequent configuration, reads and transfers.
-The OLED fake retains its existing pre-initialization behavior for tests that
-exercise recovery before initialize; those tests do not establish real-driver
-behavior before begin.
+OLED recovery tests start from a failed initialize, because the real library needs
+a bound bus before its reset can succeed.
 
 Shared Wire-fake consolidation and combined sensor/display replay remain separate
 follow-up work. No commits or pushes were made.
