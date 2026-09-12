@@ -183,6 +183,64 @@ static void test_buffered_write_records_each_byte_and_sums_scripted_counts()
     TEST_ASSERT_TRUE(bus.state().transfers.empty());
 }
 
+namespace {
+class RecordingDevice : public wire_native::Device
+{
+public:
+    uint8_t status = 0;
+    std::vector<uint8_t> response;
+    std::vector<std::vector<uint8_t>> transmitted;
+    std::vector<uint8_t> requested;
+    uint8_t transmit(const std::vector<uint8_t> &bytes) override
+    {
+        transmitted.push_back(bytes);
+        return status;
+    }
+    std::vector<uint8_t> receive(uint8_t count) override
+    {
+        requested.push_back(count);
+        return response;
+    }
+};
+}
+
+static void test_attached_device_answers_its_address_and_scripts_serve_the_rest()
+{
+    TwoWire bus;
+    RecordingDevice device;
+    device.response = {0xAB, 0xCD};
+    bus.state().devices[0x40] = &device;
+    wire_native::Transfer scripted;
+    scripted.address = 0x41;
+    scripted.reported = 1;
+    scripted.bytes = {7};
+    bus.state().transfers.push_back(scripted);
+
+    bus.beginTransmission(0x40);
+    const uint8_t pointer[] = {0x05};
+    TEST_ASSERT_EQUAL_UINT(1, bus.write(pointer, sizeof pointer));
+    TEST_ASSERT_EQUAL_INT(0, bus.endTransmission(false));
+    TEST_ASSERT_EQUAL_INT(2, bus.requestFrom(0x40, 3, true));
+    TEST_ASSERT_EQUAL_INT(0xAB, bus.read());
+    TEST_ASSERT_EQUAL_INT(0xCD, bus.read());
+    TEST_ASSERT_EQUAL_INT(0, bus.available());
+    TEST_ASSERT_EQUAL_UINT(1, device.transmitted.size());
+    TEST_ASSERT_TRUE(device.transmitted[0] == std::vector<uint8_t>({0x05}));
+    TEST_ASSERT_TRUE(device.requested == std::vector<uint8_t>({3}));
+
+    device.status = 5;
+    bus.beginTransmission(0x40);
+    TEST_ASSERT_EQUAL_INT(5, bus.endTransmission());
+    TEST_ASSERT_TRUE(bus.getWireTimeoutFlag());
+    TEST_ASSERT_EQUAL_UINT(2, device.transmitted.size());
+    TEST_ASSERT_TRUE(device.transmitted[1].empty());
+
+    TEST_ASSERT_EQUAL_INT(1, bus.requestFrom(0x41, 1));
+    TEST_ASSERT_EQUAL_INT(7, bus.read());
+    TEST_ASSERT_TRUE(bus.state().transfers.empty());
+    TEST_ASSERT_TRUE(bus.state().errors.empty());
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -193,5 +251,6 @@ int main()
     RUN_TEST(test_unexpected_operations_fail_and_unconsumed_scripts_remain_visible);
     RUN_TEST(test_bus_lifecycle_configuration_and_observer_are_isolated);
     RUN_TEST(test_buffered_write_records_each_byte_and_sums_scripted_counts);
+    RUN_TEST(test_attached_device_answers_its_address_and_scripts_serve_the_rest);
     return UNITY_END();
 }

@@ -39,7 +39,15 @@ An optional event observer lets existing suites preserve their combined ordering
 of bus, driver and GPIO events. Device-specific data lives in driver support,
 outside this transport implementation.
 
-The six `test_wire` scenarios cover interleaved buses and addresses, repeated-start
+A test can attach a `wire_native::Device` at an address through `state().devices`.
+Every transaction to that address then goes to the device instead of the script
+queue: `endTransmission` passes the bytes written since `beginTransmission` to
+`transmit`, whose return value is the status (5 also sets the timeout flag), and
+`requestFrom` returns what `receive` supplies, fewer bytes being a short read.
+Other addresses keep consuming scripts. `reset()` detaches devices. Register-level
+device fakes that answer the real SparkFun drivers live in `fakes/devices/`.
+
+The `test_wire` scenarios cover interleaved buses and addresses, repeated-start
 protocol, NACK/timeout independence, short reads and buffer exhaustion, unexpected
 operations, and lifecycle/configuration isolation. Existing adapter tests remain
 responsible for verifying production behavior.

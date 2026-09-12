@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <deque>
 #include <functional>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -25,6 +26,18 @@ struct Transfer
     std::vector<uint8_t> bytes;
 };
 
+// A device fake that answers every transaction at its address. transmit receives
+// the bytes written since beginTransmission and returns the endTransmission status
+// (5 also sets the timeout flag); receive returns the bytes for a read, and fewer
+// than requested is a short read.
+class Device
+{
+public:
+    virtual ~Device() {}
+    virtual uint8_t transmit(const std::vector<uint8_t> &bytes) = 0;
+    virtual std::vector<uint8_t> receive(uint8_t count) = 0;
+};
+
 struct State
 {
     bool begun = false;
@@ -36,6 +49,8 @@ struct State
     std::vector<Event> events;
     std::vector<std::string> errors;
     std::function<void(const Event &)> observe;
+    // Devices answering their address in place of scripted transfers; not owned.
+    std::map<uint8_t, Device *> devices;
 
     void record(const char *name, std::initializer_list<long> args = {});
 };
@@ -72,6 +87,8 @@ private:
     bool hasTransfer_ = false;
     bool receiving_ = false;
     size_t cursor_ = 0;
+    wire_native::Device *device_ = nullptr;
+    std::vector<uint8_t> pending_;
 };
 
 extern TwoWire Wire;

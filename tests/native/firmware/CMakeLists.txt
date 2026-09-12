@@ -132,8 +132,6 @@ else()
     target_compile_options(oled_trace PRIVATE -Wall -Wextra -Werror)
 endif()
 
-target_include_directories(test_ina228_adapter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support")
-
 include(cmake/power_poll_characterization.cmake)
 
 # Reusable host support; Arduino/vendor substitutes are scoped to this target.
@@ -173,3 +171,14 @@ target_link_libraries(test_power_poll PRIVATE wire_native_support)
 target_link_libraries(test_wire PRIVATE wire_native_support)
 
 include(cmake/sparkfun_libraries.cmake)
+
+# Register-level device fakes that answer the real SparkFun drivers over the TwoWire fake.
+add_library(ina228_native_device STATIC fakes/devices/ina228.cpp)
+target_include_directories(ina228_native_device PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/devices")
+target_link_libraries(ina228_native_device PUBLIC wire_native_support)
+if(MSVC)
+    target_compile_options(ina228_native_device PRIVATE /W4 /WX)
+else()
+    target_compile_options(ina228_native_device PRIVATE -Wall -Wextra -Werror)
+endif()
+target_link_libraries(test_ina228_adapter PRIVATE ina228_native_device sparkfun_ina2xx_native)
