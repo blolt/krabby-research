@@ -52,8 +52,7 @@ share caches, adapters and renderer state.
 | `midpoint_disconnect` | Pack keeps updating while midpoint is down, followed by split recovery. |
 | `both_disconnect` | Both fail after a valid sample; cached telemetry remains while voltage labels become unavailable. |
 | `current_behavior_impossible_split` | Independently plausible voltages imply a negative or excessive B voltage; telemetry and display validity differ. |
-| `voltage_boundaries` | Inclusive zero and upper bounds, out-of-range, negative, infinity and NaN voltages. |
-| `current_behavior_unchecked_pack_fields` | NaN current/charge, infinite power and a small finite current remain accepted with valid pack voltage. |
+| `voltage_boundaries` | Inclusive zero and upper bounds, and out-of-range voltages. |
 | `retry_rollover` | Retry interval across uint32 clock wrap, including elapsed 1999 and 2000 ms. |
 | `read_order_and_clock` | A delayed midpoint read crosses the retry deadline; eligibility uses the timestamp captured before reads. |
 | `failed_begin` | Acknowledged device whose initialization fails, then successful retry and subsequent fresh sample. |
@@ -63,13 +62,14 @@ share caches, adapters and renderer state.
 | `repeated_disconnect` | A second outage preserves the retry interval after a successful sample, without resetting charge. |
 | `calibration_while_unavailable` | Calibration changes while pack is down; pack/split caches stay unchanged while the live midpoint uses the new offset. |
 | `divergence_A_higher` | Exact, exceeded and below-threshold divergence with A higher than B. |
-| `calibrated_validity` | Voltage validity is evaluated after correction, including raw negative values corrected into range. |
+| `calibrated_validity` | Voltage validity is evaluated after correction. |
 
-Additional harness checks reject unknown device addresses and incorrect Wire
-instances. Internal floating-point snapshots use `max_digits10` round-trip
-precision (including signed zero and non-finite values); telemetry retains the
-serializer's requested precision. Fixture failures report the first differing
-scenario and line. Trace and fixture I/O errors fail the test.
+Additional harness checks reject unknown device addresses; a monitor bound to
+another Wire instance finds no device and fails its fixtures. Internal
+floating-point snapshots use `max_digits10` round-trip precision (including
+signed zero and non-finite values); telemetry retains the serializer's requested
+precision. Fixture failures report the first differing scenario and line. Trace
+and fixture I/O errors fail the test.
 
 ## Existing behavior to preserve during migration
 
@@ -78,8 +78,9 @@ endorsements of the following policies:
 
 - An impossible split retains the previous A/B telemetry values while both
   monitor-valid flags can remain set. The OLED independently hides pack and B.
-- Pack validity checks voltage; current, power and charge can subsequently be
-  non-finite without clearing that flag.
+- Pack validity checks voltage only. A real INA228 cannot report non-finite
+  current, power or charge with a successful read, so that case is no longer
+  characterized.
 - Successful recovery changes adapter availability on that poll, but fresh
   measurements and valid telemetry wait until the next poll.
 - Missing readings preserve cached numbers; validity is separate from value.

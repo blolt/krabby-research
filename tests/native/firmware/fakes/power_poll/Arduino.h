@@ -42,4 +42,5 @@ private:
     }
 };
 
-inline void delay(unsigned long) {}
+// Out of line: the SparkFun Toolkit's I2C read path links against it.
+void delay(unsigned long);

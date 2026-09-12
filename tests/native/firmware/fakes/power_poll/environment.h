@@ -5,23 +5,22 @@
 #include <stdexcept>
 #include <vector>
 
+#include "ina228.h"
+
 namespace powerPollFake
 {
-struct Device
+// Register-level INA228 fakes answering the real driver: [0] pack, [1] midpoint.
+extern ina228_native::Device devices[2];
+// Driver calls observed per monitor, counted from register traffic.
+struct Counters
 {
-    bool present = true;
-    bool begins = true;
-    int readStatus[4] = {};
-    float volts = 0.0f;
-    float milliamps = 0.0f;
-    float milliwatts = 0.0f;
-    float coulombs = 0.0f;
-    uint32_t voltageReadDuration = 0;
     unsigned beginCount = 0;
     unsigned shuntCount = 0;
     unsigned resetCount = 0;
 };
-extern Device devices[2];
+extern Counters counters[2];
+// Milliseconds a monitor's bus-voltage read takes, charged to the fake clock.
+extern uint32_t voltageReadDuration[2];
 extern uint32_t now;
 extern std::vector<std::string> events;
 inline size_t index(uint8_t address)
@@ -33,11 +32,5 @@ inline size_t index(uint8_t address)
 inline void event(uint8_t address, const std::string &operation)
 {
     events.push_back(std::string(index(address) == 0 ? "pack." : "mid.") + operation);
-}
-inline float read(uint8_t address, const char *name, float value)
-{
-    event(address, name);
-    if (std::string(name) == "voltage") now += devices[index(address)].voltageReadDuration;
-    return value;
 }
 }

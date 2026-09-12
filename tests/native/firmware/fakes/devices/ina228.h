@@ -62,14 +62,16 @@ public:
     double amps = 0.0;
     double coulombs = 0.0; // cleared by RST and RSTACC, like the accumulator
 
-    bool present = true; // false NACKs the address
+    bool present = true; // false NACKs the address; attempts are still logged
     uint16_t deviceId = INA228_DEVICE_ID;
     // Returning true NACKs that register read (isWrite false) or write.
     std::function<bool(uint8_t reg, bool isWrite, uint16_t value)> nack;
+    // Called with each step's name as it is logged, NACKed steps included.
+    std::function<void(const std::string &step)> onStep;
 
     unsigned resetCount = 0;
     unsigned accumulatorResetCount = 0;
-    std::vector<Operation> operations; // register reads and writes, NACKed ones included
+    std::vector<Operation> operations; // register reads and writes, refused ones included
 
     uint16_t registerValue(uint8_t reg) const;
     // Adapter steps inferred from traffic, one per driver call: begin (identity

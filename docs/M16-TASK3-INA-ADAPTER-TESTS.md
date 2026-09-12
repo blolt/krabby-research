@@ -65,8 +65,9 @@ coverage gate still includes that target.
 ## Behavior retained for review
 
 Read errors clear measurement validity but leave `isUp()` true and do not trigger
-reinitialization. A successful vendor status can accompany a non-finite number;
-validity remains an acquisition-status result. These tests preserve those policies.
+reinitialization. The driver decodes integer registers, so a successful read is
+always finite; validity remains an acquisition-status result. These tests preserve
+those policies.
 
 For a pack adapter configured to preserve charge, recovery skips device reset,
 alert/mode setup and accumulator reset, even if the initial begin failed. It

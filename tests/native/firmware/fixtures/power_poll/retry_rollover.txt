@@ -1,12 +1,12 @@
 [failure-one]
 ;BATT nan nan nan nan nan nan 1 0 0 0
-events=pack.begin | mid.begin | millis=4294967145 | millis=4294967145 | telemetry.begin
+events=millis=4294967145 | millis=4294967145 | telemetry.begin
 clock-after=4294967145
 measurement.pack=nan,nan,nan,nan
 model=nan,-32768,-32768,0,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,1,1,0,0
-mid.up/bad/begins/shunts/resets=0,1,1,0,0
+pack.up/bad/begins/shunts/resets=0,1,0,0,0
+mid.up/bad/begins/shunts/resets=0,1,0,0,0
 draw=0
 
 [failure-two]
@@ -16,19 +16,19 @@ clock-after=4294967195
 measurement.pack=nan,nan,nan,nan
 model=nan,-32768,-32768,0,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,2,1,0,0
-mid.up/bad/begins/shunts/resets=0,2,1,0,0
+pack.up/bad/begins/shunts/resets=0,2,0,0,0
+mid.up/bad/begins/shunts/resets=0,2,0,0,0
 draw=0
 
 [probe-before-rollover]
 ;BATT nan nan nan nan nan nan 1 0 0 0
-events=millis=4294967245 | pack.begin | millis=4294967245 | mid.begin | telemetry.begin
+events=millis=4294967245 | millis=4294967245 | telemetry.begin
 clock-after=4294967245
 measurement.pack=nan,nan,nan,nan
 model=nan,-32768,-32768,0,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,0,2,0,0
-mid.up/bad/begins/shunts/resets=0,0,2,0,0
+pack.up/bad/begins/shunts/resets=0,0,0,0,0
+mid.up/bad/begins/shunts/resets=0,0,0,0,0
 draw=0
 
 [retry-count-one]
@@ -38,8 +38,8 @@ clock-after=1748
 measurement.pack=nan,nan,nan,nan
 model=nan,-32768,-32768,0,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,1,2,0,0
-mid.up/bad/begins/shunts/resets=0,1,2,0,0
+pack.up/bad/begins/shunts/resets=0,1,0,0,0
+mid.up/bad/begins/shunts/resets=0,1,0,0,0
 draw=0
 
 [retry-count-two]
@@ -49,8 +49,8 @@ clock-after=1848
 measurement.pack=nan,nan,nan,nan
 model=nan,-32768,-32768,0,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,2,2,0,0
-mid.up/bad/begins/shunts/resets=0,2,2,0,0
+pack.up/bad/begins/shunts/resets=0,2,0,0,0
+mid.up/bad/begins/shunts/resets=0,2,0,0,0
 draw=0
 
 [elapsed-1999-after-rollover]
@@ -60,19 +60,19 @@ clock-after=1948
 measurement.pack=nan,nan,nan,nan
 model=nan,-32768,-32768,0,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,3,2,0,0
-mid.up/bad/begins/shunts/resets=0,3,2,0,0
+pack.up/bad/begins/shunts/resets=0,3,0,0,0
+mid.up/bad/begins/shunts/resets=0,3,0,0,0
 draw=0
 
 [elapsed-2000-after-rollover]
 ;BATT 26.50 -12.50 331.2 1200.0 13.25 13.25 0 0 1 1
-events=millis=1949 | pack.begin | pack.shunt(0.000375,200.0) | pack.voltage | pack.current | pack.power | pack.charge | millis=1949 | mid.begin | mid.reset | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
+events=millis=1949 | pack.begin | pack.calibrate | pack.voltage | pack.current | pack.power | pack.charge | millis=1949 | mid.begin | mid.reset | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
 clock-after=1949
 measurement.pack=26.5,-12.5,331.25,1200
 model=26.5,133,133,0.892857373,0.892857373
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=1,0,3,1,0
-mid.up/bad/begins/shunts/resets=1,0,3,0,0
+pack.up/bad/begins/shunts/resets=1,0,1,1,0
+mid.up/bad/begins/shunts/resets=1,0,1,0,0
 draw=1
 font 5x7
 fill 98 0 30 8 0
@@ -97,7 +97,7 @@ clock-after=1999
 measurement.pack=26.5,-12.5,331.25,1200
 model=26.5,133,133,0.892857373,0.892857373
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=1,0,3,1,0
-mid.up/bad/begins/shunts/resets=1,0,3,0,0
+pack.up/bad/begins/shunts/resets=1,0,1,1,0
+mid.up/bad/begins/shunts/resets=1,0,1,0,0
 draw=0
 

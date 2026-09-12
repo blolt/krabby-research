@@ -73,7 +73,7 @@ draw=0
 
 [successful-begin-still-invalid]
 ;BATT 26.50 -12.50 331.2 1200.0 13.25 13.25 0 0 1 1
-events=millis=3100 | pack.begin | pack.shunt(0.000375,200.0) | pack.voltage | pack.current | pack.power | pack.charge | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
+events=millis=3100 | pack.begin | pack.calibrate | pack.voltage | pack.current | pack.power | pack.charge | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
 clock-after=3100
 measurement.pack=26.5,-12.5,331.25,1200
 model=26.5,133,133,0.892857373,0.892857373

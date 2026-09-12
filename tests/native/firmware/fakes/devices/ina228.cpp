@@ -92,13 +92,16 @@ std::vector<std::string> Device::steps() const
 // 16-bit register MSB first. An empty transaction is an address probe.
 uint8_t Device::transmit(const std::vector<uint8_t> &bytes)
 {
-    if (!present) return 2;
-    if (bytes.empty()) return 0;
+    if (bytes.empty()) return present ? 0 : 2;
     const uint8_t reg = bytes[0];
     const bool isWrite = bytes.size() > 1;
     const uint16_t value = bytes.size() == 3 ? uint16_t(bytes[1] << 8 | bytes[2]) : 0;
-    const bool refused = (isWrite && bytes.size() != 3) || (nack && nack(reg, isWrite, value));
-    operations.push_back({reg, isWrite, value, !refused});
+    const bool refused = !present || (isWrite && bytes.size() != 3) || (nack && nack(reg, isWrite, value));
+    const Operation operation{reg, isWrite, value, !refused};
+    operations.push_back(operation);
+    if (onStep)
+        if (const char *name = stepName(operation)) onStep(name);
+    if (!present) return 2;
     if (refused) return 3;
     pointer_ = reg;
     if (isWrite) write(reg, value);

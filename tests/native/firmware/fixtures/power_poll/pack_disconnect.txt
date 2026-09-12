@@ -1,6 +1,6 @@
 [healthy]
 ;BATT 26.50 -12.50 331.2 1200.0 13.25 13.25 0 0 1 1
-events=pack.begin | pack.reset | pack.shunt(0.000375,200.0) | pack.reset-charge | mid.begin | mid.reset | pack.voltage | pack.current | pack.power | pack.charge | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
+events=pack.begin | pack.reset | pack.calibrate | pack.reset-charge | mid.begin | mid.reset | pack.voltage | pack.current | pack.power | pack.charge | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
 clock-after=1000
 measurement.pack=26.5,-12.5,331.25,1200
 model=26.5,133,133,0.892857373,0.892857373
@@ -62,12 +62,12 @@ draw=0
 
 [pack-restart-failed]
 ;BATT nan nan nan nan 12.75 nan 1 0 0 1
-events=pack.voltage | pack.current | pack.power | pack.charge | millis=1150 | pack.begin | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
+events=pack.voltage | pack.current | pack.power | pack.charge | millis=1150 | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
 clock-after=1150
 measurement.pack=nan,nan,nan,nan
 model=nan,128,-32768,0.535714447,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,0,2,1,1
+pack.up/bad/begins/shunts/resets=0,0,1,1,1
 mid.up/bad/begins/shunts/resets=1,0,1,0,0
 draw=0
 
@@ -78,7 +78,7 @@ clock-after=2949
 measurement.pack=nan,nan,nan,nan
 model=nan,125,-32768,0.357142955,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,1,2,1,1
+pack.up/bad/begins/shunts/resets=0,1,1,1,1
 mid.up/bad/begins/shunts/resets=1,0,1,0,0
 draw=1
 font 5x7
@@ -96,7 +96,7 @@ clock-after=3049
 measurement.pack=nan,nan,nan,nan
 model=nan,125,-32768,0.357142955,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,2,2,1,1
+pack.up/bad/begins/shunts/resets=0,2,1,1,1
 mid.up/bad/begins/shunts/resets=1,0,1,0,0
 draw=0
 
@@ -107,18 +107,18 @@ clock-after=3149
 measurement.pack=nan,nan,nan,nan
 model=nan,125,-32768,0.357142955,0
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=0,3,2,1,1
+pack.up/bad/begins/shunts/resets=0,3,1,1,1
 mid.up/bad/begins/shunts/resets=1,0,1,0,0
 draw=0
 
 [recovery-publishes-current-sample]
-;BATT 26.00 -12.50 331.2 1200.0 12.50 13.50 1 0 1 1
-events=millis=3150 | pack.begin | pack.shunt(0.000375,200.0) | pack.voltage | pack.current | pack.power | pack.charge | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
+;BATT 26.00 -12.50 325.0 1200.0 12.50 13.50 1 0 1 1
+events=millis=3150 | pack.begin | pack.calibrate | pack.voltage | pack.current | pack.power | pack.charge | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
 clock-after=3150
-measurement.pack=26,-12.5,331.25,1200
+measurement.pack=26,-12.5,325,1200
 model=26,125,135,0.357142955,1
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=1,0,3,2,1
+pack.up/bad/begins/shunts/resets=1,0,2,2,1
 mid.up/bad/begins/shunts/resets=1,0,1,0,0
 draw=1
 font 5x7
@@ -132,13 +132,13 @@ fill 77 12 16 5 1
 text 98 11 13.5V
 
 [new-pack-reading-next-tick]
-;BATT 26.00 -12.50 331.2 1200.0 12.50 13.50 1 0 1 1
+;BATT 26.00 -12.50 325.0 1200.0 12.50 13.50 1 0 1 1
 events=pack.voltage | pack.current | pack.power | pack.charge | mid.voltage | mid.current | mid.power | mid.charge | telemetry.begin
 clock-after=3200
-measurement.pack=26,-12.5,331.25,1200
+measurement.pack=26,-12.5,325,1200
 model=26,125,135,0.357142955,1
 calibration=0,0,1
-pack.up/bad/begins/shunts/resets=1,0,3,2,1
+pack.up/bad/begins/shunts/resets=1,0,2,2,1
 mid.up/bad/begins/shunts/resets=1,0,1,0,0
 draw=0
 

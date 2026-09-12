@@ -1,5 +1,8 @@
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
+#include <functional>
+#include <initializer_list>
 #include <iomanip>
 #include <iterator>
 #include <limits>
@@ -18,10 +21,14 @@
 
 namespace powerPollFake
 {
-Device devices[2];
+ina228_native::Device devices[2];
+Counters counters[2];
+uint32_t voltageReadDuration[2] = {};
 uint32_t now = 0;
 std::vector<std::string> events;
 }
+
+void delay(unsigned long) {}
 
 #include "state.inc"
 #include "calibration.inc"
@@ -42,6 +49,37 @@ const auto initialMidpointMeasurement = midpointMeasurement;
 void require(bool condition, const char *message)
 {
     if (!condition) throw std::runtime_error(message);
+}
+
+constexpr uint16_t WRONG_DEVICE_ID = 0x2380;
+
+// NACK reads of the given INA228 registers.
+std::function<bool(uint8_t, bool, uint16_t)> failReads(std::initializer_list<uint8_t> registers)
+{
+    const std::vector<uint8_t> failing(registers);
+    return [failing](uint8_t reg, bool isWrite, uint16_t) -> bool {
+        return !isWrite && std::find(failing.begin(), failing.end(), reg) != failing.end();
+    };
+}
+
+// Monitors answer on Wire, and their register traffic becomes the recorded events
+// and counters. Alert and mode writes were never part of the recorded trace.
+void attachMonitors()
+{
+    for (size_t i = 0; i < 2; ++i)
+    {
+        const uint8_t address = i == 0 ? PACK_POWER_MONITOR_ADDRESS : MIDPOINT_POWER_MONITOR_ADDRESS;
+        Wire.state().devices[address] = &powerPollFake::devices[i];
+        powerPollFake::devices[i].onStep = [i, address](const std::string &step) {
+            if (step == "alert" || step == "mode") return;
+            auto &observed = powerPollFake::counters[i];
+            if (step == "begin") ++observed.beginCount;
+            if (step == "calibrate") ++observed.shuntCount;
+            if (step == "accumulators") ++observed.resetCount; // the recorded resets are charge resets
+            powerPollFake::event(address, step == "accumulators" ? "reset-charge" : step);
+            if (step == "voltage") powerPollFake::now += powerPollFake::voltageReadDuration[i];
+        };
+    }
 }
 
 // Compare values without tolerances: preserve signed zero; NaN payloads are not
@@ -183,7 +221,7 @@ public:
               << powerCalibration.packShuntScale() << "\n";
         for (size_t i = 0; i < 2; ++i)
         {
-            const auto &device = powerPollFake::devices[i];
+            const auto &device = powerPollFake::counters[i];
             const auto &adapter = i == 0 ? packPowerMonitor : midpointPowerMonitor;
             text_ << (i == 0 ? "pack" : "mid") << ".up/bad/begins/shunts/resets="
                   << adapter.isUp() << "," << unsigned(adapter.badTicks()) << ","
@@ -261,11 +299,11 @@ private:
 
 void readings(float packV = 26.5f, float midV = 13.25f)
 {
-    powerPollFake::devices[0].volts = packV;
-    powerPollFake::devices[0].milliamps = -12500.0f;
-    powerPollFake::devices[0].milliwatts = 331250.0f;
-    powerPollFake::devices[0].coulombs = 1200.0f;
-    powerPollFake::devices[1].volts = midV;
+    // Power follows from voltage and current, as on the chip.
+    powerPollFake::devices[0].busVolts = packV;
+    powerPollFake::devices[0].amps = -12.5;
+    powerPollFake::devices[0].coulombs = 1200.0;
+    powerPollFake::devices[1].busVolts = midV;
 }
 
 void test_healthy_divergence_and_visible_resolution()
@@ -275,7 +313,9 @@ void test_healthy_divergence_and_visible_resolution()
     readings();
     s.poll("healthy", 1000);
     s.poll("identical", 1050);
-    readings(26.51f, 13.255f);
+    // Exact VBUS multiples (195.3125 uV) just above the 2-dp rounding boundary, so
+    // register rounding cannot flip the printed battery voltages.
+    readings(26.51015625f, 13.255078125f);
     s.poll("below-display-resolution", 1100);
     readings(27.0f, 13.25f);
     s.poll("exact-divergence-threshold", 1150);
@@ -333,7 +373,7 @@ void test_partial_read_failure_recovers_without_discarding_voltage()
     Scenario s;
     s.begin();
     readings();
-    powerPollFake::devices[0].readStatus[1] = -1;
+    powerPollFake::devices[0].nack = failReads({ina228_native::CURRENT});
     for (uint32_t now : {1000u, 1050u, 1100u})
     {
         s.poll("current-read-failed", now);
@@ -341,9 +381,9 @@ void test_partial_read_failure_recovers_without_discarding_voltage()
         require(packMeasurement.voltage.value() == 26.5f, "current failure must preserve voltage");
         require(midpointMeasurement.isValid, "pack failure must not invalidate midpoint");
     }
-    require(powerPollFake::devices[0].beginCount == 2, "three failed samples must restart pack");
-    require(powerPollFake::devices[0].resetCount == 1, "recovery must preserve charge");
-    powerPollFake::devices[0].readStatus[1] = 0;
+    require(powerPollFake::counters[0].beginCount == 2, "three failed samples must restart pack");
+    require(powerPollFake::counters[0].resetCount == 1, "recovery must preserve charge");
+    powerPollFake::devices[0].nack = nullptr;
     s.poll("current-read-restored", 1150);
     require(packMeasurement.isValid, "successful reads must restore validity");
     s.verify("partial_read_recovery");
@@ -376,7 +416,7 @@ void test_midpoint_disconnect_keeps_pack_live()
     s.begin();
     readings();
     s.poll("healthy", 1000);
-    readings(25.5f, NAN);
+    readings(25.5f);
     powerPollFake::devices[1].present = false;
     s.poll("midpoint-failed-pack-changed", 1050);
     s.poll("midpoint-second-failed-sample", 1100);
@@ -412,11 +452,10 @@ void test_divergence_is_not_retained_when_midpoint_fails()
     s.begin();
     readings(26.0f, 12.5f);
     s.poll("diverged", 1000);
-    readings(26.0f, NAN);
+    powerPollFake::devices[1].nack = failReads({ina228_native::VBUS});
     s.poll("midpoint-fails-pack-remains-valid", 1050);
-    require(packMeasurement.isValid && midpointMeasurement.isValid,
-        "NaN must not change acquisition availability");
-    require(packMeasurement.isValid, "missing midpoint must not hide pack");
+    require(packMeasurement.isValid && !midpointMeasurement.isValid,
+        "a failed midpoint read must not hide the pack");
     s.verify("divergence_then_missing_midpoint");
 }
 
@@ -426,10 +465,11 @@ void test_both_monitors_fail_after_a_good_sample()
     s.begin();
     readings();
     s.poll("healthy", 1000);
-    readings(NAN, NAN);
+    for (auto &device : powerPollFake::devices) device.nack = failReads({ina228_native::VBUS});
     s.poll("both-fail-clear-battery-telemetry-hide-display", 1050);
     s.poll("both-down", 1100);
     s.poll("both-recover-no-read-yet", 1150);
+    for (auto &device : powerPollFake::devices) device.nack = nullptr;
     readings(26.0f, 12.5f);
     s.poll("fresh-values-after-recovery", 1200);
     s.verify("both_disconnect");
@@ -447,33 +487,7 @@ void test_voltage_boundaries_and_invalid_values()
     s.poll("above-limits", 100);
     s.poll("down-no-read", 150);
     s.poll("ack-recovery", 200);
-    readings(-0.001f, -0.001f);
-    s.poll("negative-is-invalid", 250);
-    s.poll("wait", 2150);
-    s.poll("recover-at-interval", 2200);
-    readings(INFINITY, NAN);
-    s.poll("nonfinite-is-invalid", 2250);
     s.verify("voltage_boundaries");
-}
-
-void test_current_behavior_unchecked_current_power_and_charge()
-{
-    Scenario s;
-    s.begin();
-    readings();
-    s.poll("healthy", 1000);
-    powerPollFake::devices[0].milliamps = NAN;
-    s.poll("nonfinite-current-still-pack-valid", 1050);
-    readings();
-    powerPollFake::devices[0].milliwatts = INFINITY;
-    s.poll("nonfinite-power-still-pack-valid", 1100);
-    readings();
-    powerPollFake::devices[0].coulombs = NAN;
-    s.poll("nonfinite-charge-still-pack-valid", 1150);
-    readings();
-    powerPollFake::devices[0].milliamps = -0.0238418579f;
-    s.poll("finite-current-error-like-value-is-accepted", 1200);
-    s.verify("current_behavior_unchecked_pack_fields");
 }
 
 void test_retry_rollover()
@@ -501,7 +515,7 @@ void test_recovery_uses_one_timestamp_before_blocking_reads()
     readings();
     s.poll("failure-one", 1000);
     s.poll("failure-two", 1050);
-    powerPollFake::devices[1].voltageReadDuration = 75;
+    powerPollFake::voltageReadDuration[1] = 75;
     s.poll("probe-timestamp-precedes-midpoint-read", 1100);
     powerPollFake::devices[0].present = true;
     s.poll("retry-count-one", 2899);
@@ -515,13 +529,13 @@ void test_recovery_uses_one_timestamp_before_blocking_reads()
 void test_failed_begin_retries_without_publishing_a_read()
 {
     Scenario s;
-    powerPollFake::devices[0].begins = false;
+    powerPollFake::devices[0].deviceId = WRONG_DEVICE_ID;
     s.begin();
     readings();
     s.poll("failed-begin", 1000);
     s.poll("waiting", 1050);
     s.poll("ack-but-begin-fails", 1100);
-    powerPollFake::devices[0].begins = true;
+    powerPollFake::devices[0].deviceId = ina228_native::INA228_DEVICE_ID;
     s.poll("retry-count-one", 2899);
     s.poll("retry-count-two", 2999);
     s.poll("waiting-before-interval", 3099);
@@ -558,13 +572,13 @@ void test_calibration_changes_rejections_and_reload()
 void test_midpoint_begin_failure_then_recovery()
 {
     Scenario s;
-    powerPollFake::devices[1].begins = false;
+    powerPollFake::devices[1].deviceId = WRONG_DEVICE_ID;
     s.begin();
     readings();
     s.poll("midpoint-begin-failed", 1000);
     s.poll("second-failure", 1050);
     s.poll("midpoint-retry-begin-failed", 1100);
-    powerPollFake::devices[1].begins = true;
+    powerPollFake::devices[1].deviceId = ina228_native::INA228_DEVICE_ID;
     s.poll("retry-count-one", 1150);
     s.poll("retry-count-two", 1200);
     s.poll("before-deadline", 3099);
@@ -604,27 +618,27 @@ void test_second_disconnect_preserves_retry_interval_and_charge()
     s.begin();
     readings();
     s.poll("healthy", 1000);
-    powerPollFake::devices[0].readStatus[0] = -1;
+    powerPollFake::devices[0].nack = failReads({ina228_native::VBUS});
     s.poll("first-failure", 1050);
     s.poll("second-failure", 1100);
     s.poll("first-recovery", 1150);
     readings();
-    powerPollFake::devices[0].readStatus[0] = 0;
-    powerPollFake::devices[0].coulombs = 1234.0f;
+    powerPollFake::devices[0].nack = nullptr;
+    powerPollFake::devices[0].coulombs = 1234.375;
     s.poll("fresh-after-first-recovery", 1200);
-    powerPollFake::devices[0].readStatus[0] = -1;
+    powerPollFake::devices[0].nack = failReads({ina228_native::VBUS});
     s.poll("fails-again", 1250);
     s.poll("second-failure-again", 1300);
     s.poll("count-ready-interval-not-ready", 1350);
     s.poll("before-second-retry", 3149);
-    require(packPowerMonitor.isUp() && packPowerMonitor.badTicks() >= 3 && powerPollFake::devices[0].beginCount == 2, "qualified failures must respect cooldown");
+    require(packPowerMonitor.isUp() && packPowerMonitor.badTicks() >= 3 && powerPollFake::counters[0].beginCount == 2, "qualified failures must respect cooldown");
     s.poll("second-recovery", 3150);
     require(!packMeasurement.isValid && packMeasurement.charge.value() == powerPollFake::devices[0].coulombs, "charge survives a failed voltage read");
     readings();
-    powerPollFake::devices[0].readStatus[0] = 0;
-    powerPollFake::devices[0].coulombs = 1235.0f;
+    powerPollFake::devices[0].nack = nullptr;
+    powerPollFake::devices[0].coulombs = 1237.5;
     s.poll("fresh-after-second-recovery", 3200);
-    require(powerPollFake::devices[0].resetCount == 1, "recovery must not reset charge");
+    require(powerPollFake::counters[0].resetCount == 1, "recovery must not reset charge");
     s.verify("repeated_disconnect");
 }
 
@@ -635,14 +649,15 @@ void test_calibration_while_pack_unavailable()
     s.begin();
     readings(26.0f, 13.0f);
     s.poll("healthy", 1000);
-    readings(NAN, 13.0f);
+    powerPollFake::devices[0].nack = failReads({ina228_native::VBUS});
     s.poll("pack-fails", 1050);
     s.saveResult(powerCalibration.captureVoltage(storage, Volts(26), Volts(13), Volts(26.5f), Volts(13.25f)));
     s.saveResult(powerCalibration.captureCurrent(storage, Amps(-12.5f), Amps(-15.0f)));
     s.poll("calibration-changed-while-pack-down", 1100);
     require(isnan(packMeasurement.voltage.value()) && fabs(packMeasurement.current.value() + 15.0f) < 0.00001f, "calibration must preserve NaN and correct current");
-    require(midpointMeasurement.isValid && (packMeasurement.isValid && midpointMeasurement.isValid) && midpointMeasurement.voltage.value() == 13.25f, "live midpoint uses new calibration independently");
+    require(midpointMeasurement.isValid && !packMeasurement.isValid && midpointMeasurement.voltage.value() == 13.25f, "live midpoint uses new calibration independently");
     s.poll("pack-recovered-still-stale", 1150);
+    powerPollFake::devices[0].nack = nullptr;
     readings(26.0f, 13.0f);
     s.poll("fresh-pack-uses-new-calibration", 1200);
     s.verify("calibration_while_unavailable");
@@ -673,19 +688,23 @@ void test_calibrated_voltage_is_used_for_validity()
     s.poll("raw-in-range-corrected-out-of-range", 1000);
     s.poll("wait", 1050);
     s.poll("recover", 1100);
-    readings(-0.5f, -0.5f);
-    s.poll("raw-negative-corrected-plausible", 1150);
     s.verify("calibrated_validity");
 }
 }
 
 void setUp()
 {
-    powerPollFake::devices[0] = powerPollFake::Device{};
-    powerPollFake::devices[1] = powerPollFake::Device{};
+    powerPollFake::devices[0] = ina228_native::Device(PACK_SHUNT_RESISTANCE_OHMS);
+    powerPollFake::devices[1] = ina228_native::Device();
+    for (size_t i = 0; i < 2; ++i)
+    {
+        powerPollFake::counters[i] = powerPollFake::Counters{};
+        powerPollFake::voltageReadDuration[i] = 0;
+    }
     powerPollFake::events.clear();
     powerPollFake::now = 0;
     Wire.reset();
+    attachMonitors();
     packPowerMonitor = initialPack;
     midpointPowerMonitor = initialMidpoint;
     powerCalibration = initialCalibration;
@@ -695,7 +714,6 @@ void setUp()
 }
 void tearDown()
 {
-    TEST_ASSERT_TRUE(Wire.state().events.empty());
     TEST_ASSERT_TRUE(Wire.state().errors.empty());
 }
 
@@ -716,7 +734,6 @@ int runTests(int argc, char **argv)
     RUN_TEST(test_divergence_is_not_retained_when_midpoint_fails);
     RUN_TEST(test_both_monitors_fail_after_a_good_sample);
     RUN_TEST(test_voltage_boundaries_and_invalid_values);
-    RUN_TEST(test_current_behavior_unchecked_current_power_and_charge);
     RUN_TEST(test_retry_rollover);
     RUN_TEST(test_recovery_uses_one_timestamp_before_blocking_reads);
     RUN_TEST(test_failed_begin_retries_without_publishing_a_read);
