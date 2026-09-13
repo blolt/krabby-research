@@ -17,6 +17,7 @@ settings come from committed [`../config/fleet.toml`](../config/fleet.toml)
 |--------|------|
 | `fleet/config/fleet.toml` | URLs, region, Cognito pool/client IDs, bench thing name, CI operator email |
 | GitHub secret `COGNITO_CI_PASSWORD` | CI operator password only |
+| GitHub secret `BENCH_CI_SSH_PRIVATE_KEY` | Ed25519 private key for SSH login as `operator` on the bench (see [`../../BENCH-SSH.md`](../../BENCH-SSH.md)) |
 | Env vars | Optional overrides of any committed value |
 
 ## CI scope
@@ -48,7 +49,8 @@ export BENCH_E2E=1
 pytest tests_e2e/ -q
 ```
 
-SSH round-trip also needs `krabby-fleet` CLI and `localproxy` on PATH.
+SSH round-trip also needs `krabby-fleet` CLI, `localproxy` on PATH, and pubkey
+auth as `operator` on the bench — setup: [`../../BENCH-SSH.md`](../../BENCH-SSH.md).
 
 ## Coverage
 

@@ -105,6 +105,19 @@ jobs:
           pip install -r fleet/infra/tests_e2e/requirements.txt
           playwright install --with-deps chromium
 
+      - name: Install bench CI SSH key
+        env:
+          BENCH_CI_SSH_PRIVATE_KEY: ${{ secrets.BENCH_CI_SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [ -z "$BENCH_CI_SSH_PRIVATE_KEY" ]; then
+            echo "::warning::BENCH_CI_SSH_PRIVATE_KEY not set; test_krabby_fleet_ssh_runs_command_end_to_end will fail auth"
+            exit 0
+          fi
+          printf '%s\n' "$BENCH_CI_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

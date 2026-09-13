@@ -4,9 +4,6 @@ Single committed source for **non-secret** Krabby fleet settings: URLs, AWS
 region, Cognito pool/client IDs, IoT thing type/policy names, bench thing name,
 CI operator username.
 
-**Secrets stay out of git:** only `COGNITO_CI_PASSWORD` in GitHub Actions
-secrets (and local export for manual CI-style runs).
-
 ## File
 
 [`fleet.toml`](fleet.toml) — edit after deploy to fill `[cognito]` from
