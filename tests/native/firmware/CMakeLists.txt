@@ -61,6 +61,14 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/src/actuator/test_actuator_pot_tracker
     arduino/src/controller/test_board_role
     arduino/src/controller/test_controller_freshness_tracker
+    arduino/src/cli/test_power_calibration_command
+    arduino/src/power_monitor/test_battery_split
+    arduino/src/power_monitor/test_battery_telemetry
+    arduino/src/power_monitor/test_ina228_adapter
+    arduino/src/power_monitor/test_power_calibration
+    arduino/src/power_monitor/test_power_monitor_constants
+    arduino/src/telemetry/test_telemetry_poll
+    arduino/test_eeprom_layout
 )
 
 # Require every discovered test to appear in the manifest.
@@ -120,3 +128,5 @@ if(MSVC)
 else()
     target_compile_options(oled_trace PRIVATE -Wall -Wextra -Werror)
 endif()
+
+target_include_directories(test_ina228_adapter PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/support")

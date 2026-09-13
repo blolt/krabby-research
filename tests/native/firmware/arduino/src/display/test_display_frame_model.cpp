@@ -546,9 +546,51 @@ static void test_battery_voltage_conversion_and_missing_readings()
     TEST_ASSERT_FALSE(displayFramesEqual(frame, same));
 }
 
+static void test_power_measurements_keep_independent_validity()
+{
+    DisplayFrame frame;
+    const Volts voltage[2] = {Volts(13.26f), Volts(13.12f)};
+    for (int mask = 0; mask < 8; ++mask)
+    {
+        const bool valid[2] = {(mask & 1) != 0, (mask & 2) != 0};
+        const bool packValid = (mask & 4) != 0;
+        setBatteryMeasurements(frame, Volts(25.6f), packValid, voltage, valid);
+        TEST_ASSERT_EQUAL_INT(packValid ? 256 : BATTERY_DECIVOLTS_NO_SIGNAL,
+                              displayPackDecivolts(frame.packVoltage));
+        TEST_ASSERT_EQUAL_INT(valid[0] ? 133 : BATTERY_DECIVOLTS_NO_SIGNAL,
+                              frame.batteryDecivolts[0]);
+        TEST_ASSERT_EQUAL_INT(valid[1] ? 131 : BATTERY_DECIVOLTS_NO_SIGNAL,
+                              frame.batteryDecivolts[1]);
+        TEST_ASSERT_EQUAL_INT(valid[0] ? 14 : 0, batteryFillPixels(frame.batteryLevel[0]));
+        TEST_ASSERT_EQUAL_INT(valid[1] ? 13 : 0, batteryFillPixels(frame.batteryLevel[1]));
+    }
+}
+
+static void test_battery_comparison_uses_visible_resolution()
+{
+    TEST_ASSERT_EQUAL_INT(0, batteryFillPixels(NAN));
+    TEST_ASSERT_EQUAL_INT(0, batteryFillPixels(-0.5f));
+    TEST_ASSERT_EQUAL_INT(SSD1306_BATTERY_FILL_WIDTH, batteryFillPixels(2.0f));
+    DisplayFrame first;
+    const Volts voltage[2] = {Volts(12.7f), Volts(13.3f)};
+    setBatteryVoltages(first, voltage);
+    DisplayFrame second = first;
+    second.batteryLevel[0] += 0.01f;
+    second.packVoltage = Volts(first.packVoltage.value() + 0.01f);
+    TEST_ASSERT_TRUE(displayFramesEqual(first, second));
+    second.batteryLevel[0] += 0.0625f;
+    TEST_ASSERT_FALSE(displayFramesEqual(first, second));
+    const float invalid[] = {NAN, INFINITY, -1.0f, 100.0f};
+    for (float value : invalid)
+        TEST_ASSERT_EQUAL_INT(BATTERY_DECIVOLTS_NO_SIGNAL,
+                              displayPackDecivolts(Volts(value)));
+}
+
 int main()
 {
     UNITY_BEGIN();
+    RUN_TEST(test_power_measurements_keep_independent_validity);
+    RUN_TEST(test_battery_comparison_uses_visible_resolution);
     RUN_TEST(test_battery_voltage_conversion_and_missing_readings);
     RUN_TEST(test_nine_field_segment_reads_as_unverified);
     RUN_TEST(test_actuator_identity_makes_segment_order_irrelevant);
