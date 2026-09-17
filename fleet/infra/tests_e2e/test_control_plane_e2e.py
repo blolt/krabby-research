@@ -92,15 +92,16 @@ def _fetch_tunnel_connection_state(client: Any, tunnel_id: str, thing_name: str)
 
 
 def _start_localproxy_stderr_drain(proc: subprocess.Popen) -> list[bytes]:
-    """Read stderr in a thread so a full PIPE cannot block localproxy."""
+    """Read localproxy output in a thread so a full PIPE cannot block the process."""
     chunks: list[bytes] = []
+    stream = proc.stderr if proc.stderr is not None else proc.stdout
 
     def _reader() -> None:
-        if proc.stderr is None:
+        if stream is None:
             return
         try:
             while True:
-                part = proc.stderr.read(4096)
+                part = stream.read(4096)
                 if not part:
                     break
                 chunks.append(part)
@@ -206,11 +207,11 @@ def _wait_tunnel_source_connected(
             trace,
             f"t+{elapsed:.2f}s dest={dest!r} source={src!r} {tcp} proc=running",
         )
-        if src == "CONNECTED":
+        if src == "CONNECTED" and tcp == "tcp_ok":
             return
         time.sleep(0.2)
     raise AssertionError(
-        "source localproxy did not reach CONNECTED within "
+        "source localproxy did not reach CONNECTED with a listening local port within "
         f"{timeout:.0f}s — {_format_tunnel_connection_state(last, thing_name=thing_name, tunnel_id=tunnel_id)}\n"
         f"Poll trace (describe_tunnel + tcp probe to 127.0.0.1:{local_port} every ~200ms):\n"
         f"{_format_poll_trace(trace)}\n"
@@ -474,7 +475,8 @@ def test_secure_tunnel_source_proxy_reaches_ssh():
 
         proc = subprocess.Popen(
             [_LOCALPROXY_BIN, "-s", str(local_port), "-t", source_token, "-r", AWS_REGION, "-c", "/etc/ssl/certs"],
-            stderr=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
         )
         stderr_chunks = _start_localproxy_stderr_drain(proc)
         _wait_tunnel_source_connected(
