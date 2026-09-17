@@ -566,16 +566,14 @@ class FleetServiceStack(Stack):
                 resources=["*"],
             )
         )
+        # ECR Public clients (CLI + SDK) call sts:GetServiceBearerToken without passing
+        # sts:AWSServiceName in a form that matches a StringEquals condition on the role
+        # policy; unscoped Allow is required for bench CI docker login to succeed.
         github_actions_role.add_to_policy(
             iam.PolicyStatement(
                 sid="FleetCiStsEcrPublicBearerToken",
                 actions=["sts:GetServiceBearerToken"],
                 resources=["*"],
-                conditions={
-                    "StringEquals": {
-                        "sts:AWSServiceName": "ecr-public.amazonaws.com",
-                    }
-                },
             )
         )
         github_actions_role.add_to_policy(
