@@ -556,6 +556,30 @@ class FleetServiceStack(Stack):
         # isolation tests need create/delete).
         github_actions_role.add_to_policy(
             iam.PolicyStatement(
+                sid="FleetCiEcrPublicPull",
+                actions=[
+                    "ecr-public:GetAuthorizationToken",
+                    "ecr-public:BatchCheckLayerAvailability",
+                    "ecr-public:GetDownloadUrlForLayer",
+                    "ecr-public:BatchGetImage",
+                ],
+                resources=["*"],
+            )
+        )
+        github_actions_role.add_to_policy(
+            iam.PolicyStatement(
+                sid="FleetCiStsEcrPublicBearerToken",
+                actions=["sts:GetServiceBearerToken"],
+                resources=["*"],
+                conditions={
+                    "StringEquals": {
+                        "sts:AWSServiceName": "ecr-public.amazonaws.com",
+                    }
+                },
+            )
+        )
+        github_actions_role.add_to_policy(
+            iam.PolicyStatement(
                 sid="FleetCiIotBench",
                 actions=[
                     "iot:GetPolicy",
