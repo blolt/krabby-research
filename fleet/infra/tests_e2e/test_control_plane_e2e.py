@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import select
 import shutil
 import socket
 import subprocess
@@ -26,6 +27,129 @@ KRAB_THING_TYPE = "Krab"
 KRAB_DEVICE_POLICY = "KrabDevicePolicy"
 AMAZON_ROOT_CA_URL = "https://www.amazontrust.com/repository/AmazonRootCA1.pem"
 _LOCALPROXY_BIN = "localproxy"
+
+
+def _tunnel_from_describe(response: dict[str, Any]) -> dict[str, Any]:
+    nested = response.get("tunnel")
+    if isinstance(nested, dict):
+        return nested
+    return response
+
+
+def _format_tunnel_connection_state(
+    response: dict[str, Any], *, thing_name: str, tunnel_id: str
+) -> str:
+    tunnel = _tunnel_from_describe(response)
+    dest = tunnel.get("destinationConnectionState") or {}
+    src = tunnel.get("sourceConnectionState") or {}
+    return (
+        f"thing={thing_name} tunnel_id={tunnel_id} "
+        f"tunnel_status={tunnel.get('status')!r} "
+        f"destination={dest.get('status')!r} source={src.get('status')!r} "
+        f"description={tunnel.get('description')!r}"
+    )
+
+
+def _fetch_tunnel_connection_state(client: Any, tunnel_id: str, thing_name: str) -> str:
+    try:
+        return _format_tunnel_connection_state(
+            client.describe_tunnel(tunnelId=tunnel_id),
+            thing_name=thing_name,
+            tunnel_id=tunnel_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — diagnostics only
+        return f"describe_tunnel failed for tunnel_id={tunnel_id}: {exc!r}"
+
+
+def _drain_localproxy_stderr(proc: subprocess.Popen, max_bytes: int = 8192) -> str:
+    if proc.stderr is None:
+        return "(localproxy stderr not captured)"
+    try:
+        chunks: list[bytes] = []
+        fd = proc.stderr.fileno()
+        while sum(len(part) for part in chunks) < max_bytes:
+            ready, _, _ = select.select([fd], [], [], 0)
+            if not ready:
+                break
+            part = os.read(fd, 1024)
+            if not part:
+                break
+            chunks.append(part)
+        text = b"".join(chunks).decode("utf-8", errors="replace").strip()
+        return text or "(localproxy stderr empty)"
+    except OSError as exc:
+        return f"(could not read localproxy stderr: {exc})"
+
+
+def _localproxy_failure(proc: subprocess.Popen, detail: str) -> AssertionError:
+    code = proc.returncode if proc.poll() is not None else "still running"
+    return AssertionError(
+        f"{detail} (localproxy pid={proc.pid} exit={code})\n"
+        f"localproxy stderr:\n{_drain_localproxy_stderr(proc)}"
+    )
+
+
+def _wait_tunnel_destination_connected(
+    client: Any, tunnel_id: str, thing_name: str, timeout: float = 60.0
+) -> None:
+    """Wait until bench destination localproxy has joined the tunnel."""
+    deadline = time.monotonic() + timeout
+    last: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        last = client.describe_tunnel(tunnelId=tunnel_id)
+        tunnel = _tunnel_from_describe(last)
+        dest = (tunnel.get("destinationConnectionState") or {}).get("status")
+        if dest == "CONNECTED":
+            return
+        time.sleep(0.5)
+    raise AssertionError(
+        "destination localproxy did not connect within "
+        f"{timeout:.0f}s — check krabby-agent on the bench (tunnels/notify, destination localproxy). "
+        f"{_format_tunnel_connection_state(last, thing_name=thing_name, tunnel_id=tunnel_id)}"
+    )
+
+
+def _wait_source_localproxy_ready(
+    local_port: int, proc: subprocess.Popen, timeout: float = 15.0
+) -> None:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise _localproxy_failure(
+                proc, f"source localproxy exited before listening on 127.0.0.1:{local_port}"
+            )
+        try:
+            with socket.create_connection(("127.0.0.1", local_port), timeout=0.5):
+                return
+        except OSError:
+            time.sleep(0.2)
+    raise _localproxy_failure(
+        proc, f"timed out ({timeout:.0f}s) waiting for source localproxy on 127.0.0.1:{local_port}"
+    )
+
+
+def _read_ssh_banner(
+    local_port: int, proc: subprocess.Popen, deadline: float
+) -> bytes:
+    banner = b""
+    while time.monotonic() < deadline:
+        if proc.poll() is not None:
+            raise _localproxy_failure(proc, "source localproxy exited while reading SSH banner")
+        try:
+            with socket.create_connection(("127.0.0.1", local_port), timeout=2.0) as conn:
+                conn.settimeout(2.0)
+                while time.monotonic() < deadline:
+                    chunk = conn.recv(64)
+                    if chunk:
+                        banner += chunk
+                        if banner.startswith(b"SSH-"):
+                            return banner
+                    else:
+                        break
+        except OSError:
+            pass
+        time.sleep(0.5)
+    return banner
 
 
 def _iot() -> Any:
@@ -243,7 +367,10 @@ def test_secure_tunnel_source_proxy_reaches_ssh():
     )
     tunnel_id = tunnel["tunnelId"]
     source_token = tunnel["sourceAccessToken"]
+    # Secure Tunneling: destination must connect before source (DescribeTunnel gate).
+    _wait_tunnel_destination_connected(client, tunnel_id, BENCH_THING_NAME)
     proc: subprocess.Popen | None = None
+    local_port = 0
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind(("127.0.0.1", 0))
@@ -251,25 +378,21 @@ def test_secure_tunnel_source_proxy_reaches_ssh():
 
         proc = subprocess.Popen(
             [_LOCALPROXY_BIN, "-s", str(local_port), "-t", source_token, "-r", AWS_REGION, "-c", "/etc/ssl/certs"],
+            stderr=subprocess.PIPE,
         )
-        deadline = time.monotonic() + 30
-        banner = b""
-        while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                raise AssertionError(f"localproxy exited early (code {proc.returncode})")
-            try:
-                with socket.create_connection(("127.0.0.1", local_port), timeout=1.0) as conn:
-                    conn.settimeout(5.0)
-                    # Destination proxy targets localhost:22 — SSH banner proves bytes flow.
-                    banner = conn.recv(64)
-                    if banner:
-                        break
-            except OSError:
-                time.sleep(0.5)
-        assert banner.startswith(b"SSH-"), (
-            f"expected SSH banner through Secure Tunnel, got {banner!r} — "
-            "is krabby-agent subscribed to tunnels/notify on the bench?"
-        )
+        _wait_source_localproxy_ready(local_port, proc)
+        banner = _read_ssh_banner(local_port, proc, time.monotonic() + 30)
+        if not banner.startswith(b"SSH-"):
+            diag = _fetch_tunnel_connection_state(client, tunnel_id, BENCH_THING_NAME)
+            lp = _drain_localproxy_stderr(proc) if proc is not None else ""
+            raise AssertionError(
+                "expected SSH banner through Secure Tunnel, "
+                f"got {banner!r} on 127.0.0.1:{local_port}\n"
+                f"{diag}\n"
+                "If destination=CONNECTED but banner is empty, check sshd on the bench (:22) "
+                "and source localproxy on the runner.\n"
+                f"localproxy stderr:\n{lp}"
+            )
     finally:
         if proc is not None and proc.poll() is None:
             proc.terminate()
