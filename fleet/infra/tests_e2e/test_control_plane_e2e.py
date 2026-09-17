@@ -115,16 +115,16 @@ def _start_localproxy_stderr_drain(proc: subprocess.Popen) -> list[bytes]:
 def _localproxy_stderr_text(
     proc: subprocess.Popen, captured: list[bytes] | None = None, max_bytes: int = 8192
 ) -> str:
-    if captured:
+    if captured is not None:
         raw = b"".join(captured)[:max_bytes]
         text = raw.decode("utf-8", errors="replace").strip()
-        if text:
-            return text
-    if proc.stderr is None:
-        return "(localproxy stderr not captured)"
+        return text or "(localproxy output empty)"
+    stream = proc.stderr if proc.stderr is not None else proc.stdout
+    if stream is None:
+        return "(localproxy output not captured)"
     try:
         chunks: list[bytes] = []
-        fd = proc.stderr.fileno()
+        fd = stream.fileno()
         while sum(len(part) for part in chunks) < max_bytes:
             ready, _, _ = select.select([fd], [], [], 0)
             if not ready:
@@ -474,7 +474,19 @@ def test_secure_tunnel_source_proxy_reaches_ssh():
             local_port = s.getsockname()[1]
 
         proc = subprocess.Popen(
-            [_LOCALPROXY_BIN, "-s", str(local_port), "-t", source_token, "-r", AWS_REGION, "-c", "/etc/ssl/certs"],
+            [
+                _LOCALPROXY_BIN,
+                "-s",
+                str(local_port),
+                "-b",
+                "127.0.0.1",
+                "-t",
+                source_token,
+                "-r",
+                AWS_REGION,
+                "-c",
+                "/etc/ssl/certs",
+            ],
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
         )
