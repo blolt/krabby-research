@@ -620,6 +620,41 @@ class TestLocomotionConfig:
         argv = lc.build_hal_argv([])
         assert argv[:6] == ["--control-source", "portal", "--teleop-ip", "127.0.0.1", "--robot", "hex"]
 
+    def test_fleet_enrolled_via_locomotion_json(self, tmp_path, monkeypatch):
+        import krabby._locomotion_config as lc
+
+        monkeypatch.setattr(lc, "LOCOMOTION_CONFIG_PATH", tmp_path / "locomotion.json")
+        monkeypatch.setattr(lc, "IOT_DIR", tmp_path / "iot")
+        (tmp_path / "locomotion.json").write_text("{}")
+        assert lc.fleet_enrolled() is True
+
+    def test_fleet_enrolled_iot_unreadable_as_kit_user(self, tmp_path, monkeypatch):
+        import krabby._locomotion_config as lc
+
+        missing = tmp_path / "locomotion.json"
+        assert not missing.is_file()
+        iot = tmp_path / "iot"
+        iot.mkdir()
+        (iot / "config.json").write_text("{}")
+
+        class _IotDir:
+            def is_dir(self):
+                return True
+
+            def __truediv__(self, name):
+                if name == "config.json":
+
+                    class _Config:
+                        def is_file(self):
+                            raise PermissionError(13, "Permission denied")
+
+                    return _Config()
+                raise AssertionError(name)
+
+        monkeypatch.setattr(lc, "LOCOMOTION_CONFIG_PATH", missing)
+        monkeypatch.setattr(lc, "IOT_DIR", _IotDir())
+        assert lc.fleet_enrolled() is True
+
 
 class TestRunArgvEndToEnd:
     """Drive the real argparse path via main() — guards the `--`/REMAINDER handling

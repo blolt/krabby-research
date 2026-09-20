@@ -19,7 +19,18 @@ _last_cold_start_attempt = 0.0
 
 
 def fleet_enrolled() -> bool:
-    return IOT_DIR.is_dir() and (IOT_DIR / "config.json").is_file()
+    """True if this host completed ``krabby enroll``.
+
+    ``krabby-locomotion`` and foreground ``krabby run`` execute as the kit user,
+    while ``/etc/krabby/iot`` is root ``0700`` with a ``0600`` private key — do
+    not ``stat`` those paths; ``locomotion.json`` is the non-root enrollment marker.
+    """
+    if LOCOMOTION_CONFIG_PATH.is_file():
+        return True
+    try:
+        return IOT_DIR.is_dir() and (IOT_DIR / "config.json").is_file()
+    except PermissionError:
+        return IOT_DIR.is_dir()
 
 
 def _config_home() -> Path:
