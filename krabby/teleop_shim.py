@@ -84,6 +84,10 @@ class TeleopSignalingShim:
     def ws_url(self) -> str:
         return local_signaling_ws_url(host=self._host, port=self._port, path=self._path)
 
+    def robot_edge_connected(self) -> bool:
+        ws = self._robot_ws
+        return ws is not None and not getattr(ws, "closed", True)
+
     def start(self, connection: Any, thing_name: str) -> None:
         """Subscribe MQTT ``…/signaling/in`` and serve the local ``/ws/robot`` endpoint."""
         if self._thread is not None:
@@ -130,12 +134,20 @@ class TeleopSignalingShim:
         self._loop = None
         self._ready.clear()
 
+    def _maybe_cold_start_locomotion(self) -> None:
+        if self.robot_edge_connected():
+            return
+        from krabby._locomotion_config import request_locomotion_start
+
+        request_locomotion_start()
+
     def _on_mqtt_in(self, topic: str, payload: bytes, **kwargs: Any) -> None:
         try:
             text = payload.decode("utf-8") if isinstance(payload, (bytes, bytearray)) else str(payload)
         except UnicodeDecodeError:
             print(f"[err] teleop signaling/in: non-utf8 payload on {topic}", file=sys.stderr)
             return
+        self._maybe_cold_start_locomotion()
         loop = self._loop
         if loop is None or not loop.is_running():
             with self._lock:
@@ -148,6 +160,7 @@ class TeleopSignalingShim:
         if ws is not None and not ws.closed:
             asyncio.create_task(self._safe_send(ws, text))
         else:
+            self._maybe_cold_start_locomotion()
             with self._lock:
                 self._pending.append(text)
 

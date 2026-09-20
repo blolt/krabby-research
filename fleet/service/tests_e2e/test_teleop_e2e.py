@@ -121,6 +121,28 @@ def mqtt_sniffer() -> Any:
         sniffer.stop()
 
 
+def _teleop_playing_wait_js() -> str:
+    return """() => {
+      const t = window.__krabbyTeleop && window.__krabbyTeleop.getStatus
+        ? window.__krabbyTeleop.getStatus() : '';
+      return /playing/i.test(t);
+    }"""
+
+
+def _teleop_failure_context(page: Any, mqtt_sniffer: _MqttSniffer) -> str:
+    status = page.evaluate(
+        "() => (window.__krabbyTeleop && window.__krabbyTeleop.getStatus"
+        " ? window.__krabbyTeleop.getStatus() : '(no __krabbyTeleop)')"
+    )
+    nin, nout = mqtt_sniffer.count_since(0)
+    return (
+        f"viewer status={status!r}\n"
+        f"mqtt signaling since test start: in={nin} out={nout}\n"
+        "Bench needs krabby-agent teleop shim :9000 and HAL edge with "
+        "--teleop-ip 127.0.0.1 (--teleop-control-echo for control ack)."
+    )
+
+
 def test_teleop_signaling_control_and_video(operator_token: str, mqtt_sniffer: _MqttSniffer):
     pytest.importorskip("playwright.sync_api")
     from playwright.sync_api import sync_playwright
@@ -131,16 +153,28 @@ def test_teleop_signaling_control_and_video(operator_token: str, mqtt_sniffer: _
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
+        console_lines: list[str] = []
+
+        def _on_console(msg: Any) -> None:
+            console_lines.append(f"{msg.type}: {msg.text}")
+
+        page.on("console", _on_console)
+        page.on("pageerror", lambda err: console_lines.append(f"pageerror: {err}"))
+
         page.goto(url, wait_until="domcontentloaded", timeout=60_000)
 
-        page.wait_for_function(
-            """() => {
-              const t = window.__krabbyTeleop && window.__krabbyTeleop.getStatus
-                ? window.__krabbyTeleop.getStatus() : '';
-              return /playing/i.test(t);
-            }""",
-            timeout=int(SIGNALING_TIMEOUT_S * 1000),
-        )
+        try:
+            page.wait_for_function(
+                _teleop_playing_wait_js(),
+                timeout=int(SIGNALING_TIMEOUT_S * 1000),
+            )
+        except Exception as exc:
+            tail = "\n".join(console_lines[-30:]) if console_lines else "(no browser console output)"
+            raise AssertionError(
+                f"teleop viewer did not reach Playing within {SIGNALING_TIMEOUT_S:.0f}s: {exc}\n"
+                f"{_teleop_failure_context(page, mqtt_sniffer)}\n"
+                f"browser console (last 30 lines):\n{tail}"
+            ) from exc
         deadline = time.monotonic() + SIGNALING_TIMEOUT_S
         while time.monotonic() < deadline:
             if mqtt_sniffer.out_has_type("hello_ack") or mqtt_sniffer.out_has_type("answer"):

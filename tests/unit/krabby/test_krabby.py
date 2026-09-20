@@ -138,6 +138,8 @@ class TestBootService:
         assert "ExecStop=/usr/bin/docker stop krabby" in u
         assert "WantedBy=multi-user.target" in u
         assert "Requires=docker.service" in u
+        assert "krabby-agent.service" in u
+        assert "Restart=always" in u
 
     def test_enable_writes_unit_and_enables(self, tmp_path, monkeypatch):
         import krabby._host as h
@@ -281,7 +283,16 @@ class TestInstallLaunchFlag:
 # _docker: command construction
 # ---------------------------------------------------------------------------
 
-from krabby._docker import gpu_flags, host_network_flags, network_flags, serial_device_flags, run_cmd, firmware_cmd, gamepad_cmd
+from krabby._docker import (
+    fleet_hal_cmd,
+    firmware_cmd,
+    gamepad_cmd,
+    gpu_flags,
+    host_network_flags,
+    network_flags,
+    run_cmd,
+    serial_device_flags,
+)
 
 
 class TestGpuFlags:
@@ -498,7 +509,7 @@ from krabby import __main__ as krabby_main
 
 
 class TestCmdRun:
-    def _run(self, monkeypatch, **kwargs):
+    def _run(self, monkeypatch, *, fleet_enrolled=False, **kwargs):
         """Call cmd_run with the docker builders, subprocess, and sys.exit mocked.
 
         Returns ("gamepad"|"inference", captured_kwargs) so tests can assert which
@@ -514,8 +525,17 @@ class TestCmdRun:
             captured.update(mode="inference", ref=ref, extra_args=extra_args, entrypoint=entrypoint, extra_mounts=extra_mounts)
             return ["docker", "run", ref]
 
+        def fake_fleet_hal_cmd(ref, hal_argv, flat_mounts=None, extra_mounts=None):
+            captured.update(mode="fleet", ref=ref, hal_argv=hal_argv, extra_mounts=extra_mounts)
+            return ["docker", "run", ref]
+
         monkeypatch.setattr("krabby.run.gamepad_cmd", fake_gamepad_cmd)
         monkeypatch.setattr("krabby.run.run_cmd", fake_run_cmd)
+        monkeypatch.setattr("krabby.run.fleet_hal_cmd", fake_fleet_hal_cmd)
+        monkeypatch.setattr("krabby.run.fleet_enrolled", lambda: fleet_enrolled)
+        monkeypatch.setattr("krabby.run.build_hal_argv", lambda args: ["--control-source", "portal", "--teleop-ip", "127.0.0.1", "--robot", "hex"])
+        monkeypatch.setattr("krabby.run.fleet_volume_mounts", lambda _cfg: [])
+        monkeypatch.setattr("krabby.run.load_config", lambda: {})
         monkeypatch.setattr("krabby.run.subprocess.run", lambda cmd: type("R", (), {"returncode": 0})())
         monkeypatch.setattr("krabby.run.sys.exit", lambda _code: None)
         cmd_run(**kwargs)
@@ -571,6 +591,35 @@ class TestCmdRun:
         assert captured["mode"] == "inference"
         assert captured["extra_mounts"] == ["/a:/a"]
 
+    def test_fleet_enrolled_default_uses_fleet_hal(self, monkeypatch):
+        captured = self._run(monkeypatch, fleet_enrolled=True, image_ref="img:tag")
+        assert captured["mode"] == "fleet"
+        assert "--teleop-ip" in " ".join(captured.get("hal_argv", []))
+
+    def test_fleet_enrolled_checkpoint_still_fleet_not_legacy_inference(self, monkeypatch):
+        captured = self._run(
+            monkeypatch, fleet_enrolled=True, image_ref="img:tag", extra_args=["--checkpoint", "/c"]
+        )
+        assert captured["mode"] == "fleet"
+
+
+class TestFleetHalCmd:
+    def test_fleet_hal_cmd_includes_argv(self):
+        cmd = fleet_hal_cmd("img:1", ["--teleop-ip", "127.0.0.1"], flat_mounts=["-v", "/a:/b"])
+        assert "img:1" in cmd
+        assert "--teleop-ip" in cmd
+        assert "-v" in cmd
+
+
+class TestLocomotionConfig:
+    def test_build_hal_argv_portal(self, tmp_path, monkeypatch):
+        import krabby._locomotion_config as lc
+
+        monkeypatch.setattr(lc, "LOCOMOTION_CONFIG_PATH", tmp_path / "locomotion.json")
+        lc.write_config(lc.default_config())
+        argv = lc.build_hal_argv([])
+        assert argv[:6] == ["--control-source", "portal", "--teleop-ip", "127.0.0.1", "--robot", "hex"]
+
 
 class TestRunArgvEndToEnd:
     """Drive the real argparse path via main() — guards the `--`/REMAINDER handling
@@ -587,8 +636,17 @@ class TestRunArgvEndToEnd:
             captured.update(mode="inference", extra_args=extra_args, entrypoint=entrypoint)
             return ["docker"]
 
+        def fake_fleet_hal_cmd(ref, hal_argv, flat_mounts=None, extra_mounts=None):
+            captured.update(mode="fleet", hal_argv=hal_argv)
+            return ["docker"]
+
         monkeypatch.setattr("krabby.run.gamepad_cmd", fake_gamepad_cmd)
         monkeypatch.setattr("krabby.run.run_cmd", fake_run_cmd)
+        monkeypatch.setattr("krabby.run.fleet_hal_cmd", fake_fleet_hal_cmd)
+        monkeypatch.setattr("krabby.run.fleet_enrolled", lambda: False)
+        monkeypatch.setattr("krabby.run.build_hal_argv", lambda args: [])
+        monkeypatch.setattr("krabby.run.fleet_volume_mounts", lambda _cfg: [])
+        monkeypatch.setattr("krabby.run.load_config", lambda: {})
         monkeypatch.setattr("krabby.run.installed_image", lambda: "img:tag")
         monkeypatch.setattr("krabby.run.subprocess.run", lambda cmd: type("R", (), {"returncode": 0})())
         monkeypatch.setattr("krabby.run.sys.exit", lambda _code: None)

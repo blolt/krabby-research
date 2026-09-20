@@ -18,12 +18,12 @@ Placeholders: `<region>`, `<thing-name>`. Tip: `export AWS_PAGER=""`.
 
 ## Install `krabby` on the Orin
 
-`enroll` / `agent` require **`krabby-launcher` ≥ 0.1.16** (first-including
-version). From PyPI:
+`enroll` / `agent` require **`krabby-launcher` ≥ 0.1.16**; fleet teleop boot
+defaults need **≥ 0.1.17**. From PyPI:
 
 ```bash
 python3 -m venv .venv-krabby && source .venv-krabby/bin/activate
-pip install -U pip && pip install 'krabby-launcher>=0.1.16'
+pip install -U pip && pip install 'krabby-launcher>=0.1.17'
 command -v krabby
 krabby --help | grep -E 'enroll|agent'
 ```
@@ -89,6 +89,17 @@ krabby get telemetry
 `krabby agent` uses one MQTT connection for shadow telemetry (1/min), tunnel
 notify → destination `localproxy` → `localhost:22`, and teleop signaling
 shim. Details: [`krabby/README.md`](../krabby/README.md).
+
+Field and bench teleop HAL: [`FIELD-TELEOP.md`](FIELD-TELEOP.md), [`BENCH-TELEOP.md`](BENCH-TELEOP.md).
+
+Optional enroll flags (written to **`/etc/krabby/locomotion.json`**):
+
+```bash
+sudo -E env PATH="$PATH" krabby enroll --thing-name <thing-name> \
+  --locomotion-control-source portal \
+  --locomotion-robot hex
+# inference: add --locomotion-control-source inference --locomotion-checkpoint /workspace/checkpoints/….pt
+```
 
 ## Scale path (not implemented)
 

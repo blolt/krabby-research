@@ -29,11 +29,12 @@ ICE servers. Uses the persistent CI operator (`[ci].operator_username` +
 Teleop also needs runner AWS creds with `iot:DescribeEndpoint` and MQTT SigV4 on
 `teleop/*/signaling/*` (signaling sniffer).
 
-Bench preconditions for teleop:
+Bench preconditions for teleop (always-on setup on the Orin):
+[`../../BENCH-TELEOP.md`](../../BENCH-TELEOP.md).
 
-* `krabby agent` running (shadow + tunnels + teleop shim on `:9000`)
-* HAL edge with `--teleop-ip 127.0.0.1` (and camera available), plus
-  `--teleop-control-echo` for the HAL-ack assertion in `test_teleop_e2e.py`
+* `krabby-agent.service` — MQTT + teleop shim on **`127.0.0.1:9000`**
+* HAL in **portal** mode with **`--teleop-ip 127.0.0.1`**, **`--teleop-control-echo`**
+  (persistent Docker — not **`krabby run`** / gamepad container **`krabby`**)
 
 ## Run
 

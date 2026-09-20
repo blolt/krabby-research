@@ -86,6 +86,34 @@ def run_cmd(image_ref: str, extra_args: list[str], entrypoint: str | None = None
     ]
 
 
+def fleet_hal_cmd(
+    image_ref: str,
+    hal_argv: list[str],
+    *,
+    flat_mounts: list[str] | None = None,
+    extra_mounts: list[str] | None = None,
+) -> list[str]:
+    """Locomotion container for fleet-enrolled hosts (HAL entrypoint + teleop-ip shim dial).
+
+    ``flat_mounts`` is an optional list of ``-v``, ``host:container``, … from
+    :func:`krabby._locomotion_config.fleet_volume_mounts`.
+    """
+    mounts: list[str] = list(flat_mounts or [])
+    for m in (extra_mounts or []):
+        mounts.extend(["-v", m])
+    return [
+        "docker", "run", "--rm",
+        "--name", "krabby",
+        "--privileged",
+        *gpu_flags(),
+        "-v", "/dev:/dev",
+        *mounts,
+        *network_flags(),
+        image_ref,
+        *hal_argv,
+    ]
+
+
 def firmware_cmd(image_ref: str, firmware_args: list[str], interactive: bool = False) -> list[str]:
     # `interactive` allocates a TTY so the standalone interactive menu (`krabby
     # firmware` with no subcommand) and paged `show` output behave the same through

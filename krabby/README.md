@@ -7,12 +7,11 @@ PyPI package name is `krabby-launcher` (the `krabby` name was already taken); th
 ## Install
 
 ```bash
-pip install 'krabby-launcher>=0.1.16'
+pip install 'krabby-launcher>=0.1.17'
 ```
 
-`enroll` and `agent` first shipped in **`krabby-launcher` 0.1.16** (PyPI tag
-`krabby-v0.1.16`). Older wheels lack those subcommands — use `>=0.1.16` or
-`pip install ./krabby` from a clone.
+Fleet onboarding and teleop: [`fleet/ENROLL.md`](../fleet/ENROLL.md),
+[`fleet/FIELD-TELEOP.md`](../fleet/FIELD-TELEOP.md).
 
 ## Usage
 
@@ -24,8 +23,8 @@ krabby install --no-launch-on-startup # set up the host but DON'T start on boot
 krabby update             # re-pull the last installed image
 krabby update --image <ref>    # pull a different tag
 
-krabby run                # full gamepad stack: HAL server + krabby-uno client + controller
-krabby run --gamepad-only      # explicit alias for the gamepad stack
+krabby run                # locomotion HAL (fleet-enrolled: portal/inference + teleop to agent shim)
+krabby run --gamepad-only      # gamepad stack: HAL + krabby-uno (non-fleet / explicit)
 krabby run -- --device-id 1    # forward client args to krabby-uno (gamepad mode)
 krabby run -- --checkpoint /path/to/ckpt.pt   # inference mode (policy checkpoint)
 
@@ -57,7 +56,6 @@ as a systemd service (`krabby-agent.service`, separate from
 `krabby-locomotion.service`).
 
 ```bash
-# Needs krabby-launcher >= 0.1.16 (first release with enroll/agent)
 export AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=... AWS_DEFAULT_REGION=<region>  # krabby-enroll keys
 sudo -E env PATH="$PATH" krabby enroll --thing-name <thing-name>
 ```
@@ -67,10 +65,10 @@ Creates/finds the IoT thing — name defaults to the wired NIC's MAC address
 override with `--thing-name`. Then generates a keypair + CSR **on the
 device** (private key never leaves it), gets it signed and attaches
 `KrabDevicePolicy`, writes cert/key/root CA/ATS endpoint to `/etc/krabby/iot/`
-(root-owned, key `0600`), tries apt-install of
+(root-owned, key `0600`), writes `/etc/krabby/locomotion.json`, tries apt-install of
 `aws-iot-securetunneling-localproxy` (if apt has no package, see
-[`ENROLL.md`](../fleet/ENROLL.md)), and enables `krabby-agent.service` —
-verifying a real MQTT connect before declaring success. AWS credentials are
+[`ENROLL.md`](../fleet/ENROLL.md)), and enables `krabby-agent.service` and
+`krabby-locomotion.service` — verifying a real MQTT connect before declaring success. AWS credentials are
 used only during `enroll`, never persisted; `agent` only ever does MQTT.
 
 ```bash
