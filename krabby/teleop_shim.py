@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import asyncio
 import collections
+import json
+import os
 import sys
 import threading
 from typing import Any, Deque
@@ -30,6 +32,41 @@ DEFAULT_WS_PATH = "/ws/robot"
 
 # Bound pending cloud→robot frames while the edge agent is reconnecting.
 _PENDING_MAX = 64
+
+def _signaling_trace_enabled() -> bool:
+    """Per-frame MQTT/WS logs (incl. ping). Off by default — set ``KRABBY_TELEOP_SIGNALING_TRACE=1`` to debug."""
+    return os.environ.get("KRABBY_TELEOP_SIGNALING_TRACE", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
+def _log_signaling_frame(*, direction: str, topic: str, text: str) -> None:
+    """Log bridged signaling traffic without spamming journal on every ping."""
+    nbytes = len(text.encode("utf-8"))
+    if _signaling_trace_enabled():
+        preview = text[:120].replace("\n", " ")
+        print(
+            f"[ok]  teleop signaling/{direction} topic={topic} bytes={nbytes}: {preview}",
+            flush=True,
+        )
+        return
+    msg_type: str | None = None
+    try:
+        parsed = json.loads(text)
+        if isinstance(parsed, dict):
+            msg_type = str(parsed.get("type") or "")
+    except json.JSONDecodeError:
+        pass
+    if msg_type in (None, "", "ping", "pong"):
+        return
+    print(
+        f"[ok]  teleop signaling/{direction} topic={topic} type={msg_type} bytes={nbytes}",
+        flush=True,
+    )
+
 
 def _await_crt(op: Any, *, timeout: float = 10.0) -> None:
     """Block on awscrt ``publish``/``subscribe`` (``Future`` or ``(Future, packet_id)``)."""
@@ -161,8 +198,7 @@ class TeleopSignalingShim:
         except UnicodeDecodeError:
             print(f"[err] teleop signaling/in: non-utf8 payload on {topic}", file=sys.stderr)
             return
-        preview = text[:120].replace("\n", " ")
-        print(f"[ok]  teleop signaling/in topic={topic} bytes={len(payload)}: {preview}", flush=True)
+        _log_signaling_frame(direction="in", topic=topic, text=text)
         self._maybe_cold_start_locomotion()
         loop = self._loop
         if loop is None or not loop.is_running():
@@ -189,7 +225,6 @@ class TeleopSignalingShim:
     def _publish_out(self, text: str) -> None:
         if self._connection is None or self._out_topic is None:
             return
-        preview = text[:120].replace("\n", " ")
         try:
             _await_crt(
                 self._connection.publish(
@@ -199,10 +234,7 @@ class TeleopSignalingShim:
                 ),
                 timeout=10.0,
             )
-            print(
-                f"[ok]  teleop signaling/out topic={self._out_topic} bytes={len(text.encode('utf-8'))}: {preview}",
-                flush=True,
-            )
+            _log_signaling_frame(direction="out", topic=self._out_topic, text=text)
         except Exception as exc:
             print(
                 f"[err] teleop signaling/out publish failed topic={self._out_topic}: {exc}",

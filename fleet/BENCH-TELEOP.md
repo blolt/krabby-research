@@ -17,7 +17,7 @@ SSH pubkey setup for tunnel tests: [`BENCH-SSH.md`](BENCH-SSH.md). Device enroll
 
 ---
 
-## 1. Fleet agent (`krabby-launcher` ≥ 0.1.20)
+## 1. Fleet agent (`krabby-launcher` ≥ 0.1.21)
 
 Install once (PyPI) in a venv; identity lives under **`/etc/krabby/iot/`** after
 enroll — **do not re-enroll** if that directory is intact.
@@ -26,9 +26,9 @@ enroll — **do not re-enroll** if that directory is intact.
 cd ~/projects/krabs/krabby-research   # or any directory for the venv
 python3 -m venv .venv-krabby
 source .venv-krabby/bin/activate
-pip install -U pip && pip install 'krabby-launcher>=0.1.20'
+pip install -U pip && pip install 'krabby-launcher>=0.1.21'
 
-krabby --version    # expect 0.1.20+
+krabby --version    # expect 0.1.21+
 python -c "from krabby.teleop_shim import TeleopSignalingShim; import aiohttp; print('OK')"
 ```
 
@@ -49,7 +49,10 @@ sudo ss -tlnp | grep 9000    # LISTEN on 127.0.0.1:9000, owned by krabby agent
 
 Agent stdout may not appear in `journalctl` until you set
 `Environment=PYTHONUNBUFFERED=1` on the unit; use **`ss`** and **`:9000`** as
-the ground truth.
+the ground truth. By default the teleop shim does **not** log every `ping`/`pong`
+(only errors, subscribe/startup, edge connect/disconnect, and non-ping signaling
+like `hello`/SDP). Set `Environment=KRABBY_TELEOP_SIGNALING_TRACE=1` on
+`krabby-agent.service` temporarily when debugging MQTT ↔ WebSocket bridging.
 
 ---
 
