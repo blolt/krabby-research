@@ -31,9 +31,17 @@
     controllerDiagnosticDetails.open = false;
   }
 
+  var statusHistory = [];
+  var STATUS_HISTORY_MAX = 32;
+
   function setConnectionStatus(message) {
+    var text = String(message || '');
+    statusHistory.push({ t_ms: Math.round(performance.now()), status: text });
+    if (statusHistory.length > STATUS_HISTORY_MAX) {
+      statusHistory.shift();
+    }
     if (status) {
-      status.textContent = message;
+      status.textContent = text;
     }
     var m = String(message || '').toLowerCase();
     var phase = 'idle';
@@ -732,6 +740,31 @@
     });
   }
 
+  function webrtcPeerReady() {
+    if (!pc) return false;
+    var conn = pc.connectionState;
+    var ice = pc.iceConnectionState;
+    if (conn === 'failed' || ice === 'failed') return false;
+    return (
+      (conn === 'connected' || conn === 'completed') &&
+      (ice === 'connected' || ice === 'completed')
+    );
+  }
+
+  /** ``Playing`` only after ICE is up and the outbound control channel is open. */
+  function updateLiveConnectionStatus() {
+    if (!pc) return;
+    var ice = pc.iceConnectionState;
+    var conn = pc.connectionState;
+    if (conn === 'failed' || ice === 'failed' || conn === 'closed') {
+      setConnectionStatus('WebRTC error: connection ' + conn + ', ICE ' + ice);
+      return;
+    }
+    if (!webrtcPeerReady()) return;
+    if (!controlDc || controlDc.readyState !== 'open') return;
+    setConnectionStatus('Playing');
+  }
+
   function updateDebug() {
     if (!debugEl || !pc) return;
     debugEl.textContent =
@@ -741,6 +774,7 @@
       pc.iceConnectionState +
       ' | signaling: ' +
       pc.signalingState;
+    updateLiveConnectionStatus();
   }
 
   function selectedCatalogIdsFromCheckboxes() {
@@ -833,6 +867,7 @@
     controlDc = pc.createDataChannel('krabby-control-v1', { ordered: true });
     controlDc.onopen = function () {
       startGamepadLoop();
+      updateLiveConnectionStatus();
     };
     controlDc.onclose = function () {
       stopGamepadLoop();
@@ -877,6 +912,7 @@
       tile.appendChild(cap);
       tile.appendChild(v);
       videosEl.appendChild(tile);
+      updateLiveConnectionStatus();
     };
 
     var i;
@@ -892,7 +928,7 @@
       ws.send(JSON.stringify(offerPayload(pc.localDescription.sdp)));
     });
     await pc.setRemoteDescription({ type: 'answer', sdp: ans.sdp });
-    setConnectionStatus('Playing');
+    setConnectionStatus('WebRTC connecting...');
     updateDebug();
   }
 
@@ -1050,6 +1086,30 @@
   window.__krabbyTeleop = {
     getStatus: function () {
       return status ? String(status.textContent || '') : '';
+    },
+    isSessionLive: function () {
+      return webrtcPeerReady() && controlDc && controlDc.readyState === 'open';
+    },
+    getDiagnostics: function () {
+      var st = status ? String(status.textContent || '') : '';
+      var live = webrtcPeerReady() && controlDc && controlDc.readyState === 'open';
+      var playingLabel = /playing/i.test(st);
+      return {
+        status: st,
+        isSessionLive: live,
+        webrtcPeerReady: webrtcPeerReady(),
+        webrtcFailed: !!(
+          pc && (pc.connectionState === 'failed' || pc.iceConnectionState === 'failed')
+        ),
+        playingLabelWhileNotLive: playingLabel && !live,
+        wsReadyState: ws ? ws.readyState : -1,
+        pcConnectionState: pc ? pc.connectionState : 'none',
+        pcIceConnectionState: pc ? pc.iceConnectionState : 'none',
+        pcSignalingState: pc ? pc.signalingState : 'none',
+        controlDcReadyState: controlDc ? controlDc.readyState : 'none',
+        videoTiles: videosEl ? videosEl.querySelectorAll('video').length : 0,
+        statusHistory: statusHistory.slice(),
+      };
     },
     getPc: function () {
       return pc;

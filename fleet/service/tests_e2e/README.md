@@ -60,5 +60,5 @@ auth as `operator` on the bench — setup: [`../../BENCH-SSH.md`](../../BENCH-SS
 | `test_open_and_close_tunnel_happy_path` | Operator opens/closes SSH tunnel via REST |
 | `test_get_devices_*` | List + get device shadow for bench |
 | `test_krabby_fleet_ssh_runs_command_end_to_end` | CLI SSH echo through Secure Tunnel |
-| `test_teleop_signaling_control_and_video` | Portal viewer → Playing; control + video; MQTT idle after close |
+| `test_teleop_signaling_control_and_video` | Portal viewer → live session (ICE + control DC); control echo + video; MQTT idle after close |
 | `test_teleop_ice_servers_authed` | ICE endpoint returns STUN with operator token |
