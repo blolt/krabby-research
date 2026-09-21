@@ -77,6 +77,23 @@ rg "krabby-launcher>=0\.1\.(17|18)|≥ 0\.1\.(17|18)" krabby fleet docs
 
 Fix or intentionally keep any hit before pushing the tag.
 
+## Locomotion image (`release-latest` on ECR)
+
+Production robots pull **`public.ecr.aws/t7t7b3i3/krabby-locomotion:release-latest`**, built from [`images/locomotion/Dockerfile.release`](../images/locomotion/Dockerfile.release) when you push a **`release/*`** branch (see [`images/locomotion/README.md`](../images/locomotion/README.md)). **`main` pushes do not move `release-latest`.**
+
+**Do not reuse or fast-forward an old `release/x.y.z` branch** for a new field release. Each locomotion refresh gets a **new branch** cut from current **`main`** (e.g. `release/0.2.12`, then later `release/0.2.13`).
+
+**Order (every locomotion release):**
+
+1. On **`main`**, set the full pin bundle in [`images/locomotion/requirements.release.txt`](../images/locomotion/requirements.release.txt) (all `krabby-*==…` lines must be compatible — pre-push smoke imports HAL).
+2. **Publish PyPI packages first** in dependency order (e.g. `firmware-v*` before rebuilding the image if HAL imports firmware). Wait until each pinned version exists on PyPI.
+3. Run locally: [`Dockerfile.release-pypi-smoke`](../images/locomotion/Dockerfile.release-pypi-smoke) (same as CI pre-push gate).
+4. **Cut a new release branch** from **`main`**: `git checkout -b release/0.2.N main` (pick the next patch version **N**).
+5. `git push -u origin release/0.2.N` — locomotion CI runs pre-push smoke, then builds and pushes ECR; **`release-latest`** moves only if this branch is the **highest** `release/*` version.
+6. After CI is green, on kits: `krabby update --image release-latest` and restart `krabby-locomotion`.
+
+Leave older `release/*` branches on the remote as history; do not merge **`main`** into them for the next field push.
+
 ## Testing locally (same as CI)
 
 To run the same build-and-test steps as the publish workflow locally (no tag or PyPI):
