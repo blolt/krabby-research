@@ -70,10 +70,10 @@ CI takes the **version from the tag**, but several **human-facing** files still 
 
 **Other PyPI packages:** bump `version` in that package’s `pyproject.toml` and any README install line that names a specific version.
 
-**Quick check** from repo root (replace `0.1.18` with the version you are about to ship):
+**Quick check** from repo root (replace `0.1.19` with the version you are about to ship):
 
 ```bash
-rg "krabby-launcher>=0\.1\.(17|18)|≥ 0\.1\.(17|18)" krabby fleet docs
+rg "krabby-launcher>=0\.1\.(18|19)|≥ 0\.1\.(18|19)" krabby fleet docs
 ```
 
 Fix or intentionally keep any hit before pushing the tag.

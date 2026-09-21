@@ -17,7 +17,7 @@ SSH pubkey setup for tunnel tests: [`BENCH-SSH.md`](BENCH-SSH.md). Device enroll
 
 ---
 
-## 1. Fleet agent (`krabby-launcher` ≥ 0.1.18)
+## 1. Fleet agent (`krabby-launcher` ≥ 0.1.19)
 
 Install once (PyPI) in a venv; identity lives under **`/etc/krabby/iot/`** after
 enroll — **do not re-enroll** if that directory is intact.
@@ -26,9 +26,9 @@ enroll — **do not re-enroll** if that directory is intact.
 cd ~/projects/krabs/krabby-research   # or any directory for the venv
 python3 -m venv .venv-krabby
 source .venv-krabby/bin/activate
-pip install -U pip && pip install 'krabby-launcher>=0.1.18'
+pip install -U pip && pip install 'krabby-launcher>=0.1.19'
 
-krabby --version    # expect 0.1.18+
+krabby --version    # expect 0.1.19+
 python -c "from krabby.teleop_shim import TeleopSignalingShim; import aiohttp; print('OK')"
 ```
 
@@ -72,8 +72,37 @@ mkdir -p ~/zed-resources/resources ~/zed-resources/settings
 **`/etc/krabby/locomotion.json`** (read by **`krabby run`** / **`krabby-locomotion.service`**):
 
 ```bash
-sudo jq '.teleop_control_echo = true' /etc/krabby/locomotion.json | sudo tee /etc/krabby/locomotion.json.tmp \
-  && sudo mv /etc/krabby/locomotion.json.tmp /etc/krabby/locomotion.json
+sudo python3 <<'PY'
+import json
+from pathlib import Path
+
+p = Path("/etc/krabby/locomotion.json")
+p.parent.mkdir(parents=True, exist_ok=True)
+raw = p.read_text().strip() if p.is_file() else ""
+if raw:
+    try:
+        cfg = json.loads(raw)
+    except json.JSONDecodeError:
+        print("WARNING: invalid JSON; merging fleet defaults")
+        cfg = {}
+else:
+    cfg = {}
+
+defaults = {
+    "control_source": "portal",
+    "robot": "hex",
+    "teleop_ip": "127.0.0.1",
+    "teleop_control_echo": False,
+    "checkpoint": None,
+    "checkpoint_host_dir": None,
+    "zed_resources_host": None,
+    "zed_settings_host": None,
+}
+defaults.update(cfg)
+defaults["teleop_control_echo"] = True
+p.write_text(json.dumps(defaults, indent=2, sort_keys=True) + "\n")
+print("teleop_control_echo =", defaults["teleop_control_echo"])
+PY
 sudo systemctl restart krabby-locomotion
 ```
 
