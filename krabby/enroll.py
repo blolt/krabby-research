@@ -195,6 +195,7 @@ def cmd_enroll(
     locomotion_robot: Optional[str] = None,
     locomotion_checkpoint: Optional[str] = None,
     locomotion_checkpoint_host_dir: Optional[str] = None,
+    locomotion_teleop_control_echo: bool = False,
 ) -> None:
     import boto3
 
@@ -226,6 +227,7 @@ def cmd_enroll(
         robot=locomotion_robot,
         checkpoint=locomotion_checkpoint,
         checkpoint_host_dir=locomotion_checkpoint_host_dir,
+        teleop_control_echo=locomotion_teleop_control_echo or None,
     )
 
     ok = _ensure_localproxy_installed()

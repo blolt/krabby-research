@@ -619,6 +619,27 @@ class TestLocomotionConfig:
         lc.write_config(lc.default_config())
         argv = lc.build_hal_argv([])
         assert argv[:6] == ["--control-source", "portal", "--teleop-ip", "127.0.0.1", "--robot", "hex"]
+        assert "--teleop-control-echo" not in argv
+
+    def test_build_hal_argv_teleop_control_echo_from_config(self, tmp_path, monkeypatch):
+        import krabby._locomotion_config as lc
+
+        monkeypatch.setattr(lc, "LOCOMOTION_CONFIG_PATH", tmp_path / "locomotion.json")
+        cfg = lc.default_config()
+        cfg["teleop_control_echo"] = True
+        lc.write_config(cfg)
+        argv = lc.build_hal_argv([])
+        assert argv.count("--teleop-control-echo") == 1
+
+    def test_build_hal_argv_teleop_control_echo_cli_without_duplicate(self, tmp_path, monkeypatch):
+        import krabby._locomotion_config as lc
+
+        monkeypatch.setattr(lc, "LOCOMOTION_CONFIG_PATH", tmp_path / "locomotion.json")
+        cfg = lc.default_config()
+        cfg["teleop_control_echo"] = True
+        lc.write_config(cfg)
+        argv = lc.build_hal_argv(["--teleop-control-echo"])
+        assert argv.count("--teleop-control-echo") == 1
 
     def test_fleet_enrolled_via_locomotion_json(self, tmp_path, monkeypatch):
         import krabby._locomotion_config as lc

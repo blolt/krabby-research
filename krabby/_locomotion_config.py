@@ -50,6 +50,7 @@ def default_config() -> dict[str, Any]:
         "control_source": "portal",
         "robot": "hex",
         "teleop_ip": DEFAULT_TELEOP_IP,
+        "teleop_control_echo": False,
         "checkpoint": None,
         "checkpoint_host_dir": None,
         "zed_resources_host": None,
@@ -81,9 +82,17 @@ def write_default_config(
     robot: Optional[str] = None,
     checkpoint: Optional[str] = None,
     checkpoint_host_dir: Optional[str] = None,
+    teleop_control_echo: Optional[bool] = None,
     overwrite: bool = False,
 ) -> None:
-    if LOCOMOTION_CONFIG_PATH.is_file() and not overwrite and control_source is None and robot is None and checkpoint is None:
+    if (
+        LOCOMOTION_CONFIG_PATH.is_file()
+        and not overwrite
+        and control_source is None
+        and robot is None
+        and checkpoint is None
+        and teleop_control_echo is None
+    ):
         print(f"[ok]  fleet locomotion config already present: {LOCOMOTION_CONFIG_PATH}")
         return
     cfg = load_config() if LOCOMOTION_CONFIG_PATH.is_file() else default_config()
@@ -95,6 +104,8 @@ def write_default_config(
         cfg["checkpoint"] = checkpoint
     if checkpoint_host_dir is not None:
         cfg["checkpoint_host_dir"] = checkpoint_host_dir
+    if teleop_control_echo is not None:
+        cfg["teleop_control_echo"] = teleop_control_echo
     if cfg["control_source"] == "inference" and not cfg.get("checkpoint"):
         print(
             "[err] locomotion control_source=inference requires --locomotion-checkpoint at enroll",
@@ -112,6 +123,10 @@ def _opt_value(args: list[str], name: str) -> str | None:
         if a.startswith(name + "="):
             return a.split("=", 1)[1]
     return None
+
+
+def _has_flag(args: list[str], name: str) -> bool:
+    return name in args
 
 
 def build_hal_argv(extra_args: list[str]) -> list[str]:
@@ -139,13 +154,17 @@ def build_hal_argv(extra_args: list[str]) -> list[str]:
     if checkpoint:
         argv.extend(["--checkpoint", str(checkpoint)])
 
-    skip = {"--control-source", "--robot", "--checkpoint", "--teleop-ip"}
+    echo_flag = "--teleop-control-echo"
+    if _has_flag(extra_args, echo_flag) or bool(cfg.get("teleop_control_echo")):
+        argv.append(echo_flag)
+
+    skip = {"--control-source", "--robot", "--checkpoint", "--teleop-ip", echo_flag}
     passthrough: list[str] = []
     i = 0
     while i < len(extra_args):
         a = extra_args[i]
         if a in skip:
-            i += 2
+            i += 2 if a != echo_flag else 1
             continue
         passthrough.append(a)
         i += 1

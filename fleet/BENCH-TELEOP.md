@@ -68,18 +68,17 @@ mkdir -p ~/zed-resources/resources ~/zed-resources/settings
 ```
 
 **Bench E2E** needs **`--teleop-control-echo`** in the HAL process
-([`test_teleop_e2e.py`](service/tests_e2e/test_teleop_e2e.py)). Override the service
-temporarily or run once:
+([`test_teleop_e2e.py`](service/tests_e2e/test_teleop_e2e.py)). Persist it via
+**`/etc/krabby/locomotion.json`** (read by **`krabby run`** / **`krabby-locomotion.service`**):
 
 ```bash
-sudo systemctl stop krabby-locomotion
-sudo -E env PATH="$PATH" krabby run -- --teleop-control-echo
-# or: edit locomotion.json + restart service after documenting your bench ExecStart override
+sudo jq '.teleop_control_echo = true' /etc/krabby/locomotion.json | sudo tee /etc/krabby/locomotion.json.tmp \
+  && sudo mv /etc/krabby/locomotion.json.tmp /etc/krabby/locomotion.json
+sudo systemctl restart krabby-locomotion
 ```
 
-For a persistent bench with control-echo, use a systemd drop-in or pass
-**`--teleop-control-echo`** on every **`krabby run`** via a small wrapper script in
-**`ExecStart`**.
+New enroll on a bench CI kit: **`krabby enroll --locomotion-teleop-control-echo`**. One-off
+without editing JSON: **`krabby run -- --teleop-control-echo`**.
 
 ```bash
 sudo systemctl enable --now krabby-locomotion
