@@ -40,7 +40,7 @@ Index: [`README.md`](README.md).
 ## Enroll and SSH
 
 - Enroll one Orin: [`ENROLL.md`](ENROLL.md) — needs
-  **`krabby-launcher` ≥ 0.1.17** (`enroll` / `agent` + fleet teleop locomotion defaults)
+  **`krabby-launcher` ≥ 0.1.18** (`enroll` / `agent` + fleet teleop locomotion defaults)
 - One SSH source → one Orin: [`SSH-TUNNEL.md`](SSH-TUNNEL.md)
 - Cognito operators (CLI + Console): [`OPERATORS.md`](OPERATORS.md)
 

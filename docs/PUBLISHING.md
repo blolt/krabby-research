@@ -56,6 +56,27 @@ This document is a short checklist for publishing **krabby‑*** packages to PyP
   2. `compute-parkour-v*`, `controller-v*`, `hal-tools-v*`
   3. `hal-server-isaac-v*`, `hal-server-jetson-v*`
 
+### Before you push a tag (docs and pins)
+
+CI takes the **version from the tag**, but several **human-facing** files still need to match that version **before** you tag and push. PyPI renders each package’s **`readme`** from source at upload time (for `krabby-launcher`, that is [`krabby/README.md`](../krabby/README.md)); stale `pip install '…>=0.1.N'` lines there show up on the project page even when the wheel metadata is newer.
+
+**Every `krabby-v*` release (`krabby-launcher`):**
+
+1. Set `version` in [`krabby/pyproject.toml`](../krabby/pyproject.toml) to the tag version (repo hygiene; CI also overwrites it during the job).
+2. Update the Install example in [`krabby/README.md`](../krabby/README.md) to `pip install 'krabby-launcher>=<tag-version>'`.
+3. Update fleet operator docs that copy the same pin, e.g. [`fleet/ENROLL.md`](../fleet/ENROLL.md), [`fleet/SETUP-FLEET.md`](../fleet/SETUP-FLEET.md), [`fleet/BENCH-TELEOP.md`](../fleet/BENCH-TELEOP.md) (minimum version and install blocks).
+4. If the release changes HAL CLI or fleet teleop behavior, plan the **locomotion image** separately: publish [`krabby-hal-server-jetson`](../hal/server/jetson/) if needed, bump [`images/locomotion/requirements.release.txt`](../images/locomotion/requirements.release.txt), and push a tracked branch so ECR `release-latest` updates — see [`images/locomotion/README.md`](../images/locomotion/README.md). Launcher and locomotion image releases are not the same tag.
+
+**Other PyPI packages:** bump `version` in that package’s `pyproject.toml` and any README install line that names a specific version.
+
+**Quick check** from repo root (replace `0.1.18` with the version you are about to ship):
+
+```bash
+rg "krabby-launcher>=0\.1\.(17|18)|≥ 0\.1\.(17|18)" krabby fleet docs
+```
+
+Fix or intentionally keep any hit before pushing the tag.
+
 ## Testing locally (same as CI)
 
 To run the same build-and-test steps as the publish workflow locally (no tag or PyPI):

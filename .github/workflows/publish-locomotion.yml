@@ -60,6 +60,18 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Pre-push smoke (PyPI pins from requirements.release.txt)
+        run: |
+          set -euo pipefail
+          SMOKE_IMAGE=krabby-locomotion-pypi-smoke:ci
+          docker buildx build \
+            --platform linux/arm64 \
+            -f images/locomotion/Dockerfile.release-pypi-smoke \
+            -t "${SMOKE_IMAGE}" \
+            --load \
+            .
+          docker run --rm "${SMOKE_IMAGE}" --help | grep -q -- '--teleop-ip'
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:

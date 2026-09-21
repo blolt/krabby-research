@@ -17,7 +17,7 @@ SSH pubkey setup for tunnel tests: [`BENCH-SSH.md`](BENCH-SSH.md). Device enroll
 
 ---
 
-## 1. Fleet agent (`krabby-launcher` ≥ 0.1.17)
+## 1. Fleet agent (`krabby-launcher` ≥ 0.1.18)
 
 Install once (PyPI) in a venv; identity lives under **`/etc/krabby/iot/`** after
 enroll — **do not re-enroll** if that directory is intact.
@@ -26,9 +26,9 @@ enroll — **do not re-enroll** if that directory is intact.
 cd ~/projects/krabs/krabby-research   # or any directory for the venv
 python3 -m venv .venv-krabby
 source .venv-krabby/bin/activate
-pip install -U pip && pip install 'krabby-launcher>=0.1.17'
+pip install -U pip && pip install 'krabby-launcher>=0.1.18'
 
-krabby --version    # expect 0.1.17+
+krabby --version    # expect 0.1.18+
 python -c "from krabby.teleop_shim import TeleopSignalingShim; import aiohttp; print('OK')"
 ```
 

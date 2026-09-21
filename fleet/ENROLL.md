@@ -19,11 +19,11 @@ Placeholders: `<region>`, `<thing-name>`. Tip: `export AWS_PAGER=""`.
 ## Install `krabby` on the Orin
 
 `enroll` / `agent` require **`krabby-launcher` ≥ 0.1.16**; fleet teleop boot
-defaults need **≥ 0.1.17**. From PyPI:
+defaults need **≥ 0.1.18**. From PyPI:
 
 ```bash
 python3 -m venv .venv-krabby && source .venv-krabby/bin/activate
-pip install -U pip && pip install 'krabby-launcher>=0.1.17'
+pip install -U pip && pip install 'krabby-launcher>=0.1.18'
 command -v krabby
 krabby --help | grep -E 'enroll|agent'
 ```

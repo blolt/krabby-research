@@ -1,0 +1,14 @@
+# Pre-push gate for publish-locomotion.yml (not pushed to ECR).
+# Installs the exact PyPI pins from requirements.release.txt and runs the HAL
+# entrypoint so import/API skew (e.g. HAL vs krabby-firmware) fails before push.
+
+FROM python:3.12-bookworm
+
+WORKDIR /tmp
+
+COPY images/locomotion/requirements.release.txt /tmp/requirements.release.txt
+
+RUN pip install --no-cache-dir -r /tmp/requirements.release.txt
+
+ENTRYPOINT ["python3", "-m", "hal.server.jetson.main"]
+CMD ["--help"]

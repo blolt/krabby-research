@@ -7,7 +7,7 @@ PyPI package name is `krabby-launcher` (the `krabby` name was already taken); th
 ## Install
 
 ```bash
-pip install 'krabby-launcher>=0.1.17'
+pip install 'krabby-launcher>=0.1.18'
 ```
 
 Fleet onboarding and teleop: [`fleet/ENROLL.md`](../fleet/ENROLL.md),

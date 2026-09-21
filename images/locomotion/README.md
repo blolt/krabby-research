@@ -43,6 +43,14 @@ docker run --rm --gpus all \
 
 Installs Krabby packages from PyPI with pinned versions. Bundled with `avrdude`, `arduino-cli` (Mega 2560 core, same pin as firmware CI), and `krabby-firmware` so MCU flashing works from inside the container without host-side flash tools.
 
+**Pre-push gate:** [`.github/workflows/publish-locomotion.yml`](../../.github/workflows/publish-locomotion.yml) builds [`Dockerfile.release-pypi-smoke`](Dockerfile.release-pypi-smoke) (PyPI pins only, no ECR push) and runs `python -m hal.server.jetson.main --help` before the production image is pushed. Reproduce locally:
+
+```bash
+docker buildx build --platform linux/arm64 \
+  -f images/locomotion/Dockerfile.release-pypi-smoke -t krabby-locomotion-pypi-smoke --load .
+docker run --rm krabby-locomotion-pypi-smoke --help | grep teleop-ip
+```
+
 ### Pulling from ECR Public
 
 No AWS credentials required — ECR Public allows anonymous pulls.
