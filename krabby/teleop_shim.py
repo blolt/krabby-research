@@ -31,8 +31,12 @@ DEFAULT_WS_PATH = "/ws/robot"
 # Bound pending cloud→robot frames while the edge agent is reconnecting.
 _PENDING_MAX = 64
 
-# awscrt.mqtt.QoS.AT_LEAST_ONCE — avoid importing awscrt at module load (tests).
-_QOS_AT_LEAST_ONCE = 1
+def _await_crt(op: Any, *, timeout: float = 10.0) -> None:
+    """Block on awscrt ``publish``/``subscribe`` (``Future`` or ``(Future, packet_id)``)."""
+    if op is None:
+        return
+    future = op[0] if isinstance(op, tuple) else op
+    future.result(timeout=timeout)
 
 
 def signaling_in_topic(thing_name: str) -> str:
@@ -79,6 +83,7 @@ class TeleopSignalingShim:
         self._pending: Deque[str] = collections.deque(maxlen=_PENDING_MAX)
         self._lock = threading.Lock()
         self._start_error: BaseException | None = None
+        self._qos_at_least_once: Any = None
 
     @property
     def ws_url(self) -> str:
@@ -98,11 +103,20 @@ class TeleopSignalingShim:
         self._out_topic = signaling_out_topic(thing_name)
         in_topic = signaling_in_topic(thing_name)
 
-        connection.subscribe(
-            topic=in_topic,
-            qos=_QOS_AT_LEAST_ONCE,
-            callback=self._on_mqtt_in,
-        )
+        from awscrt import mqtt
+
+        self._qos_at_least_once = mqtt.QoS.AT_LEAST_ONCE
+        try:
+            _await_crt(
+                connection.subscribe(
+                    topic=in_topic,
+                    qos=self._qos_at_least_once,
+                    callback=self._on_mqtt_in,
+                ),
+                timeout=30.0,
+            )
+        except Exception as exc:
+            raise RuntimeError(f"teleop signaling subscribe failed topic={in_topic}: {exc}") from exc
         print(f"[ok]  subscribed to {in_topic}")
 
         self._thread = threading.Thread(
@@ -147,6 +161,8 @@ class TeleopSignalingShim:
         except UnicodeDecodeError:
             print(f"[err] teleop signaling/in: non-utf8 payload on {topic}", file=sys.stderr)
             return
+        preview = text[:120].replace("\n", " ")
+        print(f"[ok]  teleop signaling/in topic={topic} bytes={len(payload)}: {preview}", flush=True)
         self._maybe_cold_start_locomotion()
         loop = self._loop
         if loop is None or not loop.is_running():
@@ -173,14 +189,26 @@ class TeleopSignalingShim:
     def _publish_out(self, text: str) -> None:
         if self._connection is None or self._out_topic is None:
             return
+        preview = text[:120].replace("\n", " ")
         try:
-            self._connection.publish(
-                topic=self._out_topic,
-                payload=text,
-                qos=_QOS_AT_LEAST_ONCE,
+            _await_crt(
+                self._connection.publish(
+                    topic=self._out_topic,
+                    payload=text,
+                    qos=self._qos_at_least_once,
+                ),
+                timeout=10.0,
+            )
+            print(
+                f"[ok]  teleop signaling/out topic={self._out_topic} bytes={len(text.encode('utf-8'))}: {preview}",
+                flush=True,
             )
         except Exception as exc:
-            print(f"[err] teleop signaling/out publish failed: {exc}", file=sys.stderr)
+            print(
+                f"[err] teleop signaling/out publish failed topic={self._out_topic}: {exc}",
+                file=sys.stderr,
+                flush=True,
+            )
 
     def _thread_main(self) -> None:
         try:
@@ -221,6 +249,7 @@ class TeleopSignalingShim:
             if prev is not None and not prev.closed:
                 await prev.close()
             shim._robot_ws = ws
+            print(f"[ok]  teleop edge WebSocket connected ({shim.ws_url})", flush=True)
 
             with shim._lock:
                 pending = list(shim._pending)
@@ -242,6 +271,7 @@ class TeleopSignalingShim:
             finally:
                 if shim._robot_ws is ws:
                     shim._robot_ws = None
+                    print("[ok]  teleop edge WebSocket disconnected", flush=True)
             return ws
 
         app = web.Application()
