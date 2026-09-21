@@ -62,6 +62,9 @@
     document.body.setAttribute('data-teleop-phase', phase);
   }
   var params = new URLSearchParams(location.search);
+  var e2eMode = params.get('e2e') === '1';
+  var forceRelayIce =
+    e2eMode || params.get('ice') === 'relay';
   var token = params.get('token') || (typeof window.TELEOP_ACCESS_TOKEN === 'string' ? window.TELEOP_ACCESS_TOKEN : '');
   var qs = token ? '?token=' + encodeURIComponent(token) : '';
   var httpProto = location.protocol === 'https:' ? 'https:' : 'http:';
@@ -814,6 +817,9 @@
 
   /** Matches checked count, or ``1`` recvonly line when none checked (robot picks its default camera). */
   function rtcRecvonlyVideoLineCount() {
+    if (e2eMode) {
+      return 1;
+    }
     var ids = readCatalogIdsArray();
     return ids.length > 0 ? ids.length : 1;
   }
@@ -860,7 +866,11 @@
     }
     setConnectionStatus('Negotiating WebRTC...');
 
-    pc = new RTCPeerConnection({ iceServers: stunTurnServers });
+    var pcConfig = { iceServers: stunTurnServers };
+    if (forceRelayIce) {
+      pcConfig.iceTransportPolicy = 'relay';
+    }
+    pc = new RTCPeerConnection(pcConfig);
     pc.ondatachannel = function (ev) {
       attachTelemetryChannel(ev.channel);
     };
@@ -1108,6 +1118,8 @@
         pcSignalingState: pc ? pc.signalingState : 'none',
         controlDcReadyState: controlDc ? controlDc.readyState : 'none',
         videoTiles: videosEl ? videosEl.querySelectorAll('video').length : 0,
+        forceRelayIce: forceRelayIce,
+        iceServerCount: stunTurnServers ? stunTurnServers.length : 0,
         statusHistory: statusHistory.slice(),
       };
     },

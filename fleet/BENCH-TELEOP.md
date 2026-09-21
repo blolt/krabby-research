@@ -119,6 +119,11 @@ docker logs -f krabby    # container name krabby
 
 **Success in HAL logs:** `Teleop outbound signaling started` → **`ws://127.0.0.1:9000/ws/robot`**
 
+Optional **robot-side coturn** (when CI uses relay-only ICE and the bench is behind
+strict NAT): set on the locomotion container host before restart — same REST secret
+as fleet coturn (`KRABBY_TELEOP_TURN_HOST`, `KRABBY_TELEOP_TURN_AUTH_SECRET`).
+HAL reads these at startup via `teleop.edge.robot_settings`.
+
 ---
 
 ## 3. Common misconfigurations

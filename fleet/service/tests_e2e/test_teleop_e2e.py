@@ -29,9 +29,10 @@ MQTT_IDLE_SECS = float(os.environ.get("TELEOP_E2E_MQTT_IDLE_SECS", "8"))
 
 
 def _viewer_url(thing: str, token: str) -> str:
+    # e2e=1: TURN relay-only ICE (GitHub Actions cannot reach bench host candidates).
     return (
         f"{FLEET_PORTAL_URL}/teleop/viewer.html"
-        f"?thing={quote(thing)}&token={quote(token)}"
+        f"?thing={quote(thing)}&e2e=1&token={quote(token)}"
     )
 
 
@@ -145,8 +146,12 @@ def _format_diagnostic_timeline(timeline: list[tuple[float, Any | None]]) -> str
 
 def _assert_no_bad_webrtc_sequence(diag: dict[str, Any], timeline: list[tuple[float, Any | None]]) -> None:
     if diag.get("webrtcFailed"):
+        relay = diag.get("forceRelayIce")
+        turn_n = diag.get("iceServerCount")
         raise AssertionError(
-            "WebRTC ICE/connection entered failed state (fast-fail).\n"
+            "WebRTC ICE/connection entered failed state (fast-fail). "
+            f"forceRelayIce={relay!r} iceServerCount={turn_n!r} — "
+            "verify coturn on fleet host and GET /api/teleop/ice-servers returns TURN.\n"
             f"{_format_diagnostic_timeline(timeline)}"
         )
     if diag.get("playingLabelWhileNotLive"):
