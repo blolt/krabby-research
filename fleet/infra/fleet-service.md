@@ -39,11 +39,14 @@ Requires `ControlPlaneStack` to already be deployed (its `IotAtsEndpoint`
 export must exist). See [README.md](README.md) for the shared deploy-script
 behavior (credential checks, identity confirmation prompt).
 
-After `cdk deploy` finishes, the script pushes **both** `fleet/service` and
-`fleet/portal` onto the instance via SSM `AWS-RunShellScript` and restarts
-`krabby-fleet-service`, `krabby-fleet-portal`, `krabby-coturn`, and `caddy` —
-there's no SSH access to this box (see `FleetServiceSecurityGroup` below), so
-this replaces what would otherwise be an `scp` + remote install step.
+After `cdk deploy` finishes, the script calls
+[`scripts/push-fleet-apps.sh`](scripts/push-fleet-apps.sh), which pushes **both**
+`fleet/service` and `fleet/portal` onto the instance via SSM
+`AWS-RunShellScript` and restarts `krabby-fleet-service`,
+`krabby-fleet-portal`, `krabby-coturn`, and `caddy` — there's no SSH access to
+this box (see `FleetServiceSecurityGroup` below), so this replaces what would
+otherwise be an `scp` + remote install step. `fleet-deploy.yml` uses the same
+push script after a combined `cdk deploy ControlPlaneStack FleetServiceStack`.
 
 On the instance the portal zip is `npm ci` + `npm run build`'d into a Next.js
 standalone tree under `/opt/krabby-fleet-portal`, and
