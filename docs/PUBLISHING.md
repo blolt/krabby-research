@@ -17,6 +17,7 @@ This document is a short checklist for publishing **krabby‑*** packages to PyP
 | `hal-tools-v*` | krabby-hal-tools |
 | `hal-server-isaac-v*` | krabby-hal-server-isaac |
 | `hal-server-jetson-v*` | krabby-hal-server-jetson |
+| `teleop-edge-v*` | krabby-teleop-edge |
 | `bench-v*` | krabby-bench |
 
 > **Note:** More specific patterns override generic ones. For example, `hal-server-isaac-v0.1.0` → `krabby-hal-server-isaac`, not `krabby-hal-server`.
@@ -54,7 +55,7 @@ This document is a short checklist for publishing **krabby‑*** packages to PyP
 - **Publish in dependency order** so dependents can install from PyPI:
   1. `hal-client-v*`, `hal-server-v*`, `firmware-v*`, `krabby-v*`, `bench-v*` (no internal deps)
   2. `compute-parkour-v*`, `controller-v*`, `hal-tools-v*`
-  3. `hal-server-isaac-v*`, `hal-server-jetson-v*`
+  3. `hal-server-isaac-v*`, `hal-server-jetson-v*`, `teleop-edge-v*` (required in the locomotion image for fleet `--teleop-ip`)
 
 ### Before you push a tag (docs and pins)
 

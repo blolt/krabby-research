@@ -116,7 +116,7 @@ krabby-controller==0.1.2
 krabby-firmware==0.2.9
 ```
 
-`krabby-data-collection` and `krabby-teleop-edge` are not yet published to PyPI and are excluded from the production image.
+`krabby-data-collection` is not yet published to PyPI and is excluded from the production image. Fleet teleop requires **`krabby-teleop-edge`** (pinned in `requirements.release.txt`).
 
 ### Bumping Pins
 
