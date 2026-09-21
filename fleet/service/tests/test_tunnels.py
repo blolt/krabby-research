@@ -63,4 +63,6 @@ def test_healthz_needs_no_auth():
     app.dependency_overrides.clear()
     resp = TestClient(app).get("/healthz")
     assert resp.status_code == 200
-    assert resp.json() == {"status": "ok"}
+    body = resp.json()
+    assert body["status"] == "ok"
+    assert body.get("mqttConnected") is True
