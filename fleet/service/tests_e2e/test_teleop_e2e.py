@@ -219,18 +219,34 @@ def _poll_teleop(
                 return timeline
         time.sleep(0.25)
     last = timeline[-1][1] if timeline else None
+    extra = ""
+    if "last_control" in step and last:
+        extra = f"\n(hint: bench needs teleop_control_echo in locomotion.json / HAL --teleop-control-echo)"
     raise AssertionError(
         f"teleop E2E: {step} not satisfied within {timeout_s:.0f}s\n"
         f"{_format_diagnostic_timeline(timeline)}\n"
-        f"last statusHistory={last.get('statusHistory') if last else None!r}"
+        f"last statusHistory={last.get('statusHistory') if last else None!r}{extra}"
     )
 
 
 def _teleop_failure_context(page: Any, mqtt_sniffer: _MqttSniffer) -> str:
     diag = page.evaluate(_TELEOP_DIAG_JS)
+    tel = page.evaluate(
+        """() => (
+      window.__krabbyTeleop && window.__krabbyTeleop.getLastTelemetry
+        ? window.__krabbyTeleop.getLastTelemetry()
+        : null
+    )"""
+    )
     nin, nout = mqtt_sniffer.count_since(0)
+    tel_line = ""
+    if isinstance(tel, dict):
+        tel_line = f"viewer getLastTelemetry last_control={tel.get('last_control')!r}\n"
+    elif tel is not None:
+        tel_line = f"viewer getLastTelemetry={tel!r}\n"
     return (
         f"viewer getDiagnostics={diag!r}\n"
+        f"{tel_line}"
         f"mqtt signaling since test start: in={nin} out={nout}\n"
         "Bench needs krabby-agent teleop shim :9000 and HAL edge with "
         "--teleop-ip 127.0.0.1 (--teleop-control-echo for control-ack assertion). "

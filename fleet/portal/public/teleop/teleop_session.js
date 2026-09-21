@@ -63,6 +63,8 @@
   }
   var params = new URLSearchParams(location.search);
   var e2eMode = params.get('e2e') === '1';
+  /** When set (E2E ``sendMotionSafeControl``), 50 Hz loop keeps RS high for telemetry echo. */
+  var e2ePinnedControlState = null;
   /** Manual/debug only — ``e2e=1`` does not force relay (breaks ICE in headless CI). */
   var forceRelayIce = params.get('ice') === 'relay';
   var token = params.get('token') || (typeof window.TELEOP_ACCESS_TOKEN === 'string' ? window.TELEOP_ACCESS_TOKEN : '');
@@ -604,6 +606,9 @@
   }
 
   function readGamepadState() {
+    if (e2eMode && e2ePinnedControlState) {
+      return e2ePinnedControlState;
+    }
     if (!operatorOverrideEnabled()) {
       return copyNeutralControllerState();
     }
@@ -1167,15 +1172,19 @@
       if (!controlDc || controlDc.readyState !== 'open') {
         return false;
       }
+      var motionSafe = {
+        LT: false, LB: false, LS: false, RS: true, RT: false, RB: false,
+        LX: 0.0, LY: 0.0, RX: 0.0, RY: 0.0
+      };
+      if (e2eMode) {
+        e2ePinnedControlState = motionSafe;
+      }
       controlDc.send(
         JSON.stringify({
           type: 'control',
           sent_browser_ms: Date.now(),
           operator_override: false,
-          state: {
-            LT: false, LB: false, LS: false, RS: true, RT: false, RB: false,
-            LX: 0.0, LY: 0.0, RX: 0.0, RY: 0.0
-          }
+          state: motionSafe
         })
       );
       return true;
