@@ -17,9 +17,13 @@ aws cloudformation describe-stacks --stack-name FleetServiceStack \
 
 Set `[ci].operator_username` to the CI operator’s Cognito email (sign-in alias).
 Set `[ci].github_actions_role_arn` from the `FleetGitHubActionsRoleArn` stack output
-after deploy (OIDC role for `fleet-ci.yml` / `fleet-deploy.yml`).
+after deploy (OIDC role for `fleet-ci.yml` / `fleet-deploy.yml` /
+`fleet-ci-rotate-cognito.yml`).
 `[deploy]` holds non-secret CDK context for `fleet-deploy.yml` (hosted zone,
 GitHub OIDC trust, bootstrap qualifier); `domainName` comes from `[fleet].domain`.
+
+CI password rotation: `python -m krabby_fleet_config.rotate_ci_password` (see
+[`OPERATORS.md`](../OPERATORS.md) and the rotate workflow).
 
 ## Python client
 

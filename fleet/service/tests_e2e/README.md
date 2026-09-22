@@ -16,7 +16,8 @@ settings come from committed [`../config/fleet.toml`](../config/fleet.toml)
 | Source | What |
 |--------|------|
 | `fleet/config/fleet.toml` | URLs, region, Cognito pool/client IDs, bench thing name, CI operator email |
-| GitHub secret `COGNITO_CI_PASSWORD` | CI operator password only |
+| GitHub secret `COGNITO_CI_PASSWORD` | CI operator password only (rotated by `fleet-ci-rotate-cognito.yml`) |
+| GitHub secret `FLEET_CI_SECRETS_PAT` | PAT used only by the rotate workflow to update `COGNITO_CI_PASSWORD` |
 | GitHub secret `BENCH_CI_SSH_PRIVATE_KEY` | Ed25519 private key for SSH login as `operator` on the bench (see [`../../BENCH-SSH.md`](../../BENCH-SSH.md)) |
 | Env vars | Optional overrides of any committed value |
 
