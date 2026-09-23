@@ -12,6 +12,7 @@ Non-secret settings come from committed [`../config/fleet.toml`](../config/fleet
 export BENCH_E2E=1
 # optional overrides:
 export SHADOW_MAX_AGE_SECS=180
+export TUNNEL_E2E_DEBUG=1   # optional: live stderr during waits; failures always include poll trace
 ```
 
 AWS credentials must allow: `iot:SearchIndex`, `iot:GetThingShadow`,

@@ -12,6 +12,7 @@
 #include "src/imu/imu_calibrator.h"
 #include "src/imu/lsm6dso_adapter.h"
 #include "src/display/ssd1306_adapter.h"
+#include "src/display/display_renderer.h"
 #include "src/display/display_frame_model.h"
 #include "board_pins.h"
 #include "eeprom_layout.h"
@@ -42,6 +43,7 @@ ControllerFreshnessTracker controllerFreshnessTrackers[BOARD_ROLE_COUNT];
 ActuatorStatus latestActuatorStatus[ActuatorId::ActuatorCount];
 ImuMeasurement imuMeasurement;
 Ssd1306Adapter oledDisplay(Wire);
+DisplayRenderer<Ssd1306Adapter> oledRenderer(oledDisplay);
 unsigned long lastOledDrawMilliseconds = 0;
 constexpr unsigned long OLED_REDRAW_INTERVAL_MILLISECONDS = 250;
 
@@ -649,7 +651,7 @@ void setup()
         digitalWrite(STATUS_LED_PIN, LOW);
         imuSetup();
         powerMonitorSetup();
-        if (!oledDisplay.initialize())
+        if (!oledRenderer.initialize())
             Serial.println(F("OLED: initialization failed at 0x3D."));
     }
 
@@ -744,12 +746,18 @@ void loop()
         }
         else if (cmdType == 'J')
         {
+            // Host format is J<name> <pwm> (no space after J). Skip any spaces so a
+            // legacy "J <name> <pwm>" forward still parses instead of yielding an
+            // empty name / pwm 0 (which left followers dead while FRONT still jogged).
             mainSerial->read();
+            while (mainSerial->available() && mainSerial->peek() == ' ')
+                mainSerial->read();
             String name = mainSerial->readStringUntil(' ');
             int pwm = mainSerial->readStringUntil('\n').toInt();
             actuatorManager->handleJog(name, pwm);
-            if (leftSerial)  { leftSerial->print("J ");  leftSerial->print(name);  leftSerial->print(" ");  leftSerial->println(pwm); }
-            if (rightSerial) { rightSerial->print("J "); rightSerial->print(name); rightSerial->print(" "); rightSerial->println(pwm); }
+            // Forward in the same J<name> <pwm> shape the host uses.
+            if (leftSerial)  { leftSerial->print("J");  leftSerial->print(name);  leftSerial->print(" ");  leftSerial->println(pwm); }
+            if (rightSerial) { rightSerial->print("J"); rightSerial->print(name); rightSerial->print(" "); rightSerial->println(pwm); }
         }
         else if (cmdType == 'C')
         {
@@ -854,7 +862,7 @@ void loop()
             nowMilliseconds - lastOledDrawMilliseconds >= OLED_REDRAW_INTERVAL_MILLISECONDS)
         {
             lastOledDrawMilliseconds = nowMilliseconds;
-            oledDisplay.render(displayFrame);
+            oledRenderer.render(displayFrame);
         }
     }
 

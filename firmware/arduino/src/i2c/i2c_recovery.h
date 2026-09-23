@@ -26,7 +26,7 @@ public:
     }
 
     // True when the caller should attempt reinitialization.
-    bool noteFailure(uint32_t nowMs, const I2cRecoveryLimits &limits)
+    bool shouldAttemptRecovery(uint32_t nowMs, const I2cRecoveryLimits &limits)
     {
         if (badTicks_ < 255)
             ++badTicks_;

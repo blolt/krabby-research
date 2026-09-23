@@ -40,7 +40,7 @@ Index: [`README.md`](README.md).
 ## Enroll and SSH
 
 - Enroll one Orin: [`ENROLL.md`](ENROLL.md) — needs
-  **`krabby-launcher` ≥ 0.1.16** (first release with `enroll` / `agent`)
+  **`krabby-launcher` ≥ 0.1.22** (`enroll` / `agent`, fleet teleop signaling, bench `teleop_control_echo`)
 - One SSH source → one Orin: [`SSH-TUNNEL.md`](SSH-TUNNEL.md)
 - Cognito operators (CLI + Console): [`OPERATORS.md`](OPERATORS.md)
 
@@ -169,6 +169,12 @@ const pc = new RTCPeerConnection({
 3. Complete signaling as usual. The session should still connect; `chrome://webrtc-internals`
    (or Firefox `about:webrtc`) should show selected candidate type `relay`.
 
+## Field teleop readiness
+
+Enrolled robots: what must stay up for remote **Open teleop** to work, and how that
+differs from default **`krabby run`** gamepad boot — see [`FIELD-TELEOP.md`](FIELD-TELEOP.md).
+Bench CI uses the same signaling path with extra test flags: [`BENCH-TELEOP.md`](BENCH-TELEOP.md).
+
 ## Dual-robot teleop (public internet)
 
 Two enrolled Orins must work concurrently from an operator SSH source on the
@@ -184,6 +190,9 @@ sudo -E env PATH="$PATH" krabby enroll --thing-name <thing-name>
 # (agent already bridges MQTT ↔ ws://127.0.0.1:9000/ws/robot)
 python -m hal.server.jetson.main --control-source portal --teleop-ip 127.0.0.1
 ```
+
+For the **bench Orin** used in CI, use the always-on agent + HAL procedure in
+[`BENCH-TELEOP.md`](BENCH-TELEOP.md) (detached Docker, `--teleop-control-echo`).
 
 No extra fleet registration steps: enroll attaches the thing; the portal
 lists it via Fleet Indexing.

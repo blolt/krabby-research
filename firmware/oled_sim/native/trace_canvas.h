@@ -11,6 +11,12 @@ class TraceCanvas
 public:
     explicit TraceCanvas(FILE *out) : out_(out) {}
 
+    // No hardware to recover, probe or flush.
+    bool isInitialized() const { return true; }
+    bool recover() { return true; }
+    bool isResponding() { return true; }
+    void display() {}
+
     void useStatusFont() { fprintf(out_, "font 5x7\n"); }
     void erase() { fprintf(out_, "erase\n"); }
 

@@ -46,7 +46,10 @@ def main() -> None:
     p_update.add_argument("--image", metavar="REF", help="Image ref to update to")
 
     # run
-    p_run = sub.add_parser("run", help="Start the locomotion stack (HAL server + gamepad client + controller)")
+    p_run = sub.add_parser(
+        "run",
+        help="Start locomotion (fleet-enrolled: HAL + teleop to agent shim; else gamepad stack)",
+    )
     p_run.add_argument("--image", metavar="REF", help="Image ref to run")
     p_run.add_argument("--entrypoint", metavar="CMD", help="Override container entrypoint (inference/custom path)")
     p_run.add_argument("--gamepad-only", action="store_true", help="Explicitly launch the gamepad stack (same as the default `krabby run`)")
@@ -62,6 +65,31 @@ def main() -> None:
     p_enroll = sub.add_parser("enroll", help="One-time fleet onboarding: provision IoT identity and enable krabby-agent")
     p_enroll.add_argument("--thing-name", metavar="NAME", help="IoT thing name (default: wired MAC address)")
     p_enroll.add_argument("--endpoint", metavar="HOST", help="IoT Core ATS endpoint (default: resolved from account)")
+    p_enroll.add_argument(
+        "--locomotion-control-source",
+        choices=("portal", "inference"),
+        help="Fleet HAL mode written to /etc/krabby/locomotion.json (default: portal)",
+    )
+    p_enroll.add_argument(
+        "--locomotion-robot",
+        choices=("hex", "go2"),
+        help="Robot definition for fleet locomotion (default: hex)",
+    )
+    p_enroll.add_argument(
+        "--locomotion-checkpoint",
+        metavar="PATH",
+        help="Container checkpoint path (required when --locomotion-control-source inference)",
+    )
+    p_enroll.add_argument(
+        "--locomotion-checkpoint-host-dir",
+        metavar="DIR",
+        help="Host directory mounted at /workspace/checkpoints",
+    )
+    p_enroll.add_argument(
+        "--locomotion-teleop-control-echo",
+        action="store_true",
+        help="Set teleop_control_echo in locomotion.json (bench E2E control ack; default off)",
+    )
 
     # agent
     sub.add_parser("agent", help="Run the always-on IoT Core MQTT client (normally started by krabby-agent.service)")
@@ -94,7 +122,15 @@ def main() -> None:
 
     elif args.command == "enroll":
         from krabby.enroll import cmd_enroll
-        cmd_enroll(thing_name=args.thing_name, endpoint=args.endpoint)
+        cmd_enroll(
+            thing_name=args.thing_name,
+            endpoint=args.endpoint,
+            locomotion_control_source=args.locomotion_control_source,
+            locomotion_robot=args.locomotion_robot,
+            locomotion_checkpoint=args.locomotion_checkpoint,
+            locomotion_checkpoint_host_dir=args.locomotion_checkpoint_host_dir,
+            locomotion_teleop_control_echo=args.locomotion_teleop_control_echo,
+        )
 
     elif args.command == "agent":
         from krabby.agent import cmd_agent

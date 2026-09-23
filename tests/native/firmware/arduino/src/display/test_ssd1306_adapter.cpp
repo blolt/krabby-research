@@ -1,6 +1,7 @@
 #include "unity.h"
 #include "environment.h"
 #include "src/display/ssd1306_adapter.h"
+#include "src/display/display_renderer.h"
 #include <algorithm>
 #include <vector>
 
@@ -8,6 +9,18 @@ using namespace oled_native;
 
 static TwoWire testWire(environment.bus);
 static constexpr uint8_t NACK = 2, TIMEOUT = 5;
+
+struct TestDisplay
+{
+    Ssd1306Adapter canvas;
+    DisplayRenderer<Ssd1306Adapter> renderer;
+    explicit TestDisplay(TwoWire &wire) : canvas(wire), renderer(canvas) {}
+    bool initialize() { return renderer.initialize(); }
+    bool isInitialized() const { return canvas.isInitialized(); }
+    bool render(const DisplayFrame &frame) { return renderer.render(frame); }
+    void invalidate() { renderer.invalidate(); }
+};
+
 
 void setUp() { oled_native::reset(); }
 void tearDown()
@@ -46,7 +59,7 @@ static void events(std::initializer_list<Event> expected)
 // Outcome of the next empty transaction: the adapter's probes and the library's pings
 // share one queue in bus order. Unscripted ones ACK.
 static void ping(uint8_t status = 0) { environment.panel.pings.push_back(status); }
-static void init(Ssd1306Adapter &adapter, bool succeeds = true)
+static void init(TestDisplay &adapter, bool succeeds = true)
 {
     if (!succeeds) ping(NACK);
     TEST_ASSERT_EQUAL_INT(succeeds, adapter.initialize());
@@ -67,34 +80,31 @@ static void transferSuffix()
     TEST_ASSERT_EQUAL_UINT(1, dataAt(400000));
     TEST_ASSERT_EQUAL_UINT32(100000, environment.bus.clock);
 }
-static void waitTwo(Ssd1306Adapter &adapter, const DisplayFrame &frame)
+static void waitTwo(TestDisplay &adapter, const DisplayFrame &frame)
 { TEST_ASSERT_FALSE(adapter.render(frame)); TEST_ASSERT_FALSE(adapter.render(frame)); }
 
 static void test_canvas_forwards_driver_operations_and_results()
 {
-    Ssd1306Canvas canvas(testWire);
-    ping(NACK); TEST_ASSERT_FALSE(canvas.begin());
-    TEST_ASSERT_TRUE(canvas.begin());
+    Ssd1306Adapter canvas(testWire);
+    ping(NACK); TEST_ASSERT_FALSE(canvas.initialize());
+    TEST_ASSERT_TRUE(canvas.initialize());
     events({{"ping",{2},""},{"ping",{0},""},{"setup",{},""},{"data",{100000},""}});
     TEST_ASSERT_TRUE(environment.panel.isOn());
     // Once initialized, the library's begin returns true without touching the bus.
-    environment.events.clear(); TEST_ASSERT_TRUE(canvas.begin());
+    environment.events.clear(); TEST_ASSERT_TRUE(canvas.initialize());
     TEST_ASSERT_TRUE(environment.events.empty());
-    ping(NACK); TEST_ASSERT_FALSE(canvas.reset());
-    TEST_ASSERT_TRUE(canvas.reset());
-    events({{"ping",{2},""},{"ping",{0},""},{"setup",{},""},{"data",{100000},""}});
     environment.events.clear();
     canvas.useStatusFont(); canvas.pixel(3,9); canvas.display();
-    events({{"data",{100000},""}});
+    events({{"clock",{400000},""},{"data",{400000},""},{"clock",{100000},""}});
     TEST_ASSERT_TRUE(environment.panel.pixel(3,9));
     environment.events.clear(); canvas.erase(); canvas.display();
-    events({{"data",{100000},""}});
+    events({{"clock",{400000},""},{"data",{400000},""},{"clock",{100000},""}});
     TEST_ASSERT_FALSE(environment.panel.pixel(3,9));
 }
 static void test_canvas_draw_arguments_and_coordinate_conversion()
 {
-    Ssd1306Canvas canvas(testWire);
-    TEST_ASSERT_TRUE(canvas.begin());
+    Ssd1306Adapter canvas(testWire);
+    TEST_ASSERT_TRUE(canvas.initialize());
     // Arguments narrow to uint8_t, so these wrap back onto the panel.
     canvas.pixel(258,259);
     canvas.line(257,266,261,266);
@@ -120,7 +130,7 @@ static void test_canvas_draw_arguments_and_coordinate_conversion()
 }
 static void test_initialize_success_and_failure()
 {
-    Ssd1306Adapter adapter(testWire); TEST_ASSERT_FALSE(adapter.isInitialized());
+    TestDisplay adapter(testWire); TEST_ASSERT_FALSE(adapter.isInitialized());
     init(adapter,false); events({{"ping",{2},""}});
     environment.events.clear(); init(adapter);
     events({{"ping",{0},""},{"setup",{},""},{"data",{100000},""}});
@@ -130,7 +140,7 @@ static void test_initialize_success_and_failure()
 }
 static void test_first_unchanged_changed_and_invalidated_frames()
 {
-    Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter);
+    TestDisplay adapter(testWire); DisplayFrame frame; init(adapter);
     environment.events.clear(); TEST_ASSERT_TRUE(adapter.render(frame)); transferSuffix();
     const auto full = environment.panel.ram();
     environment.events.clear(); TEST_ASSERT_FALSE(adapter.render(frame));
@@ -142,14 +152,14 @@ static void test_first_unchanged_changed_and_invalidated_frames()
     environment.events.clear(); adapter.invalidate(); TEST_ASSERT_TRUE(adapter.render(frame)); transferSuffix();
     TEST_ASSERT_TRUE(environment.panel.ram() == changed);
     // A fresh adapter clears the panel and draws the same frame identically.
-    Ssd1306Adapter fresh(testWire); init(fresh);
+    TestDisplay fresh(testWire); init(fresh);
     TEST_ASSERT_TRUE(environment.panel.ram() != changed);
     environment.events.clear(); TEST_ASSERT_TRUE(fresh.render(frame));
     TEST_ASSERT_TRUE(environment.panel.ram() == changed);
 }
 static void test_disconnection_stops_drawing_even_for_unchanged_frame()
 {
-    Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter); TEST_ASSERT_TRUE(adapter.render(frame));
+    TestDisplay adapter(testWire); DisplayFrame frame; init(adapter); TEST_ASSERT_TRUE(adapter.render(frame));
     environment.events.clear(); ping(NACK); TEST_ASSERT_FALSE(adapter.render(frame));
     TEST_ASSERT_FALSE(adapter.isInitialized()); noDrawing();
     TEST_ASSERT_EQUAL_UINT(1,count("ping"));
@@ -157,7 +167,7 @@ static void test_disconnection_stops_drawing_even_for_unchanged_frame()
 }
 static void test_reset_recovery_redraws_same_frame()
 {
-    Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter); TEST_ASSERT_TRUE(adapter.render(frame));
+    TestDisplay adapter(testWire); DisplayFrame frame; init(adapter); TEST_ASSERT_TRUE(adapter.render(frame));
     const auto full = environment.panel.ram();
     ping(NACK); TEST_ASSERT_FALSE(adapter.render(frame)); TEST_ASSERT_FALSE(adapter.render(frame));
     environment.events.clear();
@@ -174,7 +184,7 @@ static void test_failed_reset_and_retry_boundary_with_rollover()
     for (uint64_t start : {uint64_t(0), uint64_t(UINT32_MAX)-499})
     {
         tearDown(); oled_native::reset(); at(start);
-        Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter,false); environment.events.clear();
+        TestDisplay adapter(testWire); DisplayFrame frame; init(adapter,false); environment.events.clear();
         waitTwo(adapter,frame); TEST_ASSERT_TRUE(environment.events.empty());
         // The probe answers but the library's reset ping does not.
         ping(0); ping(NACK); TEST_ASSERT_FALSE(adapter.render(frame));
@@ -187,7 +197,7 @@ static void test_failed_reset_and_retry_boundary_with_rollover()
 }
 static void test_nack_does_not_clear_bus_and_stale_timeout_is_cleared()
 {
-    Ssd1306Adapter adapter(testWire); DisplayFrame frame; waitTwo(adapter,frame);
+    TestDisplay adapter(testWire); DisplayFrame frame; waitTwo(adapter,frame);
     environment.bus.timeout = true; ping(NACK); TEST_ASSERT_FALSE(adapter.render(frame));
     events({{"clearTimeout",{},""},{"ping",{2},""},{"getTimeout",{0},""}});
     TEST_ASSERT_FALSE(adapter.isInitialized()); noDrawing();
@@ -195,7 +205,7 @@ static void test_nack_does_not_clear_bus_and_stale_timeout_is_cleared()
 static void test_timeout_recovery_on_free_bus()
 {
     // A failed initialize leaves the library holding the bus its reset needs.
-    Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter,false);
+    TestDisplay adapter(testWire); DisplayFrame frame; init(adapter,false);
     environment.events.clear(); waitTwo(adapter,frame);
     ping(TIMEOUT);
     TEST_ASSERT_TRUE(adapter.render(frame));
@@ -209,7 +219,7 @@ static void test_timeout_recovery_on_free_bus()
 }
 static void test_timeout_bus_clear_and_stop_sequence()
 {
-    Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter,false);
+    TestDisplay adapter(testWire); DisplayFrame frame; init(adapter,false);
     waitTwo(adapter,frame);
     environment.sda = {0,0,0,1,1}; ping(TIMEOUT);
     TEST_ASSERT_TRUE(adapter.render(frame));
@@ -228,7 +238,7 @@ static void test_post_clear_probe_reset_and_final_probe_failures()
     for(int failure=0;failure<3;++failure)
     {
         tearDown(); oled_native::reset();
-        Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter,false);
+        TestDisplay adapter(testWire); DisplayFrame frame; init(adapter,false);
         environment.events.clear(); waitTwo(adapter,frame);
         // In bus order: the timed-out probe, the post-clear probe, the reset ping, the final probe.
         ping(TIMEOUT); ping(failure==0?NACK:0);
@@ -242,7 +252,7 @@ static void test_post_clear_probe_reset_and_final_probe_failures()
 }
 static void test_stuck_bus_latches_and_recovers_after_release()
 {
-    Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter,false);
+    TestDisplay adapter(testWire); DisplayFrame frame; init(adapter,false);
     environment.events.clear(); environment.sdaHigh=false;
     waitTwo(adapter,frame); ping(TIMEOUT); TEST_ASSERT_FALSE(adapter.render(frame));
     TEST_ASSERT_EQUAL_UINT(9,count("digitalWrite")); TEST_ASSERT_EQUAL_UINT(0,count("wire.begin"));
@@ -254,7 +264,7 @@ static void test_stuck_bus_latches_and_recovers_after_release()
 }
 static void test_initialize_clears_recovery_latch_timing_and_previous_frame()
 {
-    Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter); TEST_ASSERT_TRUE(adapter.render(frame));
+    TestDisplay adapter(testWire); DisplayFrame frame; init(adapter); TEST_ASSERT_TRUE(adapter.render(frame));
     // Re-initializing drops the cached frame, so the same frame is drawn again.
     init(adapter); environment.events.clear(); TEST_ASSERT_TRUE(adapter.render(frame)); transferSuffix();
     ping(NACK); TEST_ASSERT_FALSE(adapter.render(frame)); TEST_ASSERT_FALSE(adapter.render(frame));
@@ -269,7 +279,7 @@ static void test_initialize_clears_recovery_latch_timing_and_previous_frame()
 }
 static void test_display_nack_leaves_the_panel_stale_while_the_frame_counts_as_drawn()
 {
-    Ssd1306Adapter adapter(testWire); DisplayFrame frame; init(adapter);
+    TestDisplay adapter(testWire); DisplayFrame frame; init(adapter);
     TEST_ASSERT_TRUE(adapter.render(frame));
     const auto before = environment.panel.ram();
     frame.role = ROLE_FRONT;

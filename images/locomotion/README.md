@@ -43,6 +43,14 @@ docker run --rm --gpus all \
 
 Installs Krabby packages from PyPI with pinned versions. Bundled with `avrdude`, `arduino-cli` (Mega 2560 core, same pin as firmware CI), and `krabby-firmware` so MCU flashing works from inside the container without host-side flash tools.
 
+**Pre-push gate:** [`.github/workflows/publish-locomotion.yml`](../../.github/workflows/publish-locomotion.yml) builds the full [`Dockerfile.release`](Dockerfile.release) (`push: false`), runs `--help` (expects `--teleop-ip`), then builds and pushes to ECR. Reproduce locally:
+
+```bash
+docker buildx build --platform linux/arm64 \
+  -f images/locomotion/Dockerfile.release -t krabby-locomotion-release:ci --load .
+docker run --rm --network host krabby-locomotion-release:ci --help | grep teleop-ip
+```
+
 ### Pulling from ECR Public
 
 No AWS credentials required — ECR Public allows anonymous pulls.
@@ -108,7 +116,7 @@ krabby-controller==0.1.2
 krabby-firmware==0.2.9
 ```
 
-`krabby-data-collection` and `krabby-teleop-edge` are not yet published to PyPI and are excluded from the production image.
+`krabby-data-collection` is not yet published to PyPI and is excluded from the production image. Fleet teleop requires **`krabby-teleop-edge`** (pinned in `requirements.release.txt`).
 
 ### Bumping Pins
 

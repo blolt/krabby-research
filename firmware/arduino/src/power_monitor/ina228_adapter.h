@@ -75,7 +75,7 @@ public:
         const bool wasUp = isUp_;
         if (!wasUp)
         {
-            if (!recovery_.noteFailure(millis(), limits) || !recover())
+            if (!recovery_.shouldAttemptRecovery(millis(), limits) || !recover())
                 return measurement;
         }
         float voltage = NAN, current = NAN, power = NAN;
@@ -91,7 +91,7 @@ public:
         measurement.isValid = voltageRead && currentRead && powerRead && chargeRead;
         if (measurement.isValid)
             recovery_.noteSuccess();
-        else if (wasUp && recovery_.noteFailure(millis(), limits))
+        else if (wasUp && recovery_.shouldAttemptRecovery(millis(), limits))
             recover();
         return measurement;
     }

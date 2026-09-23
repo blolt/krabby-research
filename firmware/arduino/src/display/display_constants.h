@@ -6,11 +6,9 @@
 #include "../actuator/actuator_identity.h"
 
 static constexpr uint32_t CONTROLLER_DISPLAY_TIMEOUT_MILLISECONDS = 500;
-// A full frame takes ~29 ms at 400 kHz and ~115 ms at 100 kHz.
+// The SSD1306 supports I2C fast mode.
 static constexpr uint32_t SSD1306_TRANSFER_BUS_CLOCK_HZ = 400000UL;
 static constexpr uint8_t SSD1306_I2C_ADDRESS = 0x3D;
-static constexpr uint8_t SSD1306_BAD_TICKS_BEFORE_RECOVERY = 3;
-static constexpr uint32_t SSD1306_RECOVERY_RETRY_INTERVAL_MS = 1000UL;
 
 // Keep the renderer independent of SparkFun headers.
 static constexpr int SSD1306_COLOR_BLACK = 0;

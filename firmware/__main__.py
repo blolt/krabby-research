@@ -5,8 +5,6 @@ Works over SSH / headless — uses termios + select, no X11 required.
 import argparse
 import select
 import sys
-import tty
-import termios
 import logging
 import time
 from typing import NoReturn
@@ -109,8 +107,15 @@ def main():
         cmd_update(args.channel, args.port)
         return
 
+    if sys.platform == "win32":
+        print("The interactive menu is not supported on Windows. Use a subcommand: update, show, install, help.")
+        sys.exit(1)
+
     if args.debug:
         logger.setLevel(logging.DEBUG)
+
+    import tty
+    import termios
 
     mcu = KrabbyMCUSDK()
     if not mcu.connect():

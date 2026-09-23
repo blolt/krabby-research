@@ -10,22 +10,64 @@
 #include "../imu/imu_constants.h"
 #include "display_frame_model.h"
 #include "display_constants.h"
-#include "display_renderer.h"
 
-// DisplayRenderer canvas backed by the SparkFun driver.
-class Ssd1306Canvas
+// Three consecutive failed ticks before a recovery attempt, then at most one a second.
+static constexpr I2cRecoveryLimits SSD1306_RECOVERY_LIMITS = {3, 1000UL};
+
+// Owns the SparkFun driver and is the DisplayRenderer's canvas.
+class Ssd1306Adapter
 {
 public:
     static_assert(COLOR_BLACK == SSD1306_COLOR_BLACK &&
                       COLOR_WHITE == SSD1306_COLOR_WHITE,
                   "SparkFun's colour constants no longer match the renderer's");
 
-    explicit Ssd1306Canvas(TwoWire &wire) : wire_(wire) {}
+    explicit Ssd1306Adapter(TwoWire &wire)
+        : wire_(wire), driver_(), recoveryPolicy_{}, stuckBusLatch_{},
+          isInitialized_(false)
+    {
+    }
 
-    bool begin() { return driver_.begin(wire_); }
-    bool reset() { return driver_.reset(true); }
-    void display() { driver_.display(); }
+    bool isInitialized() const { return isInitialized_; }
 
+    bool initialize()
+    {
+        recoveryPolicy_ = I2cRecoveryPolicy{};
+        stuckBusLatch_ = I2cStuckBusLatch{};
+        isInitialized_ = driver_.begin(wire_);
+        return isInitialized_;
+    }
+
+    // Counts a failed tick and, once the policy allows, recovers the bus and resets the
+    // panel. True only when the panel was reset, which clears it.
+    bool recover()
+    {
+        return recoveryPolicy_.shouldAttemptRecovery(millis(), SSD1306_RECOVERY_LIMITS) && recoverAndConfigure();
+    }
+
+    // Probes the panel; one that does not answer must be recovered before drawing again.
+    bool isResponding()
+    {
+        if (!isProbeAcknowledged())
+        {
+            isInitialized_ = false;
+            recoveryPolicy_.shouldAttemptRecovery(millis(), SSD1306_RECOVERY_LIMITS);
+            return false;
+        }
+        recoveryPolicy_.noteSuccess();
+        return true;
+    }
+
+    // Flushes dirty pages. A full frame blocks the loop for ~115 ms at the default rate
+    // but ~29 ms at fast mode, so the flush runs fast and the rest of the bus stays default.
+    void display()
+    {
+        wire_.setClock(SSD1306_TRANSFER_BUS_CLOCK_HZ);
+        driver_.display();
+        wire_.setClock(I2C_DEFAULT_BUS_CLOCK_HZ);
+    }
+
+    // DisplayRenderer canvas: drawing changes only the driver's buffer until display().
     void useStatusFont() { driver_.setFont(QW_FONT_5X7); }
     void erase() { driver_.erase(); }
 
@@ -56,76 +98,7 @@ private:
     // Match the driver's uint8_t coordinate conversion.
     static uint8_t narrow(int value) { return static_cast<uint8_t>(value); }
 
-    TwoWire &wire_;
-    Qwiic1in3OLED driver_;
-};
-
-class Ssd1306Adapter
-{
-public:
-    explicit Ssd1306Adapter(TwoWire &wire)
-        : wire_(wire), canvas_(wire), renderer_(canvas_), recoveryPolicy_{}, stuckBusLatch_{},
-          isInitialized_(false)
-    {
-    }
-
-    bool isInitialized() const { return isInitialized_; }
-
-    bool initialize()
-    {
-        recoveryPolicy_ = I2cRecoveryPolicy{};
-        stuckBusLatch_ = I2cStuckBusLatch{};
-        return configure();
-    }
-
-    // Flush dirty pages at the display bus rate.
-    bool render(const DisplayFrame &frame)
-    {
-        const I2cRecoveryLimits limits = {
-            SSD1306_BAD_TICKS_BEFORE_RECOVERY,
-            SSD1306_RECOVERY_RETRY_INTERVAL_MS,
-        };
-
-        if (!isInitialized_)
-        {
-            if (!recoveryPolicy_.noteFailure(millis(), limits) ||
-                !recoverAndConfigure())
-            {
-                return false;
-            }
-            recoveryPolicy_.noteSuccess();
-        }
-
-        if (!responds())
-        {
-            isInitialized_ = false;
-            recoveryPolicy_.noteFailure(millis(), limits);
-            return false;
-        }
-        recoveryPolicy_.noteSuccess();
-
-        if (!renderer_.render(frame))
-            return false;
-
-        wire_.setClock(SSD1306_TRANSFER_BUS_CLOCK_HZ);
-        canvas_.display();
-        wire_.setClock(I2C_DEFAULT_BUS_CLOCK_HZ);
-        return true;
-    }
-
-    void invalidate() { renderer_.invalidate(); }
-
-private:
-    bool configure()
-    {
-        isInitialized_ = canvas_.begin();
-        if (isInitialized_)
-            canvas_.useStatusFont();
-        invalidate();
-        return isInitialized_;
-    }
-
-    bool responds()
+    bool isProbeAcknowledged()
     {
         wire_.clearWireTimeoutFlag();
         wire_.beginTransmission(SSD1306_I2C_ADDRESS);
@@ -134,7 +107,7 @@ private:
 
     bool recoverAndConfigure()
     {
-        if (responds())
+        if (isProbeAcknowledged())
             return resetPanel();
 
         if (!wire_.getWireTimeoutFlag())
@@ -150,22 +123,23 @@ private:
 
         const I2cBusRecovery result = recoverI2cBus(bus);
         stuckBusLatch_.noteResult(result);
-        return result != I2cBusRecovery::Stuck && responds() && resetPanel();
+        if (result == I2cBusRecovery::Stuck)
+            return false;
+        if (!isProbeAcknowledged())
+            return false;
+        return resetPanel();
     }
 
     bool resetPanel()
     {
-        if (!canvas_.reset())
+        if (!driver_.reset(true))
             return false;
         isInitialized_ = true;
-        canvas_.useStatusFont();
-        invalidate();
         return true;
     }
 
     TwoWire &wire_;
-    Ssd1306Canvas canvas_;
-    DisplayRenderer<Ssd1306Canvas> renderer_;
+    Qwiic1in3OLED driver_;
     I2cRecoveryPolicy recoveryPolicy_;
     I2cStuckBusLatch stuckBusLatch_;
     bool isInitialized_;

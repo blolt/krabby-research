@@ -36,6 +36,19 @@ class RecordingCanvas
 public:
     RecordingCanvas() : count_(0), hasOverflowed_(false) {}
 
+    // Readiness, scripted per test; a canvas is ready unless a test says otherwise.
+    bool initialized = true;
+    bool recovers = true;
+    bool responds = true;
+    int recoveries = 0;
+    int probes = 0;
+    int displays = 0;
+
+    bool isInitialized() const { return initialized; }
+    bool recover() { ++recoveries; return recovers; }
+    bool isResponding() { ++probes; return responds; }
+    void display() { ++displays; }
+
     void useStatusFont() { push(CALL_FONT, 0, 0, 0, 0, 0, ""); }
     void erase() { push(CALL_ERASE, 0, 0, 0, 0, 0, ""); }
     void pixel(int x, int y) { push(CALL_PIXEL, x, y, 0, 0, 0, ""); }
@@ -468,6 +481,66 @@ void test_voltage_fields_are_right_aligned(void)
     TEST_ASSERT_EQUAL_INT(3, zeroLabels);
 }
 
+void test_a_canvas_that_cannot_recover_is_neither_probed_nor_drawn(void)
+{
+    RecordingCanvas canvas;
+    DisplayRenderer<RecordingCanvas> renderer(canvas);
+    canvas.initialized = false;
+    canvas.recovers = false;
+
+    TEST_ASSERT_FALSE(renderer.render(baseFrame()));
+    TEST_ASSERT_EQUAL_INT(1, canvas.recoveries);
+    TEST_ASSERT_EQUAL_INT(0, canvas.probes);
+    TEST_ASSERT_EQUAL_INT(0, canvas.count());
+    TEST_ASSERT_EQUAL_INT(0, canvas.displays);
+}
+
+void test_a_recovered_canvas_is_redrawn_in_full(void)
+{
+    RecordingCanvas canvas;
+    DisplayRenderer<RecordingCanvas> renderer(canvas);
+    const DisplayFrame frame = baseFrame();
+
+    TEST_ASSERT_TRUE(renderer.render(frame));
+    canvas.reset();
+
+    // Recovery resets the panel, so even an unchanged frame is drawn from scratch.
+    canvas.initialized = false;
+    TEST_ASSERT_TRUE(renderer.render(frame));
+    TEST_ASSERT_EQUAL_INT(1, canvas.recoveries);
+    TEST_ASSERT_EQUAL_INT(2, canvas.probes);
+    TEST_ASSERT_EQUAL_INT(1, canvas.countOf(CALL_ERASE));
+    TEST_ASSERT_EQUAL_INT(2, canvas.displays);
+}
+
+void test_a_canvas_that_does_not_respond_is_not_drawn(void)
+{
+    RecordingCanvas canvas;
+    DisplayRenderer<RecordingCanvas> renderer(canvas);
+    canvas.responds = false;
+
+    TEST_ASSERT_FALSE(renderer.render(baseFrame()));
+    TEST_ASSERT_EQUAL_INT(0, canvas.recoveries);
+    TEST_ASSERT_EQUAL_INT(1, canvas.probes);
+    TEST_ASSERT_EQUAL_INT(0, canvas.count());
+    TEST_ASSERT_EQUAL_INT(0, canvas.displays);
+}
+
+void test_only_a_drawn_frame_is_flushed(void)
+{
+    RecordingCanvas canvas;
+    DisplayRenderer<RecordingCanvas> renderer(canvas);
+    const DisplayFrame frame = baseFrame();
+
+    TEST_ASSERT_TRUE(renderer.render(frame));
+    TEST_ASSERT_EQUAL_INT(1, canvas.displays);
+
+    // An unchanged frame is still probed, but nothing is drawn or flushed.
+    TEST_ASSERT_FALSE(renderer.render(frame));
+    TEST_ASSERT_EQUAL_INT(2, canvas.probes);
+    TEST_ASSERT_EQUAL_INT(1, canvas.displays);
+}
+
 int main()
 {
     UNITY_BEGIN();
@@ -485,5 +558,9 @@ int main()
     RUN_TEST(test_a_gauge_clears_only_its_own_cell);
     RUN_TEST(test_invalid_actuator_has_no_display_position);
     RUN_TEST(test_a_controller_presence_change_redraws_the_body);
+    RUN_TEST(test_a_canvas_that_cannot_recover_is_neither_probed_nor_drawn);
+    RUN_TEST(test_a_recovered_canvas_is_redrawn_in_full);
+    RUN_TEST(test_a_canvas_that_does_not_respond_is_not_drawn);
+    RUN_TEST(test_only_a_drawn_frame_is_flushed);
     return UNITY_END();
 }

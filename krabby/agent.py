@@ -95,15 +95,16 @@ def _on_shadow_update_rejected(error: Any) -> None:
     print(f"[err] shadow update rejected: code={error.code} message={error.message}", file=sys.stderr)
 
 
-def _publish_shadow_report(shadow_client: Any, thing_name: str) -> None:
+def _publish_shadow_report(shadow_client: Any, thing_name: str, teleop_shim: TeleopSignalingShim) -> None:
     from awscrt import mqtt
     from awsiot import iotshadow
 
     from krabby.telemetry import collect_telemetry
 
+    reported = collect_telemetry(teleop_edge_connected=teleop_shim.robot_edge_connected())
     request = iotshadow.UpdateShadowRequest(
         thing_name=thing_name,
-        state=iotshadow.ShadowState(reported=collect_telemetry()),
+        state=iotshadow.ShadowState(reported=reported),
     )
     shadow_client.publish_update_shadow(request, mqtt.QoS.AT_LEAST_ONCE)
 
@@ -148,7 +149,7 @@ def cmd_agent() -> None:
     try:
         while True:
             _reap_tunnel_procs()
-            _publish_shadow_report(shadow_client, thing_name)
+            _publish_shadow_report(shadow_client, thing_name, teleop_shim)
             time.sleep(SHADOW_REPORT_INTERVAL_SECS)
     except KeyboardInterrupt:
         print("\n[ok]  shutting down")

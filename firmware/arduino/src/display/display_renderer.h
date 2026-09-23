@@ -17,8 +17,46 @@ public:
     {
     }
 
-    // Returns whether any draw calls were made. The caller flushes the canvas.
+    // Initializes the canvas; whatever the panel showed is gone. Invalidates after the
+    // canvas initializes, in the order the adapter's configure() used.
+    bool initialize()
+    {
+        const bool isInitialized = canvas_.initialize();
+        invalidate();
+        return isInitialized;
+    }
+
+    // Draws the frame when the canvas can take it: recovers a canvas that needs it,
+    // probes it, draws what changed and flushes. True when a frame was flushed.
     bool render(const DisplayFrame &frame)
+    {
+        if (!canvas_.isInitialized())
+        {
+            if (!canvas_.recover())
+                return false;
+            invalidate(); // the reset cleared the panel
+        }
+
+        if (!canvas_.isResponding())
+            return false;
+
+        if (!drawChanges(frame))
+            return false;
+
+        canvas_.display();
+        return true;
+    }
+
+    void invalidate()
+    {
+        previousFrame_ = DisplayFrame{};
+        hasPreviousFrame_ = false;
+    }
+
+private:
+
+    // Draws what changed since the previous frame; false when nothing did.
+    bool drawChanges(const DisplayFrame &frame)
     {
         const bool isFullRedraw = !hasPreviousFrame_;
         if (!isFullRedraw && displayFramesEqual(previousFrame_, frame))
@@ -64,14 +102,6 @@ public:
         hasPreviousFrame_ = true;
         return true;
     }
-
-    void invalidate()
-    {
-        previousFrame_ = DisplayFrame{};
-        hasPreviousFrame_ = false;
-    }
-
-private:
 
     bool didControllerPresenceChange(const DisplayFrame &frame) const
     {

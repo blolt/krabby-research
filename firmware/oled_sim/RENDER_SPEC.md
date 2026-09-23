@@ -10,12 +10,13 @@ Contract for the krab status screen, and the hardware limits that shape it.
 ## 1. There is one render
 
 `DisplayRenderer<Canvas>` (`firmware/arduino/src/display/`) draws every
-pixel. It is a template over the eight calls it makes, so the same code serves
-three canvases:
+pixel. It is a template over the calls it makes on its canvas — seven drawing
+calls, plus `isInitialized`, `recover`, `isResponding` and `display` around each
+frame — so the same code serves three canvases:
 
 | Canvas | Where | What it does with a draw call |
 |---|---|---|
-| `Ssd1306Canvas` | firmware | forwards it to `Qwiic1in3OLED` |
+| `Ssd1306Adapter` | firmware | forwards it to the `Qwiic1in3OLED` it owns, and recovers, probes and flushes the panel |
 | `TraceCanvas` | `oled_sim/native/` | writes it out as a line of text |
 | `RecordingCanvas` | native tests | stores it for assertions |
 
@@ -105,9 +106,9 @@ rear-stacked ones on a 1-bit 128×64 panel.
    the boundary, where a negative wraps to ~200 and streaks across the panel.
    All three canvases narrow **identically**, so unlike the old Python render,
    the sim now reproduces that wrap instead of hiding it behind unbounded ints.
-3. **Explicit flush.** Nothing appears until `display()`. That call lives in
-   `Ssd1306Adapter`, not the renderer, because it is the part that costs I2C
-   time — and it is wrapped in the 400 kHz clock change.
+3. **Explicit flush.** Nothing appears until `display()`. The renderer calls it
+   after a frame that drew something; `Ssd1306Adapter::display()` wraps the
+   transfer, the part that costs I2C time, in the 400 kHz clock change.
 4. **Draw mode = copy (default).** The render assumes set-pixel semantics. Do
    **not** switch to XOR mode — glyphs drawn over a filled body region would
    invert instead of set.

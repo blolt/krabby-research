@@ -58,7 +58,7 @@ public:
 
         if (!isInitialized_)
         {
-            if (!recoveryPolicy_.noteFailure(millis(), limits) ||
+            if (!recoveryPolicy_.shouldAttemptRecovery(millis(), limits) ||
                 !recoverAndConfigure())
             {
                 return ImuMeasurement{false};
@@ -71,7 +71,7 @@ public:
         {
             // A replugged sensor may ACK while its outputs remain powered down.
             isInitialized_ = false;
-            recoveryPolicy_.noteFailure(millis(), limits);
+            recoveryPolicy_.shouldAttemptRecovery(millis(), limits);
             return bodyMeasurement;
         }
 
