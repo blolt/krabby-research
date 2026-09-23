@@ -493,12 +493,18 @@ void loop()
         }
         else if (cmdType == 'J')
         {
+            // Host format is J<name> <pwm> (no space after J). Skip any spaces so a
+            // legacy "J <name> <pwm>" forward still parses instead of yielding an
+            // empty name / pwm 0 (which left followers dead while FRONT still jogged).
             mainSerial->read();
+            while (mainSerial->available() && mainSerial->peek() == ' ')
+                mainSerial->read();
             String name = mainSerial->readStringUntil(' ');
             int pwm = mainSerial->readStringUntil('\n').toInt();
             actuatorManager->handleJog(name, pwm);
-            if (leftSerial)  { leftSerial->print("J ");  leftSerial->print(name);  leftSerial->print(" ");  leftSerial->println(pwm); }
-            if (rightSerial) { rightSerial->print("J "); rightSerial->print(name); rightSerial->print(" "); rightSerial->println(pwm); }
+            // Forward in the same J<name> <pwm> shape the host uses.
+            if (leftSerial)  { leftSerial->print("J");  leftSerial->print(name);  leftSerial->print(" ");  leftSerial->println(pwm); }
+            if (rightSerial) { rightSerial->print("J"); rightSerial->print(name); rightSerial->print(" "); rightSerial->println(pwm); }
         }
         else if (cmdType == 'C')
         {
