@@ -4,6 +4,8 @@
 // Declarations match the suite environments that define them at link time.
 #include <stddef.h>
 #include <stdint.h>
+// Arduino.h exposes the C string functions used by the unmodified OLED driver.
+#include <string.h>
 
 static constexpr uint8_t INPUT = 0, OUTPUT = 1, INPUT_PULLUP = 2;
 static constexpr uint8_t LOW = 0, HIGH = 1;
