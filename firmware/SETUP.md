@@ -152,6 +152,10 @@ python -m firmware --debug
 | 26–31 | 6 bytes | Reserved (alignment gap) |
 | 32 | 1 byte | Role magic sentinel (`0xAB`) — written once after first successful role election |
 | 33 | 1 byte | `BoardRole` value: `1`=FRONT, `2`=LEFT, `3`=RIGHT |
+| 34–39 | 6 bytes | Reserved gap |
+| 40–65 | 26 bytes | `ImuCalibrationRecord` |
+| 66–79 | 14 bytes | `PowerCalibrationRecord` |
+| 80–4095 | 4016 bytes | Available |
 
 The role bytes survive power cycles. On each boot, the board prints `ROLE_HINT: LEFT/RIGHT/FRONT` immediately before the 3-second role-election window. `krabby-firmware show` reads this hint so follower boards can be labeled correctly even when probed individually (when they would otherwise appear as `ROLE_UNKNOWN` and show as "front").
 
@@ -351,11 +355,9 @@ one". The **schema byte** is a layout version number: if a future firmware
 changes the field layout of `ImuCalibrationRecord`, it bumps the schema, and old data
 is rejected as stale instead of being silently misread field-by-field.
 
-Full EEPROM map after M16 Task 1. Every address below is a byte offset into
-the 4 KB EEPROM, ranges inclusive. Bytes 0–33 are the pre-existing layout
-(same as the "EEPROM address layout" table earlier in this file); M16 adds
-only bytes 40–65. Constants live in `src/imu/imu_constants.h`; the
-`ImuCalibrationRecord` struct lives in `src/imu/imu_calibrator.h`.
+Every address below is a byte offset into the 4 KB EEPROM, ranges inclusive.
+Region addresses and sizes live in `eeprom_layout.h`; record magic and schema
+values remain with their owning subsystem.
 
 | Bytes | Size | Owner | Contents |
 | :--- | ---: | :--- | :--- |
@@ -368,7 +370,8 @@ only bytes 40–65. Constants live in `src/imu/imu_constants.h`; the
 | 41 | 1 | `ImuCalibrationRecord.schema` | layout version, currently `1` (`EEPROM_IMU_CAL_SCHEMA`) |
 | 42–53 | 12 | `ImuCalibrationRecord.gyroBiasDegreesPerSecond[3]` | 3 × 4-byte float; gyro zero-rate bias, deg/s, raw sensor frame |
 | 54–65 | 12 | `ImuCalibrationRecord.accelBiasG[3]` | 3 × 4-byte float; reserved accelerometer offset, g, raw sensor frame; zero until accelerometer calibration is implemented |
-| 66– | — | free | `EEPROM_SENSOR_CAL_NEXT_ADDR` = 66; Task 3 (INA228 cal) and later blocks allocate from here, each with its own magic + schema |
+| 66–79 | 14 | `PowerCalibrationRecord` | INA228 voltage offsets and Pack shunt scale |
+| 80–4095 | 4016 | — | available; `EEPROM_NEXT_AVAILABLE_ADDR` = 80 |
 
 So "`ImuCalibrationRecord` is 26 bytes" means exactly bytes 40–65:
 1 (magic) + 1 (schema) + 12 (gyro bias) + 12 (accel bias) = 26. The
@@ -444,8 +447,6 @@ robot integration.
 
 ### Bench bring-up runbook (M16, solo board)
 
-> Formal ATP-style test procedures (with run logs and an AC traceability matrix) live in `firmware/bench_tests/INDEX.md` (PR #3, branch m16-docs); this runbook is the narrative version.
-
 Replicated 2026-07-06 at a café table. Everything below assumes the repo venv
 (`testenv`) has `pyserial`, and `PORT` = the board's device (macOS:
 `ls /dev/cu.usbmodem*`; if nothing appears but the board is powered, check the
@@ -487,6 +488,11 @@ sleep already covers. `krabby_mcu.connect()` avoids the
 reset with its pre-open `dtr = False` on Linux/Jetson, but macOS resets anyway.
 
 ### Fetched libraries
+
+Power monitoring uses SparkFun INA2XX Arduino Library 1.0.0 and SparkFun Toolkit
+1.2.0, installed by `make -C firmware fetch-libs`. The adapter maps individual
+read errors to NaN and uses SI readings directly. Each monitor's telemetry validity
+flag reports whether all four reads succeeded.
 
 The current M16 build fetches the pinned, upstream-clean SparkFun LSM6DSO
 library declared in `scripts/fetch_arduino_libs.py`. `make` and CI pass the

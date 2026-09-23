@@ -45,8 +45,9 @@ IMU tilt, then calls `buildDisplayFrame`. Simulated battery voltages pass throug
 | `role` | `str` | `FRONT`/`LEFT`/`RIGHT`/`UNKWN` | ≤5 glyphs |
 | `legs` | `[(y,h,k)]×6` | 6 legs `[FL,FR,ML,MR,RL,RR]`, each (yaw, hip, knee) | `hold`/`extend`/`retract`/`disc`/`unverified` |
 | `battery_volts` | `(float,float)` | battery A/B voltages | volts; negative means unavailable |
+| `battery_valid` | `bool` | simulated monitor readings available | — |
 | `front`,`left`,`right` | `bool` | board present/detected (v0.2 groups by side) | — |
-| `roll`,`pitch` | `int` | degrees from IMU | **clamped ±99** for display |
+| `roll`,`pitch` | `int` | degrees from IMU | roll ±180; pitch ±90 |
 | `imu_valid` | `bool` | IMU measurement succeeded | — |
 
 ## 3. Primitive semantics that constrain the design
@@ -157,6 +158,9 @@ for the pack voltage and derives each bar's fill linearly from 12.0 V (empty) to
 13.4 V (full), clamped to that range. This is a coarse resting-voltage gauge,
 not a state-of-charge estimate.
 
-Unavailable readings show `--.-V` with an empty bar. The pack voltage is unavailable
-if either battery reading is unavailable. Firmware without power-monitor inputs
-leaves all voltage readings unavailable.
+Unavailable readings show `--.-V` with an empty bar. In the simulator, the pack
+voltage is unavailable if either battery reading is unavailable or `battery_valid`
+is false. Firmware uses the INA228 pack and midpoint monitors: pack voltage and
+battery A remain independently available when the other monitor fails; battery B
+needs both readings to form a valid split. Battery redraws compare the displayed
+pixel fills and tenths of a volt, so smaller changes do not trigger a transfer.
