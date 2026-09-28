@@ -13,6 +13,7 @@ JOG_PWM = 200  # jog magnitude sent while a Retract/Extend button is held
 TELEMETRY_REFRESH_MS = (
     100  # GUI poll period; decoupled from the firmware's telemetry tick
 )
+ROLE_STALE_S = 1.0  # a board counts as present if its telemetry arrived within this window
 
 # Placeholder for a joint cell before its first telemetry arrives.
 NO_VALUE_TEXT = "---"
@@ -183,6 +184,10 @@ class KrabbyTestGUI(tk.Tk):
         ttk.Label(top, textvariable=self._status_var, font=FONT_STATUS).pack(
             side="left"
         )
+        self._role_var = tk.StringVar(value="Role: ---")
+        ttk.Label(top, textvariable=self._role_var, font=FONT_STATUS).pack(
+            side="left", padx=(16, 0)
+        )
 
         btn_frame = ttk.Frame(top)
         btn_frame.pack(side="right")
@@ -262,6 +267,17 @@ class KrabbyTestGUI(tk.Tk):
             jr.update_from_telemetry(jt)
 
         self._imu_row.update(self._mcu.imu)
+
+        now = time.time()
+        fresh = {
+            role
+            for role, ts in self._mcu.role_last_seen.items()
+            if now - ts < ROLE_STALE_S
+        }
+        leader = next((r for r in ("FRONT", "UNKWN") if r in fresh), "---")
+        self._role_var.set(
+            f"Role: {leader}  left={'LEFT' in fresh}  right={'RIGHT' in fresh}"
+        )
 
         if self._mcu.last_error:
             self._status_var.set(f"Error: {self._mcu.last_error}")

@@ -375,8 +375,8 @@ void determineRole()
     currentRole = ROLE_UNKNOWN;
     actuatorManager = new ActuatorManager(ACT_LIST_FRONT, ACT_COUNT);
     mainSerial = &Serial;
-    leftSerial = &SERIAL_LEFT;
-    rightSerial = &SERIAL_RIGHT;
+    leftSerial = hasSyncFromLeft ? &SERIAL_LEFT : nullptr;
+    rightSerial = hasSyncFromRight ? &SERIAL_RIGHT : nullptr;
     Serial.println("ROLE: UNKNOWN (front actuators)");
 }
 
@@ -464,32 +464,20 @@ void loop()
         else if (cmdType == 'B')
         {
             mainSerial->read();
-            while (mainSerial->available() && mainSerial->peek() == ' ')
-                mainSerial->read();
-            if(leftSerial) leftSerial->print("B ");
-            if(rightSerial) rightSerial->print("B ");
+            // Read the whole line first; token-by-token reads could spin forever on a truncated line.
+            String payload = mainSerial->readStringUntil('\n');
+            int i = 0;
+            const int len = payload.length();
             while (true)
             {
-                String name = mainSerial->readStringUntil(' ');
-                int pwm = mainSerial->readStringUntil(' ').toInt();
-
-                actuatorManager->handleJog(name, pwm);
-                if (leftSerial)  { 
-                    leftSerial->print(name);
-                    leftSerial->print(" ");
-                    leftSerial->print(pwm);
-                    leftSerial->print(" ");
-                }
-                if (rightSerial) { 
-                    rightSerial->print(name);
-                    rightSerial->print(" ");
-                    rightSerial->print(pwm);
-                    rightSerial->print(" ");
-                }
-                if(mainSerial->peek() == '\n') { mainSerial->readStringUntil('\n'); break; }
+                String name = nextTok(payload, i, len);
+                String pwm = nextTok(payload, i, len);
+                if (name.length() == 0 || pwm.length() == 0)
+                    break;
+                actuatorManager->handleJog(name, pwm.toInt());
             }
-            if (leftSerial)  { leftSerial->println(); }
-            if (rightSerial) { rightSerial->println(); }
+            if (leftSerial)  { leftSerial->print("B ");  leftSerial->println(payload); }
+            if (rightSerial) { rightSerial->print("B "); rightSerial->println(payload); }
         }
         else if (cmdType == 'J')
         {

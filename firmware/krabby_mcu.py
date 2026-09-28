@@ -78,6 +78,8 @@ class KrabbyMCUSDK:
         self.last_error = None
         self.last_cmd: Dict[str, Optional[float]] = {}
         self._last_ver_line: Optional[str] = None
+        # Last time a telemetry line was seen per role prefix (FRONT/UNKWN/LEFT/RIGHT).
+        self.role_last_seen: Dict[str, float] = {}
 
     def connect(self):
         try:
@@ -136,9 +138,11 @@ class KrabbyMCUSDK:
                     print(f"[serial rx] {line}", file=sys.stderr, flush=True)
                 elif logger.isEnabledFor(logging.DEBUG):
                     logger.debug("serial rx: %s", line)
-                if TelemetryFrame.is_telemetry_line(line):
+                role = TelemetryFrame.role_from_line(line)
+                if role is not None:
                     self._parse_telemetry_line(line)
                     self.last_feedback_ts = time.time()
+                    self.role_last_seen[role] = self.last_feedback_ts
                 elif line.startswith("VER "):
                     self._last_ver_line = line
                 elif "Krabby" in line or "CAL" in line or "Saved" in line:
@@ -233,6 +237,7 @@ class KrabbyMCUSDK:
         cmd = f"J{joint_name} {pwm}\n"
         self.ser.write(cmd.encode("utf-8"))
         self.ser.flush()
+        logger.debug("CMD -> %s", cmd.strip())
 
     def read_version(self, timeout: float = 1.0) -> Optional[str]:
         if not self.ser or not self.ser.is_open:
