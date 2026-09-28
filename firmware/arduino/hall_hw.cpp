@@ -4,7 +4,7 @@
 #include <avr/interrupt.h>
 #include <avr/io.h>
 
-static volatile uint32_t g_hallEdgeCount[6];
+static volatile int32_t g_hallEdgeCount[6];
 
 #if KRABBY_PIN_REV == 3
 
@@ -222,13 +222,13 @@ void hallHwInit()
 
 #endif
 
-uint32_t hallHwGetEdgeCount(uint8_t hallSlot)
+int32_t hallHwGetEdgeCount(uint8_t hallSlot)
 {
     if (hallSlot >= 6)
         return 0;
     uint8_t oldSreg = SREG;
     cli();
-    uint32_t c = g_hallEdgeCount[hallSlot];
+    int32_t c = g_hallEdgeCount[hallSlot];
     SREG = oldSreg;
     return c;
 }
