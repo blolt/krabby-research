@@ -1,15 +1,17 @@
 # Cold-start friction log
 
-**Work in progress** — entries and open items will keep changing; this file may be
+**Work in progress**(Milestone 23) — entries and open items will keep changing; this file may be
 removed or relocated later.
 
 ## Open items (not done yet)
 
-- **Fleet / portal blocked (AWS):** enroll, live portal telemetry, cameras, portal teleop — see command sequence `[blocked]` tags below.
-- **Self-hosted Orin runner:** not registered (no GitHub admin yet). `bench-harness.yml` stays gated on `BENCH_RUNNER_ENABLED` — F12.
-- **Discord secret:** `DISCORD_WEBHOOK_URL` optional; notify skips if unset (local + CI).
+- **Fleet / portal:** enroll + live shadow telemetry proven for `orin1` (portal online; `krabby get telemetry` timestamp advances). Still open: **cameras**, **portal teleop** (HAL / `krabby-locomotion` + Open teleop).
+- **Self-hosted Orin runner:** still not registered. `bench-harness.yml` stays gated on `BENCH_RUNNER_ENABLED` — F12. (Discord webhook secret is already set for when the runner is enabled.)
+- **Discord:** local harness notify proven; GitHub Actions secret `DISCORD_WEBHOOK_URL` proven via **Artifact health** Discord post. No further Discord setup needed until Orin runner (F12) posts from CI harness.
 - **PIN_REV=2 vs S3:** `PIN_REV=2` is local-testing only and will not be used going forward. Do not take the published S3 hex on those boards; harness skips flash overwrite when all roles are `dev-local` — F10 / Appendix B.
 - **CI branch:** artifact-health / bench-harness watch `mainline` and `release/**` (same as publish), not default branch `main` (KNOWN-ISSUES #1).
+- **CI Node 20 deprecation:** `artifact-health` locomotion-image warns that `docker/setup-qemu-action@v3` targets Node 20 and is forced onto Node 24 — F13.
+- **CI locomotion-image:** `artifact-health` Discord reported FAIL (`packages`/`firmware-artifact` OK; `locomotion-image` failure) — F14.
 
 | ID | Stage | Symptom | Workaround | Component | Cause | Blocking | Cost | Effort (h) | Who |
 |----|-------|---------|------------|-----------|-------|----------|------|------------|-----|
@@ -24,7 +26,9 @@ removed or relocated later.
 | F9 | firmware / flash | Mid-upload Ctrl+C (or port vanish): `cannot open port /dev/ttyACM0`; then `krabby firmware show` → “No attached Mega”; kernel keeps `usb … device descriptor read/64, error -110` / `error -71` on the hub port; no `/dev/ttyACM*`/`ttyUSB*`. Feels like a bricked/corrupt board. | Full power-cycle Mega (+ Orin reboot if still wedged); bypass hub → direct Orin USB; known-good data cable; never interrupt upload; press Mega RESET if upload hangs. Swap cable/port vs second Mega to isolate USB-serial vs sketch. | `arduino-cli upload` / CH340–ACM enum; powered hub | Interrupted avrdude + flaky full-speed enum on hub; sketch may still be fine while USB-serial won’t enumerate. **Docs:** Appendix B recover note. | yes until board reappears | ~15–45 min per stuck board; after local PIN_REV=2 flash / hub | 0.5 | hardware (recover); AI-suited (docs) |
 | F10 | firmware / bench | Kit `krabby firmware update` (S3) vs local **PIN_REV=2** / `dev-local`. **PIN_REV=2 is local-testing only and will not be used going forward**; do not take the S3 binary on these boards (wrong pin map). Harness skip / motion needs host `firmware/`. | Flash via `make … PIN_REV=2` (Appendix B) for this local bench only; harness skips S3 overwrite when all roles are `dev-local`; motion with host `PYTHONPATH`. Do not use S3 update on PIN_REV=2 boards. | S3 artifacts; harness flash; locomotion image FW parsers | Local-only pin rev; published builds differ. | yes for this local Uno bench | every PIN_REV=2 local session until boards move off rev 2 | 1 | AI-suited (docs/harness); Person (future published rev) |
 | F11 | firmware / show | `krabby firmware show` sometimes lists only the FRONT (leader) board even though LEFT/RIGHT are powered and UART-wired; left/right roles missing until the **FRONT USB cable** is unplugged and plugged back in. | Unplug FRONT USB → wait a few seconds → replug; re-run `krabby firmware show` until front/left/right all appear. | Leader USB / 3-board role election; `krabby firmware show` | Likely leader missed SYNC / role election after power or serial reopen (DTR-safe open still leaves a stuck election until USB reset). Not the same as F9 (no tty) — port is up, followers just invisible. | yes for flash/bringup that require 3 roles | ~1–2 min; intermittent after flash, harness, or long session | 1 | hardware (diagnose); AI-suited (docs / retry in show) |
-| F12 | bench / CI | Four-stage harness and Discord notify exist, but the Orin is **not** a GitHub Actions self-hosted runner yet (no repo admin to register). `bench-harness.yml` would queue forever without a gate; Discord secret may also be unset. | Run harness manually on the Orin. Leave `BENCH_RUNNER_ENABLED` unset/false (stub job stays green). Set `DISCORD_WEBHOOK_URL` only when a webhook exists. When admin is available: register linux-arm64 runner with labels `self-hosted`,`krabby-bench`, set var `BENCH_RUNNER_ENABLED=true`, optional Discord secret. | `.github/workflows/bench-harness.yml`; `bench/README.md` (“CI: self-hosted Orin runner (deferred)”) | Permissions / infra deferred; not a code gap. | yes for commit-triggered hardware bench | until runner registered | 1–2 | Person (admin); AI-suited (docs already) |
+| F12 | bench / CI | Four-stage harness exists, but the Orin is **not** a GitHub Actions self-hosted runner yet. `bench-harness.yml` would queue forever without a gate. Discord secret **is** set (local + artifact-health proven). | Run harness manually on the Orin. Leave `BENCH_RUNNER_ENABLED` unset/false (stub job stays green). When ready: register linux-arm64 runner with labels `self-hosted`,`krabby-bench`, set var `BENCH_RUNNER_ENABLED=true` — workflow already injects `secrets.DISCORD_WEBHOOK_URL`. | `.github/workflows/bench-harness.yml`; `bench/README.md` (“CI: self-hosted Orin runner (deferred)”) | Runner registration deferred; not a code gap. | yes for commit-triggered hardware bench | until runner registered | 1–2 | Person (admin); AI-suited (docs already) |
+| F13 | CI / Actions | Artifact health locomotion-image annotates: `Node.js 20 is deprecated` — `docker/setup-qemu-action@v3` targets Node 20 but runners force Node 24 ([changelog](https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/)). Warning only; not the cause of a job failure by itself. | Ignore until Node 20 removal (~2026-09), or bump the action. | `.github/workflows/artifact-health.yml` (`uses: docker/setup-qemu-action@v3`) | Action major still on Node 20; GitHub is migrating JS actions to Node 24. **Fix:** change to `docker/setup-qemu-action@v4` (Node 24 runtime). Re-check any other workflows that pin `@v3`. | no (warn); yes after Node 20 removal if still on v3 | ~5 min when editing workflow | 0.5 | AI-suited |
+| F14 | CI / artifact-health | Manual **Artifact health** run (Discord): `FAIL — artifact-health` / Failed stage: **locomotion-image**; `packages=success; locomotion-image=failure; firmware-artifact=success`. Node 20 note (F13) is unrelated. | Open the red **Locomotion image** job → **Pull and smoke-start channel tags** log; fix or relax the check once root cause is known. | `.github/workflows/artifact-health.yml` (`locomotion-image`); ECR `public.ecr.aws/t7t7b3i3/krabby-locomotion:{mainline,release}-latest` | Job pulls both tags under QEMU `linux/arm64` and requires `docker run … --help` to contain `--teleop-ip`. Failure is pull, run-under-QEMU, or help-text mismatch — **diagnose from Actions log before changing published images**. **Fix:** address whatever the log shows (tag/ECR, QEMU/`docker run`, or update grep / entrypoint expectations); re-run workflow_dispatch to confirm Discord PASS. | yes for green artifact-health | ~15–60 min once log is read | 1 | AI-suited (workflow); Person if image publish broken |
 
 
 ## Working command sequence (bring-up baseline)
@@ -32,9 +36,9 @@ removed or relocated later.
 Documented “few commands” goal (`README.md` Software quick-start): **~6 steps**
 (`pip install` → `sudo krabby install` → `firmware show` → `firmware update` → wire hub → pair + `krabby run`).
 
-**Proven path as of 2026-09-24** (enroll / portal / cameras / teleop still open). Tags:
+**Proven path as of 2026-09-29** (cameras / portal teleop still open). Tags:
 `[doc]` = in quick-start; `[undoc]` = required but not there; `[manual]` = hands-on;
-`[blocked]` = not run yet (AWS enroll / later stages).
+`[blocked]` = not run yet (later stages).
 
 ```text
 # --- Orin host (assume imaged, networked, SSHable) ---
@@ -75,13 +79,15 @@ krabby run                                              # [doc]
 # Ignore: XDG_RUNTIME_DIR … (F8)
 # Drive: hold RT = FR, left stick Y = FRHL, etc.               # [manual]
 
-# --- Fleet (blocked — waiting on AWS account) ---
-# export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… AWS_DEFAULT_REGION=…   # [blocked] ENROLL.md
+# --- Fleet (proven for orin1 — enroll + live portal telemetry) ---
+# export AWS_ACCESS_KEY_ID=… AWS_SECRET_ACCESS_KEY=… AWS_DEFAULT_REGION=…   # [undoc] ENROLL.md
 # python -c "import boto3; print(boto3.client('sts').get_caller_identity())"
-# sudo -E env PATH="$PATH" krabby enroll --thing-name <name>              # [blocked]
-# sudo systemctl start krabby-agent && krabby get telemetry                 # [blocked]
-# Confirm portal: live telemetry (not stale registration)                   # [blocked] [manual]
-# After enroll: krabby run → fleet HAL; use --gamepad-only for local pad    # [blocked]
+# sudo -E env PATH="$PATH" krabby enroll --thing-name orin1                 # [undoc]
+# sudo systemctl start krabby-agent                                         # [undoc]
+# source ~/.venv-krabby/bin/activate && krabby get telemetry                # [undoc] needs launcher w/ agent cmds
+# Confirm portal fleet.krabbyco.com: orin1 online; detail timestamp advances  # [manual]
+# Agent-only health may show locomotion inactive / mcu_missing — OK until HAL up
+# After enroll: krabby run → fleet HAL; use --gamepad-only for local pad    # [blocked] until teleop path
 
 # --- Cameras / portal teleop (not yet proven) ---
 # Confirm camera streams                                                    # [blocked]
@@ -96,11 +102,11 @@ krabby run                                              # [doc]
 | Operator steps in proven path above (commands + required manuals, excl. blocked) | **~18** |
 | Extra vs doc (undoc commands + pairing caveats + `docker rm`) | **~12** |
 | Manual interventions that are not a single CLI line | **~5** (replug/flash cycle, wire hub, Sync hold, drive check; remove-stale as needed) |
-| Still blocked for full cold-start | enroll, live portal telemetry, cameras, teleop |
+| Still blocked for full cold-start | cameras, portal teleop |
 
-**Headline:** goal ≈ **6** commands; working gamepad bring-up ≈ **18** steps (**~12** undocumented or missing from quick-start). Full 1a path will add enroll/agent/portal/camera/teleop on top once AWS is available.
+**Headline:** goal ≈ **6** commands; working gamepad bring-up ≈ **18** steps (**~12** undocumented or missing from quick-start). Enroll + live portal telemetry proven (`orin1`); cameras/teleop still open.
 
-Update this block when enroll/cameras/teleop are proven; later improvement work compares against this baseline.
+Update this block when cameras/teleop are proven; later improvement work compares against this baseline.
 
 ---
 
