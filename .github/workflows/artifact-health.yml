@@ -62,9 +62,9 @@ jobs:
           ECR=public.ecr.aws/t7t7b3i3/krabby-locomotion
           for TAG in mainline-latest release-latest; do
             echo "=== ${ECR}:${TAG} ==="
-            docker pull "${ECR}:${TAG}"
+            # Published image is linux/arm64 only. Match publish-locomotion smoke.
+            docker pull --platform linux/arm64 "${ECR}:${TAG}"
             docker image inspect "${ECR}:${TAG}" --format '{{.Id}} {{.Architecture}} {{.Os}}'
-            # Image is linux/arm64; --help is the same smoke publish-locomotion uses.
             docker run --rm --platform linux/arm64 --network host "${ECR}:${TAG}" --help \
               | grep -q -- '--teleop-ip'
             echo "OK ${TAG}"
