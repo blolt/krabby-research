@@ -65,7 +65,7 @@ def build(svg_path: Path) -> None:
             return result
 
         def port(box, side, offset, name="", *, bundle=False):
-            # Connector groups are outlined; individual wires meet the board boundary.
+            # Individual terminals sit on the board boundary; connector groups are outlined.
             # Offsets are measured from the lower/left board edge.
             if side in ("L", "R"):
                 x = box.x if side == "L" else box.right
@@ -84,6 +84,10 @@ def build(svg_path: Path) -> None:
             wire([(x, y), end], bundle=bundle)
             if bundle:
                 rectangle(x - 0.12, y - 0.16, x + 0.12, y + 0.16)
+            else:
+                # Opaque fill and higher z-order mask both the outline and wiring.
+                diagram.add(elm.Dot(radius=0.075, open=True, zorder=10)
+                            .at((x, y)).fill("white").linewidth(WIRE_WIDTH).hold())
             if name:
                 text(label_at, name, align=align)
             return end
