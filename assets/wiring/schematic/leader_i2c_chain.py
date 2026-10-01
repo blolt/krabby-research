@@ -4,7 +4,7 @@ import schemdraw
 import schemdraw.elements as elm
 
 from diagram import Diagram
-from theme import MUTED, add_title, drawing
+from theme import add_title, drawing
 
 
 NETS = (
@@ -142,10 +142,10 @@ def build(svg_path: Path) -> None:
                                   anchorname="QWIIC_IN", lblsize=11),
                         elm.IcPin(name="QWIIC", side="R", slot="1/1",
                                   anchorname="QWIIC_OUT", lblsize=11),
-                        elm.IcPin(name="VBUS", side="B", slot="1/3" if sense else "1/1",
+                        elm.IcPin(name="VBUS", side="B", slot="2/3" if sense else "1/1",
                                   anchorname="VBUS", lblsize=11),
                     ] + ([
-                        elm.IcPin(name="VIN−", side="B", slot="2/3",
+                        elm.IcPin(name="VIN−", side="B", slot="1/3",
                                   anchorname="VIN_MINUS", lblsize=11),
                         elm.IcPin(name="VIN+", side="B", slot="3/3",
                                   anchorname="VIN_PLUS", lblsize=11),
@@ -159,63 +159,64 @@ def build(svg_path: Path) -> None:
         diagram.add(elm.BusLine().at(oled.QWIIC_OUT).to(pack.QWIIC_IN).hold())
         diagram.add(elm.BusLine().at(pack.QWIIC_OUT).to(midpoint.QWIIC_IN).hold())
 
-        def battery(y: float, name: str) -> elm.Ic:
+        # Keep both series batteries, fuse and shunt on the same power-path row.
+        power_y = -6.5
+
+        def battery(x: float, name: str) -> elm.Ic:
             return diagram.add(
                 elm.Ic(
                     size=(4.0, 3.0),
                     pins=[
-                        elm.IcPin(name="+", side="T", slot="1/1", anchorname="POS"),
-                        elm.IcPin(name="−", side="B", slot="1/1", anchorname="NEG"),
+                        elm.IcPin(name="+", side="L", slot="1/1", anchorname="POS"),
+                        elm.IcPin(name="−", side="R", slot="1/1", anchorname="NEG"),
                     ],
-                ).at((34.0, y)).theta(0).label(f"Battery {name}\n12 V")
+                ).at((x, power_y - 1.5)).theta(0).label(f"Battery {name}\n12 V")
             )
 
-        battery_b = battery(-9.0, "B")
-        battery_a = battery(-15.0, "A")
-        junction = (battery_a.POS.x, -10.5)
+        battery_a = battery(39.0, "A")
+        battery_b = battery(32.0, "B")
+        junction = (37.5, power_y)
         diagram.add(elm.Line().at(battery_a.POS).to(battery_b.NEG).hold())
         diagram.add(elm.Dot().at(junction).hold())
-        diagram.add(elm.Wire("|-").at(pack.VBUS).to(battery_b.POS).hold())
-        diagram.add(elm.Wire("|-").at(midpoint.VBUS).to(junction).hold())
-        # Separate sense and fused-feed wires meet at the battery positive terminal.
+
+        def wire(points: list[tuple[float, float]], color: str = "#172033") -> None:
+            for start, end in zip(points, points[1:]):
+                diagram.add(elm.Line().at(start).to(end).color(color).hold())
+
+        # Direct battery-positive voltage taps, independent of the fused feed.
+        wire([pack.VBUS, (pack.VBUS.x, -4.0),
+              (battery_b.POS.x, -4.0), battery_b.POS])
+        wire([midpoint.VBUS, (midpoint.VBUS.x, -3.5), (junction[0], -3.5), junction])
         diagram.add(elm.Dot().at(battery_b.POS).hold())
-        fuse_input = (battery_b.POS.x, -3.5)
-        diagram.add(elm.Line().at(battery_b.POS).to(fuse_input).hold())
         fuse = diagram.add(
-            elm.Fuse().at(fuse_input).right().length(3.0).label("F1 · 150 A").hold()
+            elm.Fuse().at(battery_b.POS).left().length(3.0)
+            .label("F1 · 150 A").hold()
         )
         shunt = diagram.add(
-            elm.Resistor().at(fuse.end).down().length(2.0)
-            .hold()
+            elm.Resistor().at(fuse.end).left().length(3.0).label("Shunt").hold()
         )
         sense_color = "#167b83"
-        def sense_wire(points: list[tuple[float, float]]) -> None:
-            for start, end in zip(points, points[1:]):
-                diagram.add(elm.Line().at(start).to(end).color(sense_color).hold())
-
-        sense_wire([pack.VIN_PLUS, (pack.VIN_PLUS.x, -1.5),
-                    (shunt.start.x, -1.5), shunt.start])
-        # Bridge the VIN− wire over VIN+ without an electrical junction.
-        crossing_x = shunt.start.x
-        sense_wire([pack.VIN_MINUS, (pack.VIN_MINUS.x, -2.5),
-                    (crossing_x - 0.3, -2.5)])
-        diagram.add(elm.Arc2(k=0.8).at((crossing_x - 0.3, -2.5))
-                    .to((crossing_x + 0.3, -2.5)).color(sense_color).hold())
-        sense_wire([(crossing_x + 0.3, -2.5), (40.0, -2.5),
-                    (40.0, shunt.end.y), shunt.end])
+        wire([pack.VIN_MINUS, (pack.VIN_MINUS.x, -2.0),
+              (shunt.end.x, -2.0), shunt.end], sense_color)
+        # VIN+ crosses the direct VBUS wire with a bridge, not a junction.
+        crossing_x = pack.VBUS.x
+        wire([pack.VIN_PLUS, (pack.VIN_PLUS.x, -3.0),
+              (crossing_x + 0.3, -3.0)], sense_color)
+        diagram.add(elm.Arc2(k=0.8).at((crossing_x + 0.3, -3.0))
+                    .to((crossing_x - 0.3, -3.0)).color(sense_color).hold())
+        wire([(crossing_x - 0.3, -3.0), (shunt.start.x, -3.0),
+              shunt.start], sense_color)
         for terminal in [shunt.start, shunt.end]:
             diagram.add(elm.Dot().at(terminal).hold())
-        diagram.add(elm.Line().at(shunt.end).down().length(0.7).hold())
-        diagram.add(elm.Dot(open=True).at((shunt.end.x, shunt.end.y - 0.7)).hold())
+        output = (shunt.end.x - 0.7, power_y)
+        wire([shunt.end, output])
+        diagram.add(elm.Dot(open=True).at(output).hold())
         diagram.add(elm.Label().at((32.6, 6.2))
                     .label("U3: SHUNT open · VBUS open", fontsize=10))
-        diagram.add(elm.Label().at((38.6, -4.5)).label("Shunt", halign="right"))
-        diagram.add(elm.Label().at((34.0, -5.9))
+        diagram.add(elm.Label().at((31.5, -8.7))
                     .label("Pack + (24 V nominal)", halign="right"))
-        diagram.add(elm.Label().at((35.0, -10.5))
-                    .label("Midpoint", halign="right"))
-        diagram.add(elm.Label().at((36.0, -16.5))
-                    .label("Pack −"))
+        diagram.add(elm.Label().at((37.5, -8.7)).label("Midpoint"))
+        diagram.add(elm.Label().at((43.5, -8.7)).label("Pack −"))
 
         diagram.add(
             elm.Label()
