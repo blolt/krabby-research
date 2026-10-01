@@ -172,6 +172,14 @@ def build(svg_path: Path) -> None:
         diagram.add(elm.Dot().at(junction).hold())
         diagram.add(elm.Wire("|-").at(pack.VBUS).to(battery_b.POS).hold())
         diagram.add(elm.Wire("|-").at(midpoint.VBUS).to(junction).hold())
+        # Separate sense and fused-feed wires meet at the battery positive terminal.
+        diagram.add(elm.Dot().at(battery_b.POS).hold())
+        fuse_input = (battery_b.POS.x, -3.5)
+        diagram.add(elm.Line().at(battery_b.POS).to(fuse_input).hold())
+        fuse = diagram.add(
+            elm.Fuse().at(fuse_input).right().length(3.0).label("F1 · 150 A").hold()
+        )
+        diagram.add(elm.Dot(open=True).at(fuse.end).hold())
         diagram.add(elm.Label().at((37.0, -5.2))
                     .label("Pack + (24 V nominal)", halign="left"))
         diagram.add(elm.Label().at((35.0, -10.5))
@@ -192,6 +200,6 @@ def build(svg_path: Path) -> None:
 DIAGRAM = Diagram(
     name=Path(__file__).stem,
     title="Krabby M16 — Leader I²C chain and battery voltage sensing",
-    hint="Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; VBUS voltage-sense connections shown.",
+    hint="Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; direct battery VBUS taps and a separate 150 A fused pack-positive feed.",
     build=build,
 )
