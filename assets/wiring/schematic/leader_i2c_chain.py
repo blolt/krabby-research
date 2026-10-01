@@ -133,7 +133,7 @@ def build(svg_path: Path) -> None:
         diagram.add(elm.BusLine().at(adapter.QWIIC).to(imu.QWIIC_IN).hold())
         diagram.add(elm.BusLine().at(imu.QWIIC_OUT).to(oled.QWIIC_IN).hold())
 
-        def ina(x: float, reference: str, role: str, address: str) -> elm.Ic:
+        def ina(x: float, reference: str, role: str, address: str, sense: bool = False) -> elm.Ic:
             return diagram.add(
                 elm.Ic(
                     size=(5.6, 5.6),
@@ -142,14 +142,19 @@ def build(svg_path: Path) -> None:
                                   anchorname="QWIIC_IN", lblsize=11),
                         elm.IcPin(name="QWIIC", side="R", slot="1/1",
                                   anchorname="QWIIC_OUT", lblsize=11),
-                        elm.IcPin(name="VBUS", side="B", slot="1/1",
+                        elm.IcPin(name="VBUS", side="B", slot="1/3" if sense else "1/1",
                                   anchorname="VBUS", lblsize=11),
-                    ],
+                    ] + ([
+                        elm.IcPin(name="VIN−", side="B", slot="2/3",
+                                  anchorname="VIN_MINUS", lblsize=11),
+                        elm.IcPin(name="VIN+", side="B", slot="3/3",
+                                  anchorname="VIN_PLUS", lblsize=11),
+                    ] if sense else []),
                 ).at((x, 0)).theta(0)
                 .label(f"{reference}\n\n{role} INA228\n{address}")
             )
 
-        pack = ina(29.8, "U3", "Pack", "0x40")
+        pack = ina(29.8, "U3", "Pack", "0x40", sense=True)
         midpoint = ina(38.0, "U4", "Midpoint", "0x41")
         diagram.add(elm.BusLine().at(oled.QWIIC_OUT).to(pack.QWIIC_IN).hold())
         diagram.add(elm.BusLine().at(pack.QWIIC_OUT).to(midpoint.QWIIC_IN).hold())
@@ -183,7 +188,25 @@ def build(svg_path: Path) -> None:
             elm.Resistor().at(fuse.end).down().length(2.0)
             .hold()
         )
-        diagram.add(elm.Dot(open=True).at(shunt.end).hold())
+        sense_color = "#167b83"
+        for pin, name in [(pack.VIN_PLUS, "SHUNT+"), (pack.VIN_MINUS, "SHUNT−")]:
+            end = (pin.x, -1.6)
+            diagram.add(elm.Line().at(pin).to(end).color(sense_color).hold())
+            diagram.add(elm.Label().at((pin.x, -2.0))
+                        .label(name, fontsize=10, color=sense_color))
+        for terminal, name in [(shunt.start, "SHUNT+"), (shunt.end, "SHUNT−")]:
+            end = (terminal.x + 1.0, terminal.y)
+            diagram.add(elm.Dot().at(terminal).hold())
+            diagram.add(elm.Line().at(terminal).to(end).color(sense_color).hold())
+            diagram.add(elm.Label().at((end[0], end[1] + 0.35))
+                        .label(name, fontsize=10, color=sense_color))
+        diagram.add(elm.Line().at(shunt.end).down().length(0.7).hold())
+        diagram.add(elm.Dot(open=True).at((shunt.end.x, shunt.end.y - 0.7)).hold())
+        diagram.add(elm.Label().at((32.6, 6.2))
+                    .label("U3: SHUNT open · VBUS open", fontsize=10))
+        diagram.add(elm.Label().at((29.8, -18.0))
+                    .label("Matching SHUNT+/SHUNT− labels are connected sense wires.",
+                           halign="left", fontsize=10, color=sense_color))
         diagram.add(elm.Label().at((39.4, -4.5)).label("Shunt", halign="left"))
         diagram.add(elm.Label().at((34.0, -5.9))
                     .label("Pack + (24 V nominal)", halign="right"))
@@ -205,6 +228,6 @@ def build(svg_path: Path) -> None:
 DIAGRAM = Diagram(
     name=Path(__file__).stem,
     title="Krabby M16 — Leader I²C chain and battery voltage sensing",
-    hint="Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; direct battery VBUS taps and a separate pack-positive feed through the 150 A fuse and shunt.",
+    hint="Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; direct battery VBUS taps and a separate pack-positive feed through the 150 A fuse and shunt. Pack VIN+ senses the fuse side; VIN− senses the outgoing side.",
     build=build,
 )
