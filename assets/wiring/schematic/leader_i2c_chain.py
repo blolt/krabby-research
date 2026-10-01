@@ -189,25 +189,27 @@ def build(svg_path: Path) -> None:
             .hold()
         )
         sense_color = "#167b83"
-        for pin, name in [(pack.VIN_PLUS, "SHUNT+"), (pack.VIN_MINUS, "SHUNT−")]:
-            end = (pin.x, -1.6)
-            diagram.add(elm.Line().at(pin).to(end).color(sense_color).hold())
-            diagram.add(elm.Label().at((pin.x, -2.0))
-                        .label(name, fontsize=10, color=sense_color))
-        for terminal, name in [(shunt.start, "SHUNT+"), (shunt.end, "SHUNT−")]:
-            end = (terminal.x + 1.0, terminal.y)
+        def sense_wire(points: list[tuple[float, float]]) -> None:
+            for start, end in zip(points, points[1:]):
+                diagram.add(elm.Line().at(start).to(end).color(sense_color).hold())
+
+        sense_wire([pack.VIN_PLUS, (pack.VIN_PLUS.x, -1.5),
+                    (shunt.start.x, -1.5), shunt.start])
+        # Bridge the VIN− wire over VIN+ without an electrical junction.
+        crossing_x = shunt.start.x
+        sense_wire([pack.VIN_MINUS, (pack.VIN_MINUS.x, -2.5),
+                    (crossing_x - 0.3, -2.5)])
+        diagram.add(elm.Arc2(k=0.8).at((crossing_x - 0.3, -2.5))
+                    .to((crossing_x + 0.3, -2.5)).color(sense_color).hold())
+        sense_wire([(crossing_x + 0.3, -2.5), (40.0, -2.5),
+                    (40.0, shunt.end.y), shunt.end])
+        for terminal in [shunt.start, shunt.end]:
             diagram.add(elm.Dot().at(terminal).hold())
-            diagram.add(elm.Line().at(terminal).to(end).color(sense_color).hold())
-            diagram.add(elm.Label().at((end[0], end[1] + 0.35))
-                        .label(name, fontsize=10, color=sense_color))
         diagram.add(elm.Line().at(shunt.end).down().length(0.7).hold())
         diagram.add(elm.Dot(open=True).at((shunt.end.x, shunt.end.y - 0.7)).hold())
         diagram.add(elm.Label().at((32.6, 6.2))
                     .label("U3: SHUNT open · VBUS open", fontsize=10))
-        diagram.add(elm.Label().at((29.8, -18.0))
-                    .label("Matching SHUNT+/SHUNT− labels are connected sense wires.",
-                           halign="left", fontsize=10, color=sense_color))
-        diagram.add(elm.Label().at((39.4, -4.5)).label("Shunt", halign="left"))
+        diagram.add(elm.Label().at((38.6, -4.5)).label("Shunt", halign="right"))
         diagram.add(elm.Label().at((34.0, -5.9))
                     .label("Pack + (24 V nominal)", halign="right"))
         diagram.add(elm.Label().at((35.0, -10.5))
