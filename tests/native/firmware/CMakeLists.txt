@@ -51,12 +51,10 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/test_actuator_manager
     arduino/src/test_telemetry
     arduino/src/imu/test_imu_calibrator
-    arduino/src/imu/test_lsm6dso_adapter
     arduino/src/imu/test_imu_measurement
     arduino/src/i2c/test_i2c_recovery
     arduino/src/display/test_display_frame_model
     arduino/src/display/test_display_renderer
-    arduino/src/display/test_ssd1306_adapter
     arduino/src/actuator/test_actuator_current_tracker
     arduino/src/actuator/test_actuator_status
     arduino/src/actuator/test_actuator_identity
@@ -134,28 +132,6 @@ endif()
 
 include(cmake/power_poll_characterization.cmake)
 
-# Reusable host support; Arduino/vendor substitutes are scoped to this target.
-add_library(imu_native_support STATIC fakes/imu/environment.cpp)
-target_include_directories(imu_native_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/imu")
-if(MSVC)
-    target_compile_options(imu_native_support PRIVATE /W4 /WX)
-else()
-    target_compile_options(imu_native_support PRIVATE -Wall -Wextra -Werror)
-endif()
-target_link_libraries(test_lsm6dso_adapter PRIVATE imu_native_support)
-
-add_library(oled_native_support STATIC fakes/oled/environment.cpp)
-target_include_directories(oled_native_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/oled")
-if(MSVC)
-    target_compile_options(oled_native_support PRIVATE /W4 /WX)
-else()
-    target_compile_options(oled_native_support PRIVATE -Wall -Wextra -Werror)
-endif()
-target_link_libraries(test_ssd1306_adapter PRIVATE oled_native_support)
-target_sources(test_ssd1306_adapter PRIVATE
-    "${KRABBY_ARDUINO_DIR}/src/display/display_frame_model.cpp"
-    "${KRABBY_ARDUINO_DIR}/src/telemetry.cpp")
-
 # The transport fake has no dependency on Unity or any device driver.
 add_library(wire_native_support STATIC fakes/wire/Wire.cpp)
 target_include_directories(wire_native_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/wire")
@@ -164,8 +140,6 @@ if(MSVC)
 else()
     target_compile_options(wire_native_support PRIVATE -Wall -Wextra -Werror)
 endif()
-target_link_libraries(imu_native_support PUBLIC wire_native_support)
-target_link_libraries(oled_native_support PUBLIC wire_native_support)
 target_link_libraries(test_wire PRIVATE wire_native_support)
 
 include(cmake/sparkfun_libraries.cmake)
@@ -181,28 +155,3 @@ else()
 endif()
 target_link_libraries(test_ina228_adapter PRIVATE ina228_native_device sparkfun_ina2xx_native)
 target_link_libraries(test_power_poll PRIVATE ina228_native_device sparkfun_ina2xx_native)
-
-add_library(lsm6dso_native_device STATIC fakes/devices/lsm6dso.cpp)
-target_include_directories(lsm6dso_native_device PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/devices")
-target_link_libraries(lsm6dso_native_device PUBLIC wire_native_support)
-if(MSVC)
-    target_compile_options(lsm6dso_native_device PRIVATE /W4 /WX)
-else()
-    target_compile_options(lsm6dso_native_device PRIVATE -Wall -Wextra -Werror)
-endif()
-target_link_libraries(imu_native_support PUBLIC lsm6dso_native_device)
-# After imu_native_support, whose Arduino.h adds the SDA/SCL and GPIO the adapter uses.
-target_link_libraries(test_lsm6dso_adapter PRIVATE sparkfun_lsm6dso_native)
-
-add_library(ssd1306_native_device STATIC fakes/devices/ssd1306.cpp)
-target_include_directories(ssd1306_native_device PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/devices")
-target_link_libraries(ssd1306_native_device PUBLIC wire_native_support)
-if(MSVC)
-    target_compile_options(ssd1306_native_device PRIVATE /W4 /WX)
-else()
-    target_compile_options(ssd1306_native_device PRIVATE -Wall -Wextra -Werror)
-endif()
-target_link_libraries(oled_native_support PUBLIC ssd1306_native_device)
-# After oled_native_support, whose Arduino.h adds the GPIO, Print and String the adapter
-# and the library header use.
-target_link_libraries(test_ssd1306_adapter PRIVATE sparkfun_qwiic_oled_native)

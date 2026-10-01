@@ -1,4 +1,4 @@
-# Pinned SparkFun device drivers, compiled on the host so adapter suites can run
+# Pinned SparkFun INA228 driver, compiled on the host so task 3 suites can run
 # the real driver code against device fakes behind the TwoWire fake. Versions
 # match the arduino-cli pins in firmware/Makefile; bump both together.
 
@@ -14,20 +14,8 @@ FetchContent_Declare(
     URL_HASH SHA256=51ea7aa21b219707f9f43504b3e815a797b848d2a1e2077babb9e56cf4b50265
     DOWNLOAD_EXTRACT_TIMESTAMP FALSE
 )
-FetchContent_Declare(
-    sparkfun_lsm6dso
-    URL https://github.com/sparkfun/SparkFun_Qwiic_6DoF_LSM6DSO_Arduino_Library/archive/4addc5ffd7cb71a0481aee259ab85c232aa92afe.tar.gz
-    URL_HASH SHA256=7dca3c2616a980e521213a1f823e6ed0b18e6523f024c31e96032ee3ceb2effc
-    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
-)
-FetchContent_Declare(
-    sparkfun_qwiic_oled
-    URL https://github.com/sparkfun/SparkFun_Qwiic_OLED_Arduino_Library/archive/refs/tags/v1.0.13.tar.gz
-    URL_HASH SHA256=17f345a2fbccaaa5fa0171f69d6eb63daa555d8cd2bdbf7ebe38a0f87fb95bbc
-    DOWNLOAD_EXTRACT_TIMESTAMP FALSE
-)
 # None of the archives has a CMakeLists.txt, so this only downloads and unpacks.
-FetchContent_MakeAvailable(sparkfun_toolkit sparkfun_ina2xx sparkfun_lsm6dso sparkfun_qwiic_oled)
+FetchContent_MakeAvailable(sparkfun_toolkit sparkfun_ina2xx)
 
 # Arduino, SPI and program-space declarations the drivers compile against. The
 # suites define millis/delay/pinMode/digitalWrite in their own environments.
@@ -62,11 +50,3 @@ add_sparkfun_library(sparkfun_ina2xx_native "${sparkfun_ina2xx_SOURCE_DIR}"
     "${sparkfun_ina2xx_SOURCE_DIR}/src/sfTk/sfDevINA228.cpp"
     "${sparkfun_ina2xx_SOURCE_DIR}/src/sfTk/sfDevINA237.cpp")
 target_link_libraries(sparkfun_ina2xx_native PUBLIC sparkfun_toolkit_native)
-
-add_sparkfun_library(sparkfun_lsm6dso_native "${sparkfun_lsm6dso_SOURCE_DIR}"
-    "${sparkfun_lsm6dso_SOURCE_DIR}/src/SparkFunLSM6DSO.cpp")
-
-add_sparkfun_library(sparkfun_qwiic_oled_native "${sparkfun_qwiic_oled_SOURCE_DIR}"
-    "${sparkfun_qwiic_oled_SOURCE_DIR}/src/qwiic_grbuffer.cpp"
-    "${sparkfun_qwiic_oled_SOURCE_DIR}/src/qwiic_grssd1306.cpp"
-    "${sparkfun_qwiic_oled_SOURCE_DIR}/src/qwiic_i2c.cpp")

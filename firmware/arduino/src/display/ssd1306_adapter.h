@@ -22,8 +22,8 @@ public:
                       COLOR_WHITE == SSD1306_COLOR_WHITE,
                   "SparkFun's colour constants no longer match the renderer's");
 
-    explicit Ssd1306Adapter(TwoWire &wire)
-        : wire_(wire), driver_(), recoveryPolicy_{}, stuckBusLatch_{},
+    Ssd1306Adapter()
+        : driver_(), recoveryPolicy_{}, stuckBusLatch_{},
           isInitialized_(false)
     {
     }
@@ -34,7 +34,7 @@ public:
     {
         recoveryPolicy_ = I2cRecoveryPolicy{};
         stuckBusLatch_ = I2cStuckBusLatch{};
-        isInitialized_ = driver_.begin(wire_);
+        isInitialized_ = driver_.begin();
         return isInitialized_;
     }
 
@@ -62,9 +62,9 @@ public:
     // but ~29 ms at fast mode, so the flush runs fast and the rest of the bus stays default.
     void display()
     {
-        wire_.setClock(SSD1306_TRANSFER_BUS_CLOCK_HZ);
+        Wire.setClock(SSD1306_TRANSFER_BUS_CLOCK_HZ);
         driver_.display();
-        wire_.setClock(I2C_DEFAULT_BUS_CLOCK_HZ);
+        Wire.setClock(I2C_DEFAULT_BUS_CLOCK_HZ);
     }
 
     // DisplayRenderer canvas: drawing changes only the driver's buffer until display().
@@ -100,9 +100,9 @@ private:
 
     bool isProbeAcknowledged()
     {
-        wire_.clearWireTimeoutFlag();
-        wire_.beginTransmission(SSD1306_I2C_ADDRESS);
-        return wire_.endTransmission() == 0;
+        Wire.clearWireTimeoutFlag();
+        Wire.beginTransmission(SSD1306_I2C_ADDRESS);
+        return Wire.endTransmission() == 0;
     }
 
     bool recoverAndConfigure()
@@ -110,12 +110,11 @@ private:
         if (isProbeAcknowledged())
             return resetPanel();
 
-        if (!wire_.getWireTimeoutFlag())
+        if (!Wire.getWireTimeoutFlag())
             return false;
 
-        wire_.end();
+        Wire.end();
         ArduinoI2cBus bus(
-            wire_,
             I2C_DEFAULT_BUS_CLOCK_HZ,
             I2C_BUS_TIMEOUT_MICROSECONDS);
         if (!stuckBusLatch_.mayAttempt(bus.isSdaHigh()))
@@ -138,7 +137,6 @@ private:
         return true;
     }
 
-    TwoWire &wire_;
     Qwiic1in3OLED driver_;
     I2cRecoveryPolicy recoveryPolicy_;
     I2cStuckBusLatch stuckBusLatch_;

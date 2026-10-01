@@ -1,7 +1,7 @@
 # Shared native Wire substitute
 
 `wire_native_support` provides the single `Wire.h`, `TwoWire` implementation and
-global `Wire` for the IMU, OLED, INA adapter and power-poll tests. It has no Unity,
+global `Wire` for the INA adapter and power-poll tests. It has no Unity,
 Arduino clock/GPIO, or vendor-driver dependency. CMake exposes its include path
 only to targets that link it.
 

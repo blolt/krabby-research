@@ -21,8 +21,8 @@ enum class Lsm6dsoInitializationResult : uint8_t
 class Lsm6dsoAdapter
 {
 public:
-    explicit Lsm6dsoAdapter(TwoWire &wire)
-        : wire_(wire), calibrator_{},
+    Lsm6dsoAdapter()
+        : calibrator_{},
           recoveryPolicy_{},
           stuckBusLatch_{},
           isInitialized_(false),
@@ -93,15 +93,15 @@ private:
     {
         isInitialized_ = false;
         address_ = 0;
-        wire_.begin();
-        wire_.setClock(I2C_DEFAULT_BUS_CLOCK_HZ);
-        wire_.setWireTimeout(I2C_BUS_TIMEOUT_MICROSECONDS, true);
+        Wire.begin();
+        Wire.setClock(I2C_DEFAULT_BUS_CLOCK_HZ);
+        Wire.setWireTimeout(I2C_BUS_TIMEOUT_MICROSECONDS, true);
 
         address_ = LSM6DSO_PRIMARY_ADDRESS;
-        if (!driver_.begin(address_, wire_))
+        if (!driver_.begin(address_))
         {
             address_ = LSM6DSO_ALTERNATE_ADDRESS;
-            if (!driver_.begin(address_, wire_))
+            if (!driver_.begin(address_))
             {
                 address_ = 0;
                 return Lsm6dsoInitializationResult::NotDetected;
@@ -131,9 +131,8 @@ private:
     bool recoverAndConfigure()
     {
         // Relinquish the pins before manual bus recovery.
-        wire_.end();
+        Wire.end();
         ArduinoI2cBus bus(
-            wire_,
             I2C_DEFAULT_BUS_CLOCK_HZ,
             I2C_BUS_TIMEOUT_MICROSECONDS);
 
@@ -154,14 +153,14 @@ private:
         if (address_ == 0)
             return ImuMeasurement{false};
 
-        wire_.beginTransmission(address_);
-        if (wire_.write(LSM6DSO_OUTPUT_START_REGISTER) != 1)
+        Wire.beginTransmission(address_);
+        if (Wire.write(LSM6DSO_OUTPUT_START_REGISTER) != 1)
             return ImuMeasurement{false};
 
-        if (wire_.endTransmission(false) != 0)
+        if (Wire.endTransmission(false) != 0)
             return ImuMeasurement{false};
 
-        if (wire_.requestFrom(
+        if (Wire.requestFrom(
                 address_,
                 LSM6DSO_NUM_SAMPLE_BYTES,
                 static_cast<uint8_t>(true)) != LSM6DSO_NUM_SAMPLE_BYTES)
@@ -172,9 +171,9 @@ private:
         uint8_t bytes[LSM6DSO_NUM_SAMPLE_BYTES];
         for (uint8_t index = 0; index < LSM6DSO_NUM_SAMPLE_BYTES; ++index)
         {
-            if (wire_.available() <= 0)
+            if (Wire.available() <= 0)
                 return ImuMeasurement{false};
-            bytes[index] = static_cast<uint8_t>(wire_.read());
+            bytes[index] = static_cast<uint8_t>(Wire.read());
         }
 
         ImuMeasurement measurement{true};
@@ -218,7 +217,6 @@ private:
                    commonConfiguration);
     }
 
-    TwoWire &wire_;
     LSM6DSO driver_;
     ImuCalibrator calibrator_;
     I2cRecoveryPolicy recoveryPolicy_;

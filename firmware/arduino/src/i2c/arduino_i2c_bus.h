@@ -4,12 +4,12 @@
 #include <Wire.h>
 #include <stdint.h>
 
-// The supplied bus's end() must release the pins before this object is used.
+// Wire.end() must release the pins before this object is used.
 class ArduinoI2cBus
 {
 public:
-    ArduinoI2cBus(TwoWire &wire, uint32_t clockHz, uint32_t timeoutMicroseconds)
-        : wire_(wire), clockHz_(clockHz), timeoutMicroseconds_(timeoutMicroseconds)
+    ArduinoI2cBus(uint32_t clockHz, uint32_t timeoutMicroseconds)
+        : clockHz_(clockHz), timeoutMicroseconds_(timeoutMicroseconds)
     {
         releaseData();
         sclRelease();
@@ -52,9 +52,9 @@ public:
 
     void restart()
     {
-        wire_.begin();
-        wire_.setClock(clockHz_);
-        wire_.setWireTimeout(timeoutMicroseconds_, true);
+        Wire.begin();
+        Wire.setClock(clockHz_);
+        Wire.setWireTimeout(timeoutMicroseconds_, true);
     }
 
 private:
@@ -63,7 +63,6 @@ private:
         pinMode(SDA, INPUT_PULLUP);
     }
 
-    TwoWire &wire_;
     uint32_t clockHz_;
     uint32_t timeoutMicroseconds_;
 };

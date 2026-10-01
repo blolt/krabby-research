@@ -1,5 +1,19 @@
 # INA228 adapter test checkpoint
 
+## Current task 3 scope
+
+Task 3 retains the real SparkFun INA2XX/Toolkit host builds, register-level INA228
+fake, direct INA adapter suite, power-poll replay fixtures, and shared Wire fake.
+The IMU/OLED driver suites and their production bus-injection refactors are
+preserved on `test/m16-deferred-imu-oled` at `09d199d9` for later integration into
+tasks 1 and 2. The IMU adapter, OLED adapter, and Arduino I2C recovery helper in
+this branch match the integrated upstream main (`e50bb6d8`). Existing IMU logic,
+display-model, renderer, and simulator tests remain in task 3.
+
+The following sections record an earlier substitute-driver checkpoint; their
+suite counts and coverage results are historical, not the current test manifest.
+
+
 This records the tests-only checkpoint before the recovery changes. See
 [INA acquisition and recovery](M16-TASK3-INA-RECOVERY.md) for current behavior.
 

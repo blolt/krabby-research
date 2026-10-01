@@ -42,7 +42,7 @@ BoardRole currentRole = ROLE_UNKNOWN;
 ControllerFreshnessTracker controllerFreshnessTrackers[BOARD_ROLE_COUNT];
 ActuatorStatus latestActuatorStatus[ActuatorId::ActuatorCount];
 ImuMeasurement imuMeasurement;
-Ssd1306Adapter oledDisplay(Wire);
+Ssd1306Adapter oledDisplay;
 DisplayRenderer<Ssd1306Adapter> oledRenderer(oledDisplay);
 unsigned long lastOledDrawMilliseconds = 0;
 constexpr unsigned long OLED_REDRAW_INTERVAL_MILLISECONDS = 250;
@@ -146,7 +146,7 @@ PowerMonitorMeasurement midpointMeasurement;
 
 // --- I2C sensor cluster (Milestone 16) — leader board only ---
 // The LSM6DSO IMU rides the leader's telemetry tick; followers never touch the bus.
-Lsm6dsoAdapter imuSensor(Wire);
+Lsm6dsoAdapter imuSensor;
 static_assert(
     sizeof(ImuCalibrationRecord) == EEPROM_IMU_CAL_SIZE,
     "update EEPROM_IMU_CAL_SIZE in eeprom_layout.h");
