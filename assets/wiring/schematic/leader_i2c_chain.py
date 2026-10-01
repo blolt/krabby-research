@@ -72,13 +72,15 @@ def build(svg_path: Path) -> None:
             elm.Ic(
                 size=(4.8, 3.0),
                 pins=[
-                    elm.IcPin(name="Mega headers", side="T", slot="1/1",
+                    elm.IcPin(side="T", slot="1/1",
                               anchorname="MEGA", lblsize=10),
                     elm.IcPin(name="J1", side="R", slot="2/2", anchorname="J1"),
                     elm.IcPin(name="J2", side="R", slot="1/2", anchorname="J2"),
                 ],
             ).at((0, -7)).theta(0).label("Krabby-Uno v0.2\nShield")
         )
+        diagram.add(elm.Label().at((shield.MEGA.x, -4.45))
+                    .label("Mega headers", fontsize=10))
         diagram.add(elm.BusLine().at(leader.SHIELD).to(shield.MEGA).hold())
 
         # One 2×10 ribbon header per three-actuator motor-control board.
