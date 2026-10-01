@@ -173,9 +173,10 @@ def build(svg_path: Path) -> None:
                 ).at((x, power_y - 1.5)).theta(0).label(f"Battery {name}\n12 V")
             )
 
-        battery_a = battery(39.0, "A")
-        battery_b = battery(32.0, "B")
-        junction = (37.5, power_y)
+        # The left terminal extends 0.5 units beyond each battery body.
+        battery_a = battery(midpoint.VBUS.x + 0.5, "A")
+        battery_b = battery(pack.VBUS.x + 0.5, "B")
+        junction = battery_a.POS
         diagram.add(elm.Line().at(battery_a.POS).to(battery_b.NEG).hold())
         diagram.add(elm.Dot().at(junction).hold())
 
@@ -184,9 +185,8 @@ def build(svg_path: Path) -> None:
                 diagram.add(elm.Line().at(start).to(end).color(color).hold())
 
         # Direct battery-positive voltage taps, independent of the fused feed.
-        wire([pack.VBUS, (pack.VBUS.x, -4.0),
-              (battery_b.POS.x, -4.0), battery_b.POS])
-        wire([midpoint.VBUS, (midpoint.VBUS.x, -3.5), (junction[0], -3.5), junction])
+        wire([pack.VBUS, battery_b.POS])
+        wire([midpoint.VBUS, junction])
         diagram.add(elm.Dot().at(battery_b.POS).hold())
         fuse = diagram.add(
             elm.Fuse().at(battery_b.POS).left().length(3.0)
@@ -213,10 +213,10 @@ def build(svg_path: Path) -> None:
         diagram.add(elm.Dot(open=True).at(output).hold())
         diagram.add(elm.Label().at((32.6, 6.2))
                     .label("U3: SHUNT open · VBUS open", fontsize=10))
-        diagram.add(elm.Label().at((31.5, -8.7))
+        diagram.add(elm.Label().at((battery_b.POS.x, -8.7))
                     .label("Pack + (24 V nominal)", halign="right"))
-        diagram.add(elm.Label().at((37.5, -8.7)).label("Midpoint"))
-        diagram.add(elm.Label().at((43.5, -8.7)).label("Pack −"))
+        diagram.add(elm.Label().at((junction.x, -8.7)).label("Midpoint"))
+        diagram.add(elm.Label().at((battery_a.NEG.x, -8.7)).label("Pack −"))
 
         diagram.add(
             elm.Label()
