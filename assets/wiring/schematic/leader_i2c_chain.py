@@ -83,16 +83,20 @@ def build(svg_path: Path) -> None:
                     .label("Mega headers", fontsize=10))
         diagram.add(elm.BusLine().at(leader.SHIELD).to(shield.MEGA).hold())
 
+        motor_boards = []
         # One 2×10 ribbon header per three-actuator motor-control board.
         for header, role, y in [("J1", "FL", -4.0), ("J2", "FR", -10.0)]:
             motor_board = diagram.add(
                 elm.Ic(
                     size=(5.6, 3.0),
                     pins=[elm.IcPin(name="2×10", side="L", slot="1/1",
-                                    anchorname="CONTROL", lblsize=10)],
+                                    anchorname="CONTROL", lblsize=10),
+                          elm.IcPin(name="Power +", side="R", slot="1/2",
+                                    anchorname="POWER_PLUS", lblsize=10)],
                 ).at((10, y)).theta(0)
-                .label(f"{role} MCU board\nMotor / actuator control")
+                .label(f"{role} MCU board\nMotor / actuator control", fontsize=10, ofst=(0, 0.4))
             )
+            motor_boards.append(motor_board)
             start = getattr(shield, header)
             end = motor_board.CONTROL
             for a, b in zip(
@@ -249,12 +253,20 @@ def build(svg_path: Path) -> None:
         octopus = diagram.add(
             elm.Ic(
                 size=(5.6, 3.0),
-                pins=[elm.IcPin(name="Power +", side="R", slot="1/1",
-                                anchorname="POWER_PLUS", lblsize=10)],
+                pins=[elm.IcPin(name="+", side="R", slot="1/1",
+                                anchorname="POWER_PLUS", lblsize=10),
+                      elm.IcPin(name="+", side="L", slot="2/2",
+                                anchorname="FL_POWER", lblsize=10),
+                      elm.IcPin(name="+", side="L", slot="1/2",
+                                anchorname="FR_POWER", lblsize=10)],
             ).at((shunt.end.x - 7.6, power_y - 1.5)).theta(0)
-            .label("Octopus\nPower distribution\n\nBattery power\nto MCU boards", fontsize=10, ofst=(-0.6, 0))
+            .label("Octopus\nPower distribution block", fontsize=10)
         )
         wire([shunt.end, octopus.POWER_PLUS])
+        for output, board in zip([octopus.FL_POWER, octopus.FR_POWER], motor_boards):
+            route_x = 17.3
+            wire([output, (route_x, output.y),
+                  (route_x, board.POWER_PLUS.y), board.POWER_PLUS])
         diagram.add(elm.Label().at((32.6, 6.2))
                     .label("U3: SHUNT open · VBUS open", fontsize=10))
         diagram.add(elm.Label().at((battery_b.POS.x, -8.7))
