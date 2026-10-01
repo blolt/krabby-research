@@ -47,8 +47,8 @@ def build(svg_path: Path) -> None:
                 diagram.add(elm.Line().at(start).to(end).color(color)
                             .linewidth(BUNDLE_WIDTH if bundle else WIRE_WIDTH).hold())
 
-        def dot(at, *, terminal=False):
-            diagram.add(elm.Dot(radius=0.055, open=terminal).at(at).hold())
+        def dot(at):
+            diagram.add(elm.Dot(radius=0.055).at(at).hold())
 
         def rectangle(left, bottom, right, top):
             diagram.add(elm.Rect((left, bottom), (right, top),
@@ -65,7 +65,7 @@ def build(svg_path: Path) -> None:
             return result
 
         def port(box, side, offset, name="", *, bundle=False):
-            # Connector groups are outlined; single terminals are open circles.
+            # Connector groups are outlined; individual wires meet the board boundary.
             # Offsets are measured from the lower/left board edge.
             if side in ("L", "R"):
                 x = box.x if side == "L" else box.right
@@ -84,8 +84,6 @@ def build(svg_path: Path) -> None:
             wire([(x, y), end], bundle=bundle)
             if bundle:
                 rectangle(x - 0.12, y - 0.16, x + 0.12, y + 0.16)
-            else:
-                dot(end, terminal=True)
             if name:
                 text(label_at, name, align=align)
             return end
@@ -159,7 +157,6 @@ def build(svg_path: Path) -> None:
         wire([midpoint_vbus, battery_a_pos])
         dot(battery_b_pos)
         dot(battery_a_pos)
-        dot(battery_a_neg, terminal=True)
 
         fuse = diagram.add(elm.Fuse().at(battery_b_pos).left().length(2.6)
                            .label("F1 · 150 A", fontsize=10).hold())
@@ -195,23 +192,7 @@ def build(svg_path: Path) -> None:
         text((battery_a_pos[0], POWER_Y - 1.35), "Midpoint")
         text((battery_a_neg[0], POWER_Y - 1.35), "Pack −")
 
-        # A compact legend distinguishes grouped cables from single conductors.
-        legend_y = -11.1
-        wire([(0, legend_y), (1, legend_y)])
-        dot((0, legend_y), terminal=True)
-        text((1.3, legend_y), "Individual conductor / terminal", align="left")
-        wire([(9.0, legend_y), (10.0, legend_y)], bundle=True)
-        text((10.3, legend_y), "Cable bundle · Qwiic: 4 conductors", align="left")
-        wire([(19.0, legend_y), (20.0, legend_y)])
-        wire([(19.5, legend_y), (19.5, legend_y + 0.35)])
-        dot((19.5, legend_y))
-        text((20.3, legend_y), "Junction", align="left")
-        wire([(25.0, legend_y - 0.35), (25.0, legend_y + 0.35)])
-        wire([(24.4, legend_y), (24.78, legend_y)])
-        diagram.add(elm.Arc2(k=0.8).at((24.78, legend_y)).to((25.22, legend_y)).hold())
-        wire([(25.22, legend_y), (25.6, legend_y)])
-        text((25.9, legend_y), "Crossing · no connection", align="left")
-        text((0, -12.0), "CAUTION: Ensure +3V3 is never accidentally connected to Mega 5V.", align="left")
+        text((0, -10.8), "CAUTION: Ensure +3V3 is never accidentally connected to Mega 5V.", align="left")
 
 
 DIAGRAM = Diagram(
