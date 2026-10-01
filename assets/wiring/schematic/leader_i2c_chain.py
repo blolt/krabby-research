@@ -252,7 +252,7 @@ def build(svg_path: Path) -> None:
                 pins=[elm.IcPin(name="Power +", side="R", slot="1/1",
                                 anchorname="POWER_PLUS", lblsize=10)],
             ).at((shunt.end.x - 7.6, power_y - 1.5)).theta(0)
-            .label("Octopus")
+            .label("Octopus\nPower distribution\n\nBattery power\nto MCU boards", fontsize=10, ofst=(-0.6, 0))
         )
         wire([shunt.end, octopus.POWER_PLUS])
         diagram.add(elm.Label().at((32.6, 6.2))
@@ -275,6 +275,6 @@ def build(svg_path: Path) -> None:
 DIAGRAM = Diagram(
     name=Path(__file__).stem,
     title="Krabby M16 — Leader I²C chain and battery voltage sensing",
-    hint="Leader Mega → Krabby-Uno shield → FL / FR MCU boards via J1 / J2 20-pin ribbons. Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; direct battery VBUS taps and a separate pack-positive feed through the 150 A fuse and shunt to the Octopus. Pack VIN+ senses the fuse side; VIN− senses the outgoing side.",
+    hint="Leader Mega → Krabby-Uno shield → FL / FR MCU boards via J1 / J2 20-pin ribbons. Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; direct battery VBUS taps and a separate pack-positive feed through the 150 A fuse and shunt to the Octopus power distributor for the MCU boards. Pack VIN+ senses the fuse side; VIN− senses the outgoing side.",
     build=build,
 )
