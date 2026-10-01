@@ -179,9 +179,14 @@ def build(svg_path: Path) -> None:
         fuse = diagram.add(
             elm.Fuse().at(fuse_input).right().length(3.0).label("F1 · 150 A").hold()
         )
-        diagram.add(elm.Dot(open=True).at(fuse.end).hold())
-        diagram.add(elm.Label().at((37.0, -5.2))
-                    .label("Pack + (24 V nominal)", halign="left"))
+        shunt = diagram.add(
+            elm.Resistor().at(fuse.end).down().length(2.0)
+            .hold()
+        )
+        diagram.add(elm.Dot(open=True).at(shunt.end).hold())
+        diagram.add(elm.Label().at((39.4, -4.5)).label("Shunt", halign="left"))
+        diagram.add(elm.Label().at((34.0, -5.9))
+                    .label("Pack + (24 V nominal)", halign="right"))
         diagram.add(elm.Label().at((35.0, -10.5))
                     .label("Midpoint", halign="right"))
         diagram.add(elm.Label().at((36.0, -16.5))
@@ -200,6 +205,6 @@ def build(svg_path: Path) -> None:
 DIAGRAM = Diagram(
     name=Path(__file__).stem,
     title="Krabby M16 — Leader I²C chain and battery voltage sensing",
-    hint="Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; direct battery VBUS taps and a separate 150 A fused pack-positive feed.",
+    hint="Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; direct battery VBUS taps and a separate pack-positive feed through the 150 A fuse and shunt.",
     build=build,
 )
