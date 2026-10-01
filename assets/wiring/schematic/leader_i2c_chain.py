@@ -57,13 +57,49 @@ def build(svg_path: Path) -> None:
         leader = diagram.add(
             elm.Ic(
                 size=(4.8, 5.6),
-                pins=module_pins("R", MEGA_PIN_LABELS),
+                pins=module_pins("R", MEGA_PIN_LABELS) + [
+                    elm.IcPin(name="Shield headers", side="B", slot="1/1",
+                              anchorname="SHIELD", lblsize=10),
+                ],
             )
             .side("R", spacing=1.0)
             .at((0, 0))
             .theta(0)
             .label("A1\n\nI²C host\n(Leader Mega)")
         )
+
+        shield = diagram.add(
+            elm.Ic(
+                size=(4.8, 3.0),
+                pins=[
+                    elm.IcPin(name="Mega headers", side="T", slot="1/1",
+                              anchorname="MEGA", lblsize=10),
+                    elm.IcPin(name="J1", side="R", slot="2/2", anchorname="J1"),
+                    elm.IcPin(name="J2", side="R", slot="1/2", anchorname="J2"),
+                ],
+            ).at((0, -7)).theta(0).label("Krabby-Uno v0.2\nShield")
+        )
+        diagram.add(elm.BusLine().at(leader.SHIELD).to(shield.MEGA).hold())
+
+        # One 2×10 ribbon header per three-actuator motor-control board.
+        for header, role, y in [("J1", "FL", -4.0), ("J2", "FR", -10.0)]:
+            motor_board = diagram.add(
+                elm.Ic(
+                    size=(5.6, 3.0),
+                    pins=[elm.IcPin(name="2×10", side="L", slot="1/1",
+                                    anchorname="CONTROL", lblsize=10)],
+                ).at((10, y)).theta(0)
+                .label(f"{role} MCU board\nMotor / actuator control")
+            )
+            start = getattr(shield, header)
+            end = motor_board.CONTROL
+            for a, b in zip(
+                [start, (7.5, start.y), (7.5, end.y)],
+                [(7.5, start.y), (7.5, end.y), end],
+            ):
+                diagram.add(elm.BusLine().at(a).to(b).hold())
+            diagram.add(elm.Label().at((8.6, end.y + 0.45))
+                        .label("20-pin ribbon", fontsize=9))
 
         adapter = diagram.add(
             elm.Ic(
@@ -220,7 +256,7 @@ def build(svg_path: Path) -> None:
 
         diagram.add(
             elm.Label()
-            .at((0, -2.4))
+            .at((0, -11.5))
             .label(
                 "CAUTION: Ensure +3V3 is never accidentally connected to Mega 5V.",
                 halign="left",
@@ -231,6 +267,6 @@ def build(svg_path: Path) -> None:
 DIAGRAM = Diagram(
     name=Path(__file__).stem,
     title="Krabby M16 — Leader I²C chain and battery voltage sensing",
-    hint="Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; direct battery VBUS taps and a separate pack-positive feed through the 150 A fuse and shunt. Pack VIN+ senses the fuse side; VIN− senses the outgoing side.",
+    hint="Leader Mega → Krabby-Uno shield → FL / FR MCU boards via J1 / J2 20-pin ribbons. Leader Mega → Qwiic adapter → IMU → OLED → pack INA228 → midpoint INA228. Two 12 V batteries in series; direct battery VBUS taps and a separate pack-positive feed through the 150 A fuse and shunt. Pack VIN+ senses the fuse side; VIN− senses the outgoing side.",
     build=build,
 )
