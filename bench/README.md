@@ -258,7 +258,9 @@ Runs on push to `mainline` / `release/**` (and `workflow_dispatch`). No Orin req
 | firmware-artifact | S3 `latest.json` + manifest `ver_string` + HEX HEAD for `release/0.2.15` |
 | notify | Discord summary (skipped if `DISCORD_WEBHOOK_URL` secret unset) |
 
-## CI: self-hosted Orin runner (deferred)
+## CI: self-hosted Orin runner
+
+**Full procedure (every bench Orin):** [`SELF-HOSTED-RUNNER.md`](SELF-HOSTED-RUNNER.md)
 
 Workflow: [`.github/workflows/bench-harness.yml`](../.github/workflows/bench-harness.yml)
 
@@ -266,19 +268,10 @@ The hardware harness job is **gated** on repo variable `BENCH_RUNNER_ENABLED=tru
 so it does not queue forever before a runner exists. Until then a stub job
 explains the skip.
 
-When you have repo admin permission:
-
-1. On the Orin, install the GitHub Actions runner for **linux-arm64** from
-   Settings → Actions → Runners → New self-hosted runner.
-2. Configure with labels: `self-hosted`, `krabby-bench` (default `self-hosted`
-   is fine; add `krabby-bench` explicitly).
-3. Install as a service; ensure the runner user is in `dialout`, can use Docker,
-   and can `sudo` the same `krabby install` path the harness uses
-   (`sudo -E env PATH=…`).
-4. Repo **Actions variable**: `BENCH_RUNNER_ENABLED` = `true`.
-5. Repo **secret** (optional): `DISCORD_WEBHOOK_URL` = Discord channel webhook.
-6. Keep dual-venv reset: harness uses `scripts/jetson/bench-reset.sh` and must
-   **never** delete `~/.venv-krabby`.
+Summary: install **linux-arm64** Actions runner under `~/actions-runner` (not inside
+the git tree) with labels `self-hosted`,`krabby-bench`; registration token needs
+**repo admin** and expires ~1h; then set `BENCH_RUNNER_ENABLED=true` and optional
+`DISCORD_WEBHOOK_URL`. See the doc above for checksums, `svc.sh`, and failure modes.
 
 Until the runner is registered, exercise hardware locally:
 
