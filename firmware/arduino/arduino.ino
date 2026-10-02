@@ -13,6 +13,7 @@
 #include "src/display/display_renderer.h"
 #include "src/display/display_frame_model.h"
 #include "board_pins.h"
+#include "eeprom_layout.h"
 #include "command.h"
 #include "actuator_manager.h"
 #include "src/imu/imu_constants.h"
@@ -39,10 +40,7 @@ DisplayRenderer<Ssd1306Adapter> oledRenderer(oledDisplay);
 unsigned long lastOledDrawMilliseconds = 0;
 constexpr unsigned long OLED_REDRAW_INTERVAL_MILLISECONDS = 250;
 
-// EEPROM address 32: magic sentinel byte (0xAB); address 33: BoardRole value.
-// Calibration data (CalData) occupies addresses 0–25; gap at 26–31 kept for alignment.
-#define EEPROM_ROLE_ADDR  32
-#define EEPROM_ROLE_MAGIC 0xAB
+static constexpr uint8_t EEPROM_ROLE_MAGIC = 0xAB;
 
 static void saveRole(BoardRole r)
 {
@@ -132,7 +130,7 @@ bool wasTelemetryEmittedOnPreviousLoop = false;
 Lsm6dsoAdapter imuSensor;
 static_assert(
     sizeof(ImuCalibrationRecord) == EEPROM_IMU_CAL_SIZE,
-    "update EEPROM_IMU_CAL_SIZE in src/imu/imu_constants.h");
+    "update EEPROM_IMU_CAL_SIZE in eeprom_layout.h");
 
 // EEPROM binding for ImuCalibrator. Kept out of src/imu/ because it needs
 // <EEPROM.h> and that directory compiles on the host.

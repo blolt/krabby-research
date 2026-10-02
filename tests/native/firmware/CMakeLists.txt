@@ -47,6 +47,7 @@ endfunction()
 
 set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/test_units
+    arduino/test_eeprom_layout
     arduino/test_actuator_manager
     arduino/src/test_telemetry
     arduino/src/imu/test_imu_calibrator
