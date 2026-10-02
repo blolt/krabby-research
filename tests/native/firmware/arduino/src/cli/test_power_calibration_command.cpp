@@ -31,20 +31,20 @@ static void test_actuator_calibration_accepts_only_bare_or_explicit_target()
     TEST_ASSERT_FALSE(isActuatorCalibrationCommand(1, powerSensor));
 }
 
-static void test_complete_tokens_select_each_operation_case_insensitively()
+static void test_complete_tokens_select_each_action_case_insensitively()
 {
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::CalibrateVoltageOffsets),
-        static_cast<int>(parsePowerCalibrationOperation("PWR_SENSE", "VOLTAGE")));
+        static_cast<int>(PowerCalibrationAction::CalibrateVoltageOffsets),
+        static_cast<int>(parsePowerCalibrationAction("PWR_SENSE", "VOLTAGE")));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::CalibrateCurrentScale),
-        static_cast<int>(parsePowerCalibrationOperation("pwr_sense", "current")));
+        static_cast<int>(PowerCalibrationAction::CalibrateCurrentScale),
+        static_cast<int>(parsePowerCalibrationAction("pwr_sense", "current")));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::ShowCalibration),
-        static_cast<int>(parsePowerCalibrationOperation("Pwr_Sense", "Show")));
+        static_cast<int>(PowerCalibrationAction::ShowCalibration),
+        static_cast<int>(parsePowerCalibrationAction("Pwr_Sense", "Show")));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::ShowHelp),
-        static_cast<int>(parsePowerCalibrationOperation("PWR_SENSE", "?")));
+        static_cast<int>(PowerCalibrationAction::ShowHelp),
+        static_cast<int>(parsePowerCalibrationAction("PWR_SENSE", "?")));
 }
 
 static void test_missing_wrong_and_partial_tokens_are_invalid()
@@ -64,8 +64,8 @@ static void test_missing_wrong_and_partial_tokens_are_invalid()
     for (size_t index = 0; index < 9; ++index)
     {
         TEST_ASSERT_EQUAL_INT(
-            static_cast<int>(PowerCalibrationOperation::Invalid),
-            static_cast<int>(parsePowerCalibrationOperation(
+            static_cast<int>(PowerCalibrationAction::Invalid),
+            static_cast<int>(parsePowerCalibrationAction(
                 invalid[index][0], invalid[index][1])));
     }
 }
@@ -134,29 +134,29 @@ static void test_complete_commands_require_exact_argument_counts()
     const char* show[] = {"PWR_SENSE", "SHOW"};
     const char* help[] = {"PWR_SENSE", "?"};
     PowerCalibrationCommand result = {
-        PowerCalibrationOperation::Invalid, 99.0f, 98.0f};
+        PowerCalibrationAction::Invalid, 99.0f, 98.0f};
 
     TEST_ASSERT_TRUE(parsePowerCalibrationCommand(4, voltage, result));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::CalibrateVoltageOffsets),
-        static_cast<int>(result.operation));
+        static_cast<int>(PowerCalibrationAction::CalibrateVoltageOffsets),
+        static_cast<int>(result.action));
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, 25.84f, result.firstReference);
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, 12.91f, result.secondReference);
 
     TEST_ASSERT_TRUE(parsePowerCalibrationCommand(3, current, result));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::CalibrateCurrentScale),
-        static_cast<int>(result.operation));
+        static_cast<int>(PowerCalibrationAction::CalibrateCurrentScale),
+        static_cast<int>(result.action));
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, -10.0f, result.firstReference);
 
     TEST_ASSERT_TRUE(parsePowerCalibrationCommand(2, show, result));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::ShowCalibration),
-        static_cast<int>(result.operation));
+        static_cast<int>(PowerCalibrationAction::ShowCalibration),
+        static_cast<int>(result.action));
     TEST_ASSERT_TRUE(parsePowerCalibrationCommand(2, help, result));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::ShowHelp),
-        static_cast<int>(result.operation));
+        static_cast<int>(PowerCalibrationAction::ShowHelp),
+        static_cast<int>(result.action));
 }
 
 static void test_invalid_complete_commands_preserve_prior_result()
@@ -181,18 +181,18 @@ static void test_invalid_complete_commands_preserve_prior_result()
     for (size_t index = 0; index < 6; ++index)
     {
         PowerCalibrationCommand result = {
-            PowerCalibrationOperation::ShowCalibration, 99.0f, 98.0f};
+            PowerCalibrationAction::ShowCalibration, 99.0f, 98.0f};
         TEST_ASSERT_FALSE(parsePowerCalibrationCommand(
             counts[index], invalid[index], result));
         TEST_ASSERT_EQUAL_INT(
-            static_cast<int>(PowerCalibrationOperation::ShowCalibration),
-            static_cast<int>(result.operation));
+            static_cast<int>(PowerCalibrationAction::ShowCalibration),
+            static_cast<int>(result.action));
         TEST_ASSERT_EQUAL_FLOAT(99.0f, result.firstReference);
         TEST_ASSERT_EQUAL_FLOAT(98.0f, result.secondReference);
     }
 
     PowerCalibrationCommand result = {
-        PowerCalibrationOperation::ShowCalibration, 99.0f, 98.0f};
+        PowerCalibrationAction::ShowCalibration, 99.0f, 98.0f};
     TEST_ASSERT_FALSE(parsePowerCalibrationCommand(0, nullptr, result));
     TEST_ASSERT_EQUAL_FLOAT(99.0f, result.firstReference);
 
@@ -203,13 +203,13 @@ static void test_invalid_complete_commands_preserve_prior_result()
         "PWR_SENSE", "VOLTAGE", "bad", "12.0"};
     const char* badSecondVoltage[] = {
         "PWR_SENSE", "VOLTAGE", "25.0", "bad"};
-    const char* invalidOperation[] = {"PWR_SENSE", "RESET"};
+    const char* invalidAction[] = {"PWR_SENSE", "RESET"};
     TEST_ASSERT_FALSE(parsePowerCalibrationCommand(
         4, badFirstVoltage, result));
     TEST_ASSERT_FALSE(parsePowerCalibrationCommand(
         4, badSecondVoltage, result));
     TEST_ASSERT_FALSE(parsePowerCalibrationCommand(
-        2, invalidOperation, result));
+        2, invalidAction, result));
 }
 
 int main()
@@ -217,7 +217,7 @@ int main()
     UNITY_BEGIN();
     RUN_TEST(test_top_level_command_prefix_is_calibration);
     RUN_TEST(test_actuator_calibration_accepts_only_bare_or_explicit_target);
-    RUN_TEST(test_complete_tokens_select_each_operation_case_insensitively);
+    RUN_TEST(test_complete_tokens_select_each_action_case_insensitively);
     RUN_TEST(test_missing_wrong_and_partial_tokens_are_invalid);
     RUN_TEST(test_token_comparison_rejects_nulls_and_mismatched_lengths);
     RUN_TEST(test_valid_numbers_are_parsed_exactly);

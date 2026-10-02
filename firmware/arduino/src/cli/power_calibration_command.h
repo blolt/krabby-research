@@ -9,12 +9,12 @@
 static const char CALIBRATION_COMMAND_PREFIX = 'C';
 static const char ACTUATOR_CALIBRATION_TARGET[] = "ACTUATOR";
 static const char POWER_SENSOR_CALIBRATION_TARGET[] = "PWR_SENSE";
-static const char POWER_CALIBRATION_VOLTAGE_OPERATION[] = "VOLTAGE";
-static const char POWER_CALIBRATION_CURRENT_OPERATION[] = "CURRENT";
-static const char POWER_CALIBRATION_SHOW_OPERATION[] = "SHOW";
-static const char POWER_CALIBRATION_HELP_OPERATION[] = "?";
+static const char POWER_CALIBRATION_VOLTAGE_ACTION[] = "VOLTAGE";
+static const char POWER_CALIBRATION_CURRENT_ACTION[] = "CURRENT";
+static const char POWER_CALIBRATION_SHOW_ACTION[] = "SHOW";
+static const char POWER_CALIBRATION_HELP_ACTION[] = "?";
 
-enum class PowerCalibrationOperation {
+enum class PowerCalibrationAction {
     Invalid,
     CalibrateVoltageOffsets,
     CalibrateCurrentScale,
@@ -23,7 +23,7 @@ enum class PowerCalibrationOperation {
 };
 
 struct PowerCalibrationCommand {
-    PowerCalibrationOperation operation;
+    PowerCalibrationAction action;
     float firstReference;
     float secondReference;
 };
@@ -61,26 +61,26 @@ inline bool isActuatorCalibrationCommand(
                 tokens[0], ACTUATOR_CALIBRATION_TARGET));
 }
 
-inline PowerCalibrationOperation parsePowerCalibrationOperation(
+inline PowerCalibrationAction parsePowerCalibrationAction(
     const char* namespaceToken,
-    const char* operationToken)
+    const char* actionToken)
 {
     if (!powerCalibrationTokenEquals(
             namespaceToken, POWER_SENSOR_CALIBRATION_TARGET))
-        return PowerCalibrationOperation::Invalid;
+        return PowerCalibrationAction::Invalid;
     if (powerCalibrationTokenEquals(
-            operationToken, POWER_CALIBRATION_VOLTAGE_OPERATION))
-        return PowerCalibrationOperation::CalibrateVoltageOffsets;
+            actionToken, POWER_CALIBRATION_VOLTAGE_ACTION))
+        return PowerCalibrationAction::CalibrateVoltageOffsets;
     if (powerCalibrationTokenEquals(
-            operationToken, POWER_CALIBRATION_CURRENT_OPERATION))
-        return PowerCalibrationOperation::CalibrateCurrentScale;
+            actionToken, POWER_CALIBRATION_CURRENT_ACTION))
+        return PowerCalibrationAction::CalibrateCurrentScale;
     if (powerCalibrationTokenEquals(
-            operationToken, POWER_CALIBRATION_SHOW_OPERATION))
-        return PowerCalibrationOperation::ShowCalibration;
+            actionToken, POWER_CALIBRATION_SHOW_ACTION))
+        return PowerCalibrationAction::ShowCalibration;
     if (powerCalibrationTokenEquals(
-            operationToken, POWER_CALIBRATION_HELP_OPERATION))
-        return PowerCalibrationOperation::ShowHelp;
-    return PowerCalibrationOperation::Invalid;
+            actionToken, POWER_CALIBRATION_HELP_ACTION))
+        return PowerCalibrationAction::ShowHelp;
+    return PowerCalibrationAction::Invalid;
 }
 
 inline bool parsePowerCalibrationNumber(const char* token, float& result)
@@ -113,30 +113,30 @@ inline bool parsePowerCalibrationCommand(
     if (tokens == nullptr || tokenCount < 2)
         return false;
 
-    const PowerCalibrationOperation operation =
-        parsePowerCalibrationOperation(tokens[0], tokens[1]);
+    const PowerCalibrationAction action =
+        parsePowerCalibrationAction(tokens[0], tokens[1]);
     PowerCalibrationCommand parsed = {
-        operation, 0.0f, 0.0f};
+        action, 0.0f, 0.0f};
 
-    switch (operation)
+    switch (action)
     {
-        case PowerCalibrationOperation::CalibrateVoltageOffsets:
+        case PowerCalibrationAction::CalibrateVoltageOffsets:
             if (tokenCount != 4 ||
                 !parsePowerCalibrationNumber(tokens[2], parsed.firstReference) ||
                 !parsePowerCalibrationNumber(tokens[3], parsed.secondReference))
                 return false;
             break;
-        case PowerCalibrationOperation::CalibrateCurrentScale:
+        case PowerCalibrationAction::CalibrateCurrentScale:
             if (tokenCount != 3 ||
                 !parsePowerCalibrationNumber(tokens[2], parsed.firstReference))
                 return false;
             break;
-        case PowerCalibrationOperation::ShowCalibration:
-        case PowerCalibrationOperation::ShowHelp:
+        case PowerCalibrationAction::ShowCalibration:
+        case PowerCalibrationAction::ShowHelp:
             if (tokenCount != 2)
                 return false;
             break;
-        case PowerCalibrationOperation::Invalid:
+        case PowerCalibrationAction::Invalid:
             return false;
     }
 

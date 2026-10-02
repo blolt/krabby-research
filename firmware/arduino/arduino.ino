@@ -336,7 +336,7 @@ static void handleCalibrationCommand(const String& line)
     }
 
     PowerCalibrationCommand command = {
-        PowerCalibrationOperation::Invalid, 0.0f, 0.0f};
+        PowerCalibrationAction::Invalid, 0.0f, 0.0f};
     if (!parsePowerCalibrationCommand(tokenCount, tokens, command))
     {
         Serial.println(F("POWER CAL: invalid command; no write."));
@@ -344,12 +344,12 @@ static void handleCalibrationCommand(const String& line)
         return;
     }
 
-    if (command.operation == PowerCalibrationOperation::ShowCalibration)
+    if (command.action == PowerCalibrationAction::ShowCalibration)
     {
         printPowerCalibration();
         return;
     }
-    if (command.operation == PowerCalibrationOperation::ShowHelp)
+    if (command.action == PowerCalibrationAction::ShowHelp)
     {
         printPowerCalibrationUsage();
         return;
@@ -362,7 +362,7 @@ static void handleCalibrationCommand(const String& line)
         return;
     }
 
-    if (command.operation == PowerCalibrationOperation::CalibrateVoltageOffsets)
+    if (command.action == PowerCalibrationAction::CalibrateVoltageOffsets)
     {
         if (!midpointPowerMonitor.isUp())
         {
@@ -392,7 +392,7 @@ static void handleCalibrationCommand(const String& line)
         return;
     }
 
-    if (command.operation == PowerCalibrationOperation::CalibrateCurrentScale)
+    if (command.action == PowerCalibrationAction::CalibrateCurrentScale)
     {
         // The operator forces a known current through the pack shunt, signed to
         // match the sensor's convention.
