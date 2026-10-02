@@ -344,12 +344,12 @@ static void handleCalibrationCommand(const String& line)
         return;
     }
 
-    if (command.operation == PowerCalibrationOperation::Show)
+    if (command.operation == PowerCalibrationOperation::ShowCalibration)
     {
         printPowerCalibration();
         return;
     }
-    if (command.operation == PowerCalibrationOperation::Help)
+    if (command.operation == PowerCalibrationOperation::ShowHelp)
     {
         printPowerCalibrationUsage();
         return;
@@ -362,7 +362,7 @@ static void handleCalibrationCommand(const String& line)
         return;
     }
 
-    if (command.operation == PowerCalibrationOperation::Voltage)
+    if (command.operation == PowerCalibrationOperation::CalibrateVoltageOffsets)
     {
         if (!midpointPowerMonitor.isUp())
         {
@@ -392,7 +392,7 @@ static void handleCalibrationCommand(const String& line)
         return;
     }
 
-    if (command.operation == PowerCalibrationOperation::Current)
+    if (command.operation == PowerCalibrationOperation::CalibrateCurrentScale)
     {
         // The operator forces a known current through the pack shunt, signed to
         // match the sensor's convention.

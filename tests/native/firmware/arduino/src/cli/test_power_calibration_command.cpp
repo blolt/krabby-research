@@ -34,16 +34,16 @@ static void test_actuator_calibration_accepts_only_bare_or_explicit_target()
 static void test_complete_tokens_select_each_operation_case_insensitively()
 {
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::Voltage),
+        static_cast<int>(PowerCalibrationOperation::CalibrateVoltageOffsets),
         static_cast<int>(parsePowerCalibrationOperation("PWR_SENSE", "VOLTAGE")));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::Current),
+        static_cast<int>(PowerCalibrationOperation::CalibrateCurrentScale),
         static_cast<int>(parsePowerCalibrationOperation("pwr_sense", "current")));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::Show),
+        static_cast<int>(PowerCalibrationOperation::ShowCalibration),
         static_cast<int>(parsePowerCalibrationOperation("Pwr_Sense", "Show")));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::Help),
+        static_cast<int>(PowerCalibrationOperation::ShowHelp),
         static_cast<int>(parsePowerCalibrationOperation("PWR_SENSE", "?")));
 }
 
@@ -138,24 +138,24 @@ static void test_complete_commands_require_exact_argument_counts()
 
     TEST_ASSERT_TRUE(parsePowerCalibrationCommand(4, voltage, result));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::Voltage),
+        static_cast<int>(PowerCalibrationOperation::CalibrateVoltageOffsets),
         static_cast<int>(result.operation));
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, 25.84f, result.firstReference);
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, 12.91f, result.secondReference);
 
     TEST_ASSERT_TRUE(parsePowerCalibrationCommand(3, current, result));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::Current),
+        static_cast<int>(PowerCalibrationOperation::CalibrateCurrentScale),
         static_cast<int>(result.operation));
     TEST_ASSERT_FLOAT_WITHIN(0.00001f, -10.0f, result.firstReference);
 
     TEST_ASSERT_TRUE(parsePowerCalibrationCommand(2, show, result));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::Show),
+        static_cast<int>(PowerCalibrationOperation::ShowCalibration),
         static_cast<int>(result.operation));
     TEST_ASSERT_TRUE(parsePowerCalibrationCommand(2, help, result));
     TEST_ASSERT_EQUAL_INT(
-        static_cast<int>(PowerCalibrationOperation::Help),
+        static_cast<int>(PowerCalibrationOperation::ShowHelp),
         static_cast<int>(result.operation));
 }
 
@@ -181,18 +181,18 @@ static void test_invalid_complete_commands_preserve_prior_result()
     for (size_t index = 0; index < 6; ++index)
     {
         PowerCalibrationCommand result = {
-            PowerCalibrationOperation::Show, 99.0f, 98.0f};
+            PowerCalibrationOperation::ShowCalibration, 99.0f, 98.0f};
         TEST_ASSERT_FALSE(parsePowerCalibrationCommand(
             counts[index], invalid[index], result));
         TEST_ASSERT_EQUAL_INT(
-            static_cast<int>(PowerCalibrationOperation::Show),
+            static_cast<int>(PowerCalibrationOperation::ShowCalibration),
             static_cast<int>(result.operation));
         TEST_ASSERT_EQUAL_FLOAT(99.0f, result.firstReference);
         TEST_ASSERT_EQUAL_FLOAT(98.0f, result.secondReference);
     }
 
     PowerCalibrationCommand result = {
-        PowerCalibrationOperation::Show, 99.0f, 98.0f};
+        PowerCalibrationOperation::ShowCalibration, 99.0f, 98.0f};
     TEST_ASSERT_FALSE(parsePowerCalibrationCommand(0, nullptr, result));
     TEST_ASSERT_EQUAL_FLOAT(99.0f, result.firstReference);
 

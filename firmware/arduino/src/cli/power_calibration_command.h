@@ -16,10 +16,10 @@ static const char POWER_CALIBRATION_HELP_OPERATION[] = "?";
 
 enum class PowerCalibrationOperation {
     Invalid,
-    Voltage,
-    Current,
-    Show,
-    Help,
+    CalibrateVoltageOffsets,
+    CalibrateCurrentScale,
+    ShowCalibration,
+    ShowHelp,
 };
 
 struct PowerCalibrationCommand {
@@ -70,16 +70,16 @@ inline PowerCalibrationOperation parsePowerCalibrationOperation(
         return PowerCalibrationOperation::Invalid;
     if (powerCalibrationTokenEquals(
             operationToken, POWER_CALIBRATION_VOLTAGE_OPERATION))
-        return PowerCalibrationOperation::Voltage;
+        return PowerCalibrationOperation::CalibrateVoltageOffsets;
     if (powerCalibrationTokenEquals(
             operationToken, POWER_CALIBRATION_CURRENT_OPERATION))
-        return PowerCalibrationOperation::Current;
+        return PowerCalibrationOperation::CalibrateCurrentScale;
     if (powerCalibrationTokenEquals(
             operationToken, POWER_CALIBRATION_SHOW_OPERATION))
-        return PowerCalibrationOperation::Show;
+        return PowerCalibrationOperation::ShowCalibration;
     if (powerCalibrationTokenEquals(
             operationToken, POWER_CALIBRATION_HELP_OPERATION))
-        return PowerCalibrationOperation::Help;
+        return PowerCalibrationOperation::ShowHelp;
     return PowerCalibrationOperation::Invalid;
 }
 
@@ -120,19 +120,19 @@ inline bool parsePowerCalibrationCommand(
 
     switch (operation)
     {
-        case PowerCalibrationOperation::Voltage:
+        case PowerCalibrationOperation::CalibrateVoltageOffsets:
             if (tokenCount != 4 ||
                 !parsePowerCalibrationNumber(tokens[2], parsed.firstReference) ||
                 !parsePowerCalibrationNumber(tokens[3], parsed.secondReference))
                 return false;
             break;
-        case PowerCalibrationOperation::Current:
+        case PowerCalibrationOperation::CalibrateCurrentScale:
             if (tokenCount != 3 ||
                 !parsePowerCalibrationNumber(tokens[2], parsed.firstReference))
                 return false;
             break;
-        case PowerCalibrationOperation::Show:
-        case PowerCalibrationOperation::Help:
+        case PowerCalibrationOperation::ShowCalibration:
+        case PowerCalibrationOperation::ShowHelp:
             if (tokenCount != 2)
                 return false;
             break;
