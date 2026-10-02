@@ -13,8 +13,8 @@ service.
 | `GET` | `/healthz` | none | Liveness + signaling diagnostics (`mqttConnected`, `signalingOutSubscribed`, `activeSessionsByThing`) |
 | `GET` | `/devices` | operator group | Lists enrolled robots via Fleet Indexing (`SearchIndex`, `thingTypeName:Krab`). Returns `[{thingName, connected, connectivityTimestamp, reported}]` where `reported` is the latest classic-shadow `state.reported` document. |
 | `GET` | `/devices/{thingName}` | operator group | Device detail: `DescribeThing` metadata + connectivity from SearchIndex + full `state.reported` from `GetThingShadow`. Returns `{thingName, thingTypeName, attributes, connected, connectivityTimestamp, reported}`. |
-| `POST` | `/devices/{thingName}/ssh-tunnel` | operator group | Opens a Secure Tunnel (`OpenTunnel`, `services=SSH`) to the device. Returns `{tunnelId, sourceAccessToken, region}` -- the *destination* token goes straight to the device over MQTT (`krabby agent`, not through this service). |
-| `DELETE` | `/devices/{thingName}/ssh-tunnel/{tunnelId}` | operator group | Force-closes the tunnel (`CloseTunnel`, `delete=True`). |
+| `POST` | `/devices/{thingName}/ssh-tunnel` | operator group | Opens or **reuses** a Secure Tunnel for SSH. If an `OPEN` tunnel already exists for the thing, calls `RotateTunnelAccessToken` (no `TunnelsOpened` charge) and returns a fresh `sourceAccessToken`; otherwise `OpenTunnel` (`services=SSH`, 12h max lifetime). Returns `{tunnelId, sourceAccessToken, region}` -- the *destination* token goes straight to the device over MQTT (`krabby agent`, not through this service). |
+| `DELETE` | `/devices/{thingName}/ssh-tunnel/{tunnelId}` | operator group | Force-closes the tunnel (`CloseTunnel`, `delete=True`). Normal SSH sessions leave the tunnel `OPEN` for reuse. |
 | `GET` | `/teleop/ice-servers` | operator group | Returns `{"version":1,"iceServers":[...],"ttlSeconds":N}` — Google STUN plus short-lived coturn TURN credentials (HMAC REST API). Same `iceServers` shape as the existing teleop stack's `GET /api/teleop-config`. |
 | `WS` | `/devices/{thingName}/teleop/signaling` | operator group | Bidirectional WebRTC signaling bridge: browser JSON ↔ IoT MQTT `teleop/{thingName}/signaling/in` and `.../out`. Message shape is unchanged from the existing teleop stack. |
 
@@ -137,7 +137,8 @@ krabby-fleet-service   # binds 127.0.0.1:8080
 
 Opening a real tunnel or signaling MQTT still needs real AWS credentials
 with the FleetServiceStack instance-role permissions (`iot:OpenTunnel` /
-`CloseTunnel` / `DescribeTunnel` plus `iot:Connect`/`Publish`/`Subscribe`/
+`CloseTunnel` / `DescribeTunnel` / `ListTunnels` / `RotateTunnelAccessToken`
+plus `iot:Connect`/`Publish`/`Subscribe`/
 `Receive` on `teleop/*/signaling/*`).
 For local testing, whatever `boto3` / the CRT default credential chain
 resolves from your environment.

@@ -77,8 +77,8 @@ Actions > New repository secret**.
 Run from any Linux machine that meets the requirements below (CI uses a GitHub
 runner; a laptop is the usual manual run). The test checks: Cognito login,
 fleet API tunnel open, `krabby-fleet ssh` + source `localproxy`, pubkey auth
-as the Linux `operator` user on the bench, `echo hello` over SSH, then tunnel
-closed. Traffic still relayed through AWS Secure Tunneling even when pytest runs
+as the Linux `operator` user on the bench, `echo hello` over SSH, then local
+proxy stopped (Secure Tunnel left `OPEN` for reuse). Traffic still relayed through AWS Secure Tunneling even when pytest runs
 on the bench Orin.
 
 **Requirements**
@@ -122,7 +122,8 @@ chmod 600 ~/.ssh/id_ed25519
 ```
 
 Opening the tunnel and SSH use Cognito and the fleet API only. The test also
-calls `DescribeTunnel` at the end to confirm the CLI closed the tunnel; boto3
+calls `DescribeTunnel` at the end to confirm the CLI left the tunnel `OPEN`
+for reuse (rotate on the next open instead of another billable `OpenTunnel`); boto3
 needs AWS credentials for that call. Locally, export an IAM user's keys with
 `iot:DescribeTunnel` (same permission as the CI role). In GitHub Actions there
 are no AWS keys in repository secrets: the workflow assumes

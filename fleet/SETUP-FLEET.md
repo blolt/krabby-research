@@ -127,8 +127,8 @@ for a user in the `operator` group.
 |--------|------|---------|
 | `GET` | `/devices` | `iot:SearchIndex` (`thingTypeName:Krab`) — connectivity + shadow `reported` |
 | `GET` | `/devices/{thingName}` | `iot:DescribeThing` + `iot:GetThingShadow` + SearchIndex connectivity |
-| `POST` | `/devices/{thingName}/ssh-tunnel` | `iot:OpenTunnel` |
-| `DELETE` | `/devices/{thingName}/ssh-tunnel/{tunnelId}` | `iot:CloseTunnel` |
+| `POST` | `/devices/{thingName}/ssh-tunnel` | `iot:OpenTunnel` or `iot:RotateTunnelAccessToken` (reuse OPEN) |
+| `DELETE` | `/devices/{thingName}/ssh-tunnel/{tunnelId}` | `iot:CloseTunnel` (force-close; normal SSH leaves OPEN) |
 | `GET` | `/teleop/ice-servers` | STUN + short-lived coturn TURN credentials (`iceServers`) |
 | `WS` | `/devices/{thingName}/teleop/signaling` | MQTT bridge to `teleop/{thing}/signaling/in` and `.../out` |
 

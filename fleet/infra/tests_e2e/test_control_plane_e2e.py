@@ -262,6 +262,31 @@ def _tunneling() -> Any:
     return boto3.client("iotsecuretunneling", region_name=AWS_REGION)
 
 
+def _open_or_reuse_ssh_tunnel(client: Any, thing_name: str) -> tuple[str, str]:
+    """Return (tunnel_id, source_access_token), preferring Rotate over OpenTunnel."""
+    listed = client.list_tunnels(thingName=thing_name, maxResults=100)
+    open_ids = [
+        s["tunnelId"]
+        for s in listed.get("tunnelSummaries") or []
+        if s.get("status") == "OPEN" and s.get("tunnelId")
+    ]
+    if open_ids:
+        tunnel_id = open_ids[0]
+        rotated = client.rotate_tunnel_access_token(
+            tunnelId=tunnel_id,
+            clientMode="ALL",
+            destinationConfig={"thingName": thing_name, "services": ["SSH"]},
+        )
+        return tunnel_id, rotated["sourceAccessToken"]
+
+    tunnel = client.open_tunnel(
+        description=f"task1-e2e:{thing_name}",
+        destinationConfig={"thingName": thing_name, "services": ["SSH"]},
+        timeoutConfig={"maxLifetimeTimeoutMinutes": 720},
+    )
+    return tunnel["tunnelId"], tunnel["sourceAccessToken"]
+
+
 def _parse_indexed_shadow(shadow: Any) -> dict[str, Any]:
     if shadow is None:
         return {}
@@ -453,16 +478,14 @@ def test_scratch_cert_cannot_update_bench_shadow(scratch_device: dict[str, Any])
 
 
 def test_secure_tunnel_source_proxy_reaches_ssh():
-    """OpenTunnel → destination localproxy on bench → source TCP sees SSH."""
+    """Reuse or OpenTunnel → destination localproxy on bench → source TCP sees SSH.
+
+    Leaves the tunnel OPEN (no CloseTunnel) so later CI / fleet API opens can
+    RotateTunnelAccessToken instead of paying another TunnelsOpened charge.
+    """
     assert shutil.which(_LOCALPROXY_BIN), f"{_LOCALPROXY_BIN} not on PATH (required for bench E2E)"
     client = _tunneling()
-    tunnel = client.open_tunnel(
-        description=f"task1-e2e:{BENCH_THING_NAME}",
-        destinationConfig={"thingName": BENCH_THING_NAME, "services": ["SSH"]},
-        timeoutConfig={"maxLifetimeTimeoutMinutes": 30},
-    )
-    tunnel_id = tunnel["tunnelId"]
-    source_token = tunnel["sourceAccessToken"]
+    tunnel_id, source_token = _open_or_reuse_ssh_tunnel(client, BENCH_THING_NAME)
     # Secure Tunneling: destination must connect before source (DescribeTunnel gate).
     _wait_tunnel_destination_connected(client, tunnel_id, BENCH_THING_NAME)
     proc: subprocess.Popen | None = None
@@ -517,7 +540,3 @@ def test_secure_tunnel_source_proxy_reaches_ssh():
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        try:
-            client.close_tunnel(tunnelId=tunnel_id, delete=True)
-        except Exception:  # noqa: BLE001
-            pass
