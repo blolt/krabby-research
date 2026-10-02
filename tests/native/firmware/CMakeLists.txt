@@ -48,7 +48,6 @@ endfunction()
 set(KRABBY_FIRMWARE_NATIVE_TESTS
     fakes/wire/test_wire
     arduino/test_units
-    arduino/test_eeprom_layout
     arduino/test_actuator_manager
     arduino/src/test_telemetry
     arduino/src/imu/test_imu_calibrator
@@ -64,9 +63,13 @@ set(KRABBY_FIRMWARE_NATIVE_TESTS
     arduino/src/controller/test_board_role
     arduino/src/controller/test_controller_freshness_tracker
     arduino/src/cli/test_power_calibration_command
+    arduino/src/power_monitor/test_battery_telemetry
     arduino/src/power_monitor/test_ina228_adapter
     arduino/src/power_monitor/test_power_calibration
     arduino/src/power_monitor/test_power_monitor_constants
+    arduino/src/telemetry/test_telemetry_poll
+    arduino/test_eeprom_layout
+    arduino/test_power_poll
 )
 
 # Require every discovered test to appear in the manifest.
@@ -127,6 +130,8 @@ else()
     target_compile_options(oled_trace PRIVATE -Wall -Wextra -Werror)
 endif()
 
+include(cmake/power_poll_characterization.cmake)
+
 # The transport fake has no dependency on Unity or any device driver.
 add_library(wire_native_support STATIC fakes/wire/Wire.cpp)
 target_include_directories(wire_native_support PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/fakes/wire")
@@ -149,3 +154,4 @@ else()
     target_compile_options(ina228_native_device PRIVATE -Wall -Wextra -Werror)
 endif()
 target_link_libraries(test_ina228_adapter PRIVATE ina228_native_device sparkfun_ina2xx_native)
+target_link_libraries(test_power_poll PRIVATE ina228_native_device sparkfun_ina2xx_native)
